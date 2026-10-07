@@ -376,13 +376,13 @@ def main():
         try:evidence=json.loads(Path(ns.evidence).read_text())
         except Exception as exc:terminal_block('EVIDENCE_UNREADABLE',type(exc).__name__);return
         binding={'repository':evidence.get('binding',{}).get('repository','unknown'),'base_sha':mb,'head_sha':head,'pr_number':None,'work_unit':evidence.get('binding',{}).get('work_unit')}
-        structural=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base,verify_git=False)
+        structural=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base,verify_git=False,sensor_policy_path=effective_policy_dir/'sensor-policy.yml')
         if structural:
             ev('SENSOR_REJECTED',{'reasons':structural[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(structural));return
         if evidence.get('binding',{}).get('head_sha')!=head:
             write_json(out/'textdiff-evidence.json',evidence);ev('SENSOR_REJECTED',{'reasons':['HEAD_MISMATCH']})
             cyc=cycle_obj(ns.case_id,binding,evidence,[],'L1','SENSOR','STALE',['HEAD_MISMATCH'],mode,False,False,worktree_ok,False,None);write_json(out/'review-cycle.json',cyc);ev('CYCLE_CLOSED',{'state':'STALE','cycle_digest':cyc['cycle_digest'],'gate_conclusion':'cancelled'});print(out);return
-        errs=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base)
+        errs=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base,sensor_policy_path=effective_policy_dir/'sensor-policy.yml')
         if errs:
             ev('SENSOR_REJECTED',{'reasons':errs[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(errs));return
         git_ok=True
