@@ -122,14 +122,18 @@ The cycle becomes stale if HEAD or the trusted base ref/merge-base changes befor
 
 ## HUMAN decision
 
-`record_human_decision.py` no longer accepts an unauthenticated self-declaration. The current HEAD, anchored cycle and an external HMAC-backed human-decision attestation must agree.
+`record_human_decision.py` no longer accepts an unauthenticated self-declaration. The current HEAD, anchored cycle and an external HMAC-backed human-decision attestation must agree. The one-time nonce cache is external authority state: configure one shared cache outside the mutable case bundle and do not vary it per invocation.
 
 ```bash
+export MAESTRO_HUMAN_DECISION_REPLAY_DIR=/secure/maestro/human-replay-cache
+
 python tools/human_decision_attestation.py create \
   --case-id CASE-001 \
   --actor-id owner-1 \
   --verdict CONFIRMED \
   --head-sha <reviewed-head> \
+  --cycle-digest <review-cycle.cycle_digest> \
+  --evidence-digest <case-record.sensor.evidence_digest> \
   --output /secure/human-decision.json
 
 python tools/record_human_decision.py \

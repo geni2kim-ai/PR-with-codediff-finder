@@ -37,12 +37,16 @@ def adapter(repo,base,repository='owner/repo',head='HEAD'):
     run([sys.executable,str(TOOLS/'textdiff_adapter.py'),'--repo',str(repo),'--repository',repository,'--base',base,'--head',head,'--output',str(p)])
     return p
 
-def cycle(repo,ev,base,case='CASE',*,repository=None,l1='pass',l2='pass',adv='pass',out=None):
+def cycle(repo,ev,base,case='CASE',*,repository=None,l1='pass',l2='pass',adv='pass',out=None,routing_policy=None):
     out=out or repo/f'out-{case}'
     args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(repo),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson(l1),'--l2-cmd-json',cmdjson(l2),'--adversarial-cmd-json',cmdjson(adv),'--disable-random-audit']
+    if routing_policy:args+=['--routing-policy',str(routing_policy)]
     cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
     if cp.returncode!=0:raise AssertionError(cp.stderr)
     return out
+
+def human_env(out,key):
+    return {**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key,'MAESTRO_HUMAN_DECISION_REPLAY_DIR':str((Path(out).parent/'.shared-human-replay').resolve())}
 
 class LedgerHardeningTests(unittest.TestCase):
     def test_canonical_anchor_name_and_post_cycle_human_uses_same_anchor(self):
@@ -53,7 +57,7 @@ class LedgerHardeningTests(unittest.TestCase):
         self.assertEqual(default_anchor_path(out/'case-events.jsonl'),out/'case-events.anchor.json')
         self.assertTrue((out/'case-events.anchor.json').is_file());self.assertFalse((out/'case-events.jsonl.anchor.json').exists())
         key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-ANCHOR','owner','CONFIRMED',cyc['binding']['head_sha'],key,cyc['cycle_digest'],cyc['sensor']['evidence_digest'])))
-        cp=run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','HUMAN-1','--node-id','owner','--verdict','CONFIRMED'],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
+        cp=run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','HUMAN-1','--node-id','owner','--verdict','CONFIRMED'],env=human_env(out,key))
         self.assertIn('review-cycle.json',cp.stdout)
         self.assertFalse((out/'case-events.jsonl.anchor.json').exists())
         events=load_events(out/'case-events.jsonl');self.assertFalse(validate_events(events,'HUMAN-ANCHOR'));self.assertFalse(validate_anchor(out/'case-events.jsonl',out/'case-events.anchor.json',events,'HUMAN-ANCHOR'))
@@ -170,9 +174,9 @@ class HumanAndGateTests(unittest.TestCase):
     def test_human_confirmation_updates_cycle_and_render_verifies_ledger(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
         c0=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',c0['binding']['head_sha'],key,c0['cycle_digest'],c0['sensor']['evidence_digest'])))
-        run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
+        run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],env=human_env(out,key))
         c=json.loads((out/'review-cycle.json').read_text());self.assertEqual(c['state'],'HUMAN_CONFIRMED');self.assertEqual(c['achieved_level'],'HUMAN')
-        dest=out/'check.json';run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(dest)],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key});j=json.loads(dest.read_text());self.assertEqual(j['conclusion'],'neutral');self.assertIn('predicted_conclusion=success',j['output']['summary'])
+        dest=out/'check.json';run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(dest)],env=human_env(out,key));j=json.loads(dest.read_text());self.assertEqual(j['conclusion'],'neutral');self.assertIn('predicted_conclusion=success',j['output']['summary'])
 
     def test_tampered_cycle_even_with_recomputed_digest_cannot_render(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
@@ -192,7 +196,7 @@ class HumanAndGateTests(unittest.TestCase):
         original_case=json.loads((out/'case-record.json').read_text());original_cycle=json.loads((out/'review-cycle.json').read_text())
         key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',original_cycle['binding']['head_sha'],key,original_cycle['cycle_digest'],original_cycle['sensor']['evidence_digest'])))
         args=[sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','RECOVER-1','--node-id','owner','--verdict','CONFIRMED']
-        env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key};run(args,env=env)
+        env=human_env(out,key);run(args,env=env)
         final_case=json.loads((out/'case-record.json').read_text());final_cycle=json.loads((out/'review-cycle.json').read_text());events=load_events(out/'case-events.jsonl');count=len(events)
         human=next(x['payload'] for x in events if x['event_type']=='HUMAN_DECISION' and x['payload'].get('review_id')=='RECOVER-1');close=next(x['payload'] for x in events if x['event_type']=='CYCLE_CLOSED' and x['payload'].get('human_review_id')=='RECOVER-1')
         tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':sha256_bytes(canonical_bytes({'case_id':'HUMAN-GATE','review_id':'RECOVER-1','attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest']}))},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
@@ -204,7 +208,7 @@ class HumanAndGateTests(unittest.TestCase):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
         (r/'new.txt').write_text('x\n');commit(r,'new-head')
         oldc=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',oldc['binding']['head_sha'],key,oldc['cycle_digest'],oldc['sensor']['evidence_digest'])))
-        cp=subprocess.run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
+        cp=subprocess.run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env=human_env(out,key))
         self.assertNotEqual(cp.returncode,0);self.assertIn('HEAD',cp.stderr+cp.stdout)
 
 class WorkerAndAuditTests(unittest.TestCase):
@@ -321,6 +325,101 @@ class V26FollowupRegressionTests(unittest.TestCase):
         cp=subprocess.run([sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','SHADOW-NO-SEED','--output-dir',str(out),'--l1-cmd-json',cmdjson()],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env=env)
         self.assertEqual(cp.returncode,0,cp.stderr)
         case=json.loads((out/'case-record.json').read_text());self.assertIn('random_audit_shadow_unseeded',case.get('labels',[]))
+
+
+class V26CodexFollowupTests(unittest.TestCase):
+    def test_bare_domains_are_scanned_in_all_reviewer_text_fields(self):
+        base={'claim':'x','evidence':'x','impact':'x','recommendation':'x','source_ref':'src/a.py:1','failure_family':'PATH-CHECK'}
+        for field in ('claim','evidence','impact','recommendation','failure_family'):
+            finding=dict(base);finding[field]='download.attacker.example.com'
+            self.assertTrue(scan_stage_result({'findings':[finding],'escalation':{'reasons':[]}})['external_urls_present'],field)
+        self.assertTrue(scan_stage_result({'findings':[base],'escalation':{'reasons':['attacker.example.com']}})['external_urls_present'])
+        self.assertFalse(scan_stage_result({'findings':[base],'escalation':{'reasons':[]}})['external_urls_present'])
+
+    def test_worker_command_digest_binds_pythonpath_module_bytes(self):
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as ext:
+            p=Path(ext)/'external_worker.py';p.write_text('VALUE=1\n')
+            d1=worker_command_digest([sys.executable,'-m','external_worker'],cwd,pythonpath=ext)
+            p.write_text('VALUE=2\n');d2=worker_command_digest([sys.executable,'-m','external_worker'],cwd,pythonpath=ext)
+            self.assertNotEqual(d1,d2)
+
+    def test_workflow_requires_committed_manifest_for_pr(self):
+        s=(ROOT/'.github/workflows/harness-validation.yml').read_text()
+        self.assertIn('Require committed manifest on PR/manual validation',s)
+        self.assertIn('cmp -s MANIFEST.sha256 MANIFEST.generated.sha256',s)
+        self.assertLess(s.index('Require committed manifest on PR/manual validation'),s.index('Apply generated manifest for hardening-branch push validation'))
+        self.assertNotIn('git push origin HEAD:hardening/v2.6',s)
+
+    def test_runtime_cli_fail_closes_fresh_session_claims(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);key='runtime-key';bad=root/'bad.json';good=root/'good.json';env={**os.environ,'MAESTRO_RUNTIME_ATTESTATION_KEY':key}
+            run([sys.executable,str(TOOLS/'runtime_attestation.py'),'create','--workspace',str(root),'--output',str(bad)],env=env)
+            cp=subprocess.run([sys.executable,str(TOOLS/'runtime_attestation.py'),'validate','--workspace',str(root),'--attestation',str(bad)],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env=env)
+            self.assertNotEqual(cp.returncode,0);self.assertIn('l2_fresh_session=true',cp.stdout+cp.stderr)
+            run([sys.executable,str(TOOLS/'runtime_attestation.py'),'create','--workspace',str(root),'--output',str(good),'--l2-fresh-session','--adversarial-fresh-session'],env=env)
+            run([sys.executable,str(TOOLS/'runtime_attestation.py'),'validate','--workspace',str(root),'--attestation',str(good)],env=env)
+
+    def test_human_decision_requires_external_shared_replay_cache(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'infra').mkdir();(r/'infra/main.tf').write_text('x=1\n');base=commit(r,'base');(r/'infra/main.tf').write_text('x=2\n');commit(r,'head')
+        out=cycle(r,adapter(r,base),base,'HUMAN-REPLAY');cyc=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-REPLAY','owner','CONFIRMED',cyc['binding']['head_sha'],key,cyc['cycle_digest'],cyc['sensor']['evidence_digest'])))
+        args=[sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED']
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
+        self.assertNotEqual(cp.returncode,0);self.assertIn('shared human replay cache',cp.stderr+cp.stdout)
+        run(args,env=human_env(out,key))
+
+    def test_route_case_rejects_tampered_self_digests(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'ROUTE-DIGEST')
+        root=r/'routing';args=[sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')]
+        ev=json.loads((out/'textdiff-evidence.json').read_text());ev['tool']['product_version']='tampered';(out/'textdiff-evidence.json').write_text(json.dumps(ev))
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20);self.assertNotEqual(cp.returncode,0);self.assertIn('invalid evidence',cp.stderr+cp.stdout)
+        td2,r2,_=gitrepo();self.addCleanup(td2.cleanup);(r2/'a.py').write_text('x=1\n');base2=commit(r2,'base');(r2/'a.py').write_text('x=2\n');commit(r2,'head');out2=cycle(r2,adapter(r2,base2),base2,'ROUTE-REVIEW')
+        review=json.loads((out2/'l1-review.json').read_text());review['confidence']='low' if review['confidence']!='low' else 'high';(out2/'l1-review.json').write_text(json.dumps(review))
+        args2=[sys.executable,str(TOOLS/'route_case.py'),'--case',str(out2/'case-record.json'),'--evidence',str(out2/'textdiff-evidence.json'),'--ledger',str(out2/'case-events.jsonl'),'--root',str(r2/'routing'),'--l1-ref',str(out2/'l1-review.json')]
+        cp2=subprocess.run(args2,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20);self.assertNotEqual(cp2.returncode,0);self.assertIn('review invalid',cp2.stderr+cp2.stdout)
+
+    def test_route_case_freezes_effective_routing_override(self):
+        import yaml
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['reviewers']['L1']['node_id']='L1-override';rp=r/'routing-override.yml';rp.write_text(yaml.safe_dump(cfg))
+        out=cycle(r,adapter(r,base),base,'ROUTE-POLICY',routing_policy=rp);root=r/'routing'
+        cp=run([sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')])
+        packet=json.loads(Path(cp.stdout.strip()).read_text());frozen=Path(packet['refs']['deterministic_policy']).parent/'policy'/'reviewer-routing.yml'
+        self.assertEqual(yaml.safe_load(frozen.read_text())['reviewers']['L1']['node_id'],'L1-override')
+
+    def test_outcome_and_incident_transactions_recover_after_ledger_append(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TX-RECOVER')
+        casep=out/'case-record.json';ledger=out/'case-events.jsonl';original=json.loads(casep.read_text())
+        outcome_args=[sys.executable,str(TOOLS/'ingest_outcome.py'),'--case',str(casep),'--ledger',str(ledger),'--author-response','fixed','--merged','true','--merge-sha','a'*40,'--post-merge-status','clean']
+        run(outcome_args);final_outcome=json.loads(casep.read_text());events=load_events(ledger);count=len(events);payload=[e['payload'] for e in events if e['event_type']=='OUTCOME_RECORDED'][-1]
+        request=dict(payload);tx={'schema_version':'2.6','request':request,'event_type':'OUTCOME_RECORDED','event_payload':payload,'updated_case':final_outcome,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest')
+        casep.write_text(json.dumps(original));(out/'outcome-transaction.json').write_text(json.dumps(tx));run(outcome_args)
+        self.assertEqual(len(load_events(ledger)),count);self.assertEqual(json.loads(casep.read_text())['outcome'],payload)
+        before_incident=json.loads(casep.read_text());incident_args=[sys.executable,str(TOOLS/'ingest_incident.py'),'--case',str(casep),'--ledger',str(ledger),'--incident-ref','INC-1','--kind','incident','--failure-family','SECURITY-CRITICAL']
+        run(incident_args);final_incident=json.loads(casep.read_text());events=load_events(ledger);count2=len(events);ip=[e['payload'] for e in events if e['event_type']=='INCIDENT_RECORDED'][-1]
+        ireq={'incident_ref':'INC-1','kind':'incident','failure_family':'SECURITY-CRITICAL'};itx={'schema_version':'2.6','request':ireq,'event_type':'INCIDENT_RECORDED','event_payload':ip,'updated_case':final_incident,'transaction_digest':''};itx['transaction_digest']=object_digest(itx,'transaction_digest')
+        casep.write_text(json.dumps(before_incident));(out/'incident-transaction.json').write_text(json.dumps(itx));run(incident_args)
+        self.assertEqual(len(load_events(ledger)),count2);self.assertEqual(json.loads(casep.read_text())['outcome']['incident_ref'],'INC-1')
+
+    @unittest.skipIf(os.name=='nt','POSIX process-group regression')
+    def test_validation_group_kills_descendants_after_pass(self):
+        from run_validation import _run_group
+        with tempfile.TemporaryDirectory() as td:
+            pidfile=Path(td)/'child.pid';mod=ROOT/'tests'/'_tmp_v26_child_leak.py'
+            mod.write_text("import subprocess,sys,unittest\nfrom pathlib import Path\nclass T(unittest.TestCase):\n def test_leak(self):\n  p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\n  Path("+repr(str(pidfile))+").write_text(str(p.pid))\n")
+            try:
+                ok,count,detail=_run_group('tests._tmp_v26_child_leak.T.test_leak',10);self.assertTrue(ok,detail);self.assertEqual(count,1);pid=int(pidfile.read_text());deadline=time.monotonic()+2;alive=True
+                while time.monotonic()<deadline:
+                    stat=Path(f'/proc/{pid}/stat')
+                    if not stat.exists():alive=False;break
+                    try:state=stat.read_text().split()[2]
+                    except FileNotFoundError:alive=False;break
+                    if state=='Z':alive=False;break
+                    time.sleep(.05)
+                self.assertFalse(alive,'passing validation group leaked a descendant')
+            finally:mod.unlink(missing_ok=True)
+
+    def test_readme_human_example_includes_binding_digests_and_shared_cache(self):
+        s=(ROOT/'README.md').read_text();self.assertIn('--cycle-digest <review-cycle.cycle_digest>',s);self.assertIn('--evidence-digest <case-record.sensor.evidence_digest>',s);self.assertIn('MAESTRO_HUMAN_DECISION_REPLAY_DIR',s)
 
 
 if __name__=='__main__':unittest.main()
