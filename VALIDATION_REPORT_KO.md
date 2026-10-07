@@ -37,7 +37,7 @@
 ## v2.6 신규 반례 20개
 1. canonical anchor 이름과 post-cycle human tool의 동일 anchor 사용.
 2. HMAC anchor 무키 append downgrade 차단.
-3. anchor 삭제 후 history 재시작 차단.
+3. anchor 삭제 후 history 재시작 차단, **ledger 0바이트 truncation + anchor 삭제 조합도 재시작 차단**.
 4. U+2028/U+2029/U+0085 payload가 ledger physical record를 깨지 않음.
 5. infra/deploy/public API/migration HUMAN floor 강제.
 6. `security_surface=HIGH` HUMAN floor 강제.
