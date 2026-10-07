@@ -15,7 +15,7 @@
 | 11 | 보호 경로 case-sensitive | policy matching casefold 적용 | 해결 |
 | 12 | sensor quality가 거의 항상 HEURISTIC | `DETERMINISTIC` class 추가; heuristic fallback 분리 | 해결 |
 | 13 | stdin write가 timeout보다 먼저 block / child 생존 | file-backed stdin + running size monitor + process-tree kill | 해결 |
-| 14 | 죽은 정책 어휘 | destructive migration/public contract/CODEOWNERS-ruleset/payment signals 생성, deterministic conflict/unresolved adversarial 연결 | 해결 |
+| 14 | 죽은 정책 어휘 | destructive migration/public contract/CODEOWNERS-ruleset/payment signals 생성, deterministic conflict/unresolved adversarial 연결. `post_merge_incident_similarity`는 producer/connector가 없으므로 live policy에서 제거하고 실제 `post_merge_incident` label 기반 재오픈만 유지 | 해결 |
 
 ## 낮은 우선순위 후속 처리
 - trusted-tool pin은 빈 값도 mismatch 처리.
