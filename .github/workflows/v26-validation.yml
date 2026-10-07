@@ -23,6 +23,6 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Run v2.6 hardening regressions
-        run: python -m unittest -q tests.test_v26_hardening
+        run: python -m unittest -q tests.test_v26b_hardening
       - name: Run existing full validation
         run: python tools/run_validation.py --full
