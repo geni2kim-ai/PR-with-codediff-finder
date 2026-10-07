@@ -9,6 +9,7 @@ sys.path.insert(0,str(TOOLS))
 from case_ledger import append_event,default_anchor_path
 from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
+from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -30,6 +31,19 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         for name in ('escalation-policy.yml','protected-paths.yml','reviewer-routing.yml','sensor-policy.yml'):
             first=(ROOT/'policy'/name).read_text(encoding='utf-8').splitlines()[0]
             self.assertEqual(first,"schema_version: '2.7'",name)
+
+    def test_mutation_receipt_is_digest_only_and_detects_change(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);secret=root/'sid-bearing.raw';secret.write_text('sensitive-original\n',encoding='utf-8')
+            spec=root/'spec.json';spec.write_text(json.dumps({'artifacts':[{'name':'successful-capture','path':str(secret)}]}),encoding='utf-8')
+            pre=capture_mutation_receipt(spec);pre_path=root/'pre.json';pre_path.write_text(json.dumps(pre),encoding='utf-8')
+            same=finalize_mutation_receipt(pre_path,spec)
+            self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE')
+            serialized=json.dumps(same)
+            self.assertNotIn(str(secret),serialized);self.assertNotIn('sensitive-original',serialized);self.assertNotIn('"path"',serialized)
+            secret.write_text('mutated\n',encoding='utf-8')
+            changed=finalize_mutation_receipt(pre_path,spec)
+            self.assertFalse(changed['all_unchanged']);self.assertFalse(changed['items'][0]['equal'])
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
