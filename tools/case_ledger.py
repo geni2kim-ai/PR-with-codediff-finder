@@ -39,6 +39,22 @@ def validate_events(events,case_id=None):
         prev=ev.get('event_hash',ZERO)
     return errs
 
+def _pid_alive(pid):
+    try:pid=int(pid)
+    except Exception:return False
+    if pid<=0:return False
+    if pid==os.getpid():return True
+    if os.name=='nt':
+        try:
+            import ctypes
+            handle=ctypes.windll.kernel32.OpenProcess(0x1000,False,pid)
+            if not handle:return False
+            ctypes.windll.kernel32.CloseHandle(handle);return True
+        except Exception:return True
+    try:os.kill(pid,0);return True
+    except ProcessLookupError:return False
+    except PermissionError:return True
+
 @contextmanager
 def ledger_lock(path,timeout=10.0):
     lock=Path(str(path)+'.lock');deadline=time.monotonic()+timeout;fd=None
@@ -47,8 +63,14 @@ def ledger_lock(path,timeout=10.0):
             fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.write(fd,str(os.getpid()).encode());os.close(fd);fd=None;break
         except FileExistsError:
             try:
-                if time.time()-lock.stat().st_mtime>60:lock.unlink();continue
-            except FileNotFoundError:continue
+                raw=lock.read_text(encoding='utf-8').strip()
+                owner=int(raw) if raw else None
+                if owner is not None and not _pid_alive(owner):lock.unlink();continue
+                if owner is None and time.time()-lock.stat().st_mtime>max(1.0,timeout):lock.unlink();continue
+            except (FileNotFoundError,ValueError): 
+                try:
+                    if lock.exists() and time.time()-lock.stat().st_mtime>max(1.0,timeout):lock.unlink();continue
+                except FileNotFoundError:continue
             if time.monotonic()>=deadline:raise TimeoutError(f'ledger lock timeout: {lock}')
             time.sleep(0.02)
     try:yield
