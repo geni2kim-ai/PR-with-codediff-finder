@@ -221,7 +221,10 @@ class WorkerAndAuditTests(unittest.TestCase):
             (pkg/'__init__.py').write_text("from pathlib import Path\nPath(__file__).with_name('SIDE_EFFECT').write_text('owned')\n")
             (pkg/'worker.py').write_text('x=1\n')
             d=worker_command_digest([sys.executable,'-m','evilpkg.worker'],root)
-            self.assertRegex(d,r'^[0-9a-f]{64}        import yaml
+            self.assertRegex(d,r'^[0-9a-f]{64}$');self.assertFalse(side.exists())
+
+    def test_enforced_cli_cannot_disable_random_audit(self):
+        import yaml
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');ev=adapter(r,base)
         cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['mode']='enforced';rp=r/'routing.yml';rp.write_text(yaml.safe_dump(cfg));cp=subprocess.run([sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','NO-DISABLE','--output-dir',str(r/'out'),'--l1-cmd-json',cmdjson(),'--routing-policy',str(rp),'--disable-random-audit'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_AUDIT_SEED':'x'})
         self.assertNotEqual(cp.returncode,0);self.assertIn('forbidden',cp.stderr+cp.stdout)
@@ -231,7 +234,6 @@ class WorkerAndAuditTests(unittest.TestCase):
         import yaml
         td=tempfile.TemporaryDirectory();self.addCleanup(td.cleanup);w=Path(td.name)/'worker.py';pidfile=Path(td.name)/'child.pid'
         w.write_text("import subprocess,sys,time,os\np=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\nopen(sys.argv[1],'w').write(str(p.pid))\ntime.sleep(60)\n")
-        # Reuse a valid task produced by a tiny SHADOW cycle, then run the hostile worker directly.
         tdr,r,_=gitrepo();self.addCleanup(tdr.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TASK-SOURCE');task=json.loads((out/'l1-task.json').read_text())
         cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['runtime']['timeout_seconds']=1
         start=time.monotonic()
@@ -307,36 +309,5 @@ class V26FollowupRegressionTests(unittest.TestCase):
         self.assertEqual(cp.returncode,0,cp.stderr)
         case=json.loads((out/'case-record.json').read_text());self.assertIn('random_audit_shadow_unseeded',case.get('labels',[]))
 
-
-if __name__=='__main__':unittest.main()
-);self.assertFalse(side.exists())
-
-    def test_enforced_cli_cannot_disable_random_audit(self):
-        import yaml
-        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');ev=adapter(r,base)
-        cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['mode']='enforced';rp=r/'routing.yml';rp.write_text(yaml.safe_dump(cfg));cp=subprocess.run([sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','NO-DISABLE','--output-dir',str(r/'out'),'--l1-cmd-json',cmdjson(),'--routing-policy',str(rp),'--disable-random-audit'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_AUDIT_SEED':'x'})
-        self.assertNotEqual(cp.returncode,0);self.assertIn('forbidden',cp.stderr+cp.stdout)
-
-    def test_run_worker_timeout_does_not_block_on_stdin_and_kills_child(self):
-        from run_review_cycle import run_worker,ReviewerExecutionError
-        import yaml
-        td=tempfile.TemporaryDirectory();self.addCleanup(td.cleanup);w=Path(td.name)/'worker.py';pidfile=Path(td.name)/'child.pid'
-        w.write_text("import subprocess,sys,time,os\np=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\nopen(sys.argv[1],'w').write(str(p.pid))\ntime.sleep(60)\n")
-        # Reuse a valid task produced by a tiny SHADOW cycle, then run the hostile worker directly.
-        tdr,r,_=gitrepo();self.addCleanup(tdr.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TASK-SOURCE');task=json.loads((out/'l1-task.json').read_text())
-        cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['runtime']['timeout_seconds']=1
-        start=time.monotonic()
-        with self.assertRaises(ReviewerExecutionError) as cm:run_worker([sys.executable,str(w),str(pidfile)],task,cfg)
-        elapsed=time.monotonic()-start;self.assertEqual(cm.exception.kind,'TIMEOUT');self.assertLess(elapsed,4.0)
-        if pidfile.exists() and os.name!='nt':
-            pid=int(pidfile.read_text());deadline=time.monotonic()+2.0;alive=True
-            while time.monotonic()<deadline:
-                proc=Path(f'/proc/{pid}/stat')
-                if not proc.exists():alive=False;break
-                try:state=proc.read_text().split()[2]
-                except FileNotFoundError:alive=False;break
-                if state=='Z':alive=False;break
-                time.sleep(.05)
-            self.assertFalse(alive,'reviewer child survived timeout process-group kill')
 
 if __name__=='__main__':unittest.main()
