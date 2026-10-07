@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
 sys.path.insert(0,str(TOOLS))
-from common import object_digest,sha256_file
+from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
@@ -194,7 +194,7 @@ class HumanAndGateTests(unittest.TestCase):
         env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key};run(args,env=env)
         final_case=json.loads((out/'case-record.json').read_text());final_cycle=json.loads((out/'review-cycle.json').read_text());events=load_events(out/'case-events.jsonl');count=len(events)
         human=next(x['payload'] for x in events if x['event_type']=='HUMAN_DECISION' and x['payload'].get('review_id')=='RECOVER-1');close=next(x['payload'] for x in events if x['event_type']=='CYCLE_CLOSED' and x['payload'].get('human_review_id')=='RECOVER-1')
-        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':__import__('hashlib').sha256(b'recovery-test-tx').hexdigest()},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
+        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':sha256_bytes(canonical_bytes({'case_id':'HUMAN-GATE','review_id':'RECOVER-1','attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest']}))},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
         (out/'case-record.json').write_text(json.dumps(original_case));(out/'review-cycle.json').write_text(json.dumps(original_cycle));(out/'human-decision-transaction.json').write_text(json.dumps(tx));(out/'human-decision-attestation.json').unlink(missing_ok=True)
         run(args,env=env)
         self.assertEqual(len(load_events(out/'case-events.jsonl')),count);self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'HUMAN_CONFIRMED');self.assertFalse((out/'human-decision-transaction.json').exists());self.assertTrue((out/'human-decision-attestation.json').is_file())
@@ -297,9 +297,10 @@ class V26FollowupRegressionTests(unittest.TestCase):
 
     def test_canonical_source_hash_uses_actual_worktree_bytes_but_normalizes_eol(self):
         with tempfile.TemporaryDirectory() as td:
-            p=Path(td)/'checker.py';p.write_bytes(b'print(1)\\r\\n')
+            p=Path(td)/'checker.py';p.write_bytes(b'print(1)\r\n')
             d1=canonical_source_sha256(p)
-            p.write_bytes(b'print(1)\\n');self.assertEqual(d1,canonical_source_sha256(p))
+            p.write_bytes(b'print(1)\n');self.assertEqual(d1,canonical_source_sha256(p))
+            p.write_bytes(b'print(2)\n');self.assertNotEqual(d1,canonical_source_sha256(p))
             p.write_bytes(b'print(2)\\n');self.assertNotEqual(d1,canonical_source_sha256(p))
 
     def test_shadow_cycle_runs_without_external_audit_seed(self):
