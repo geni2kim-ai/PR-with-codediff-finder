@@ -145,7 +145,11 @@
       "additionalProperties": false,
       "required": [
         "textdiff_evidence",
-        "l1_review"
+        "deterministic_policy",
+        "l1_review",
+        "trusted_standards",
+        "spec_ref",
+        "test_results"
       ],
       "properties": {
         "textdiff_evidence": {
@@ -162,6 +166,31 @@
             "null"
           ],
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "deterministic_policy": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "trusted_standards": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "spec_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "test_results": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
         }
       }
     }
