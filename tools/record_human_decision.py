@@ -38,10 +38,13 @@ def _atomic_json(path,obj):
 
 def _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,repo,att_path,ledger_key,human_key,ledger_key_id,replay_dir):
     tx=json.loads(Path(tx_path).read_text())
+    if tx.get('transaction_digest')!=object_digest(tx,'transaction_digest'):raise SystemExit('human transaction digest mismatch')
     req=tx['request'];head=git_head(repo)
+    expected_transaction_id=sha256_bytes(canonical_bytes({'case_id':req.get('case_id'),'review_id':req.get('review_id'),'attestation_digest':req.get('attestation_digest'),'source_cycle_digest':req.get('source_cycle_digest')}))
+    if req.get('transaction_id')!=expected_transaction_id:raise SystemExit('human transaction id mismatch')
     if head!=req['head_sha']:raise SystemExit('repository HEAD changed since human transaction; recovery refused')
     att=tx['attestation']
-    ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key)
+    ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key,enforce_freshness=False)
     if ae:raise SystemExit('invalid human decision attestation during recovery: '+'; '.join(ae))
     if human_attestation_digest(att)!=req['attestation_digest']:raise SystemExit('human transaction attestation digest mismatch')
     replay_error,_=consume_human_nonce(att,replay_dir,req['transaction_id'])
@@ -150,7 +153,8 @@ def main():
     human_event={'review_id':ns.review_id,'actor_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'result_digest':row['result_digest'],'note_digest':sha256_bytes(ns.note.encode()),'attestation_digest':supplied_digest}
     close_event={'state':updated_cycle['state'],'cycle_digest':updated_cycle['cycle_digest'],'gate_conclusion':updated_cycle['gate_conclusion'],'human_review_id':ns.review_id,'human_attestation_digest':supplied_digest}
     transaction_id=sha256_bytes(canonical_bytes({'case_id':case['case_id'],'review_id':ns.review_id,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest']}))
-    tx={'schema_version':'2.6','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event}
+    tx={'schema_version':'2.6','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event,'transaction_digest':''}
+    tx['transaction_digest']=object_digest(tx,'transaction_digest')
     _atomic_json(tx_path,tx)
     _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
     print(cycle_path)
