@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json,sys,tempfile,unittest
 from pathlib import Path
+from jsonschema import Draft202012Validator
 
 ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
@@ -38,6 +39,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             spec=root/'spec.json';spec.write_text(json.dumps({'artifacts':[{'name':'successful-capture','path':str(secret)}]}),encoding='utf-8')
             pre=capture_mutation_receipt(spec);pre_path=root/'pre.json';pre_path.write_text(json.dumps(pre),encoding='utf-8')
             same=finalize_mutation_receipt(pre_path,spec)
+            schema=json.loads((ROOT/'schemas/mutation-receipt.schema.json').read_text(encoding='utf-8'))
+            self.assertEqual(list(Draft202012Validator(schema).iter_errors(same)),[])
             self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE')
             serialized=json.dumps(same)
             self.assertNotIn(str(secret),serialized);self.assertNotIn('sensitive-original',serialized);self.assertNotIn('"path"',serialized)
