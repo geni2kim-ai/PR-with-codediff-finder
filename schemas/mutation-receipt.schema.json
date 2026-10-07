@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:mutation-receipt:2.7",
+  "title": "Privacy-safe mutation receipt v2.7",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","kind","authority_effect","all_unchanged","items","receipt_digest"],
+  "properties": {
+    "schema_version": {"const":"2.7"},
+    "kind": {"const":"mutation-receipt"},
+    "authority_effect": {"const":"NONE"},
+    "all_unchanged": {"type":"boolean"},
+    "items": {
+      "type":"array",
+      "minItems":1,
+      "items":{
+        "type":"object",
+        "additionalProperties":false,
+        "required":["name","pre_sha256","post_sha256","equal"],
+        "properties":{
+          "name":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+          "pre_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+          "post_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+          "equal":{"type":"boolean"}
+        }
+      }
+    },
+    "receipt_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}
