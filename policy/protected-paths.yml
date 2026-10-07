@@ -1,4 +1,4 @@
-schema_version: '2.4'
+schema_version: '2.6'
 governance_paths:
 - .github/workflows/**
 - .github/actions/**
@@ -15,6 +15,10 @@ governance_paths:
 - profiles/**
 - policy/**
 - schemas/**
+- tools/**
+- requirements.txt
+- requirements-*.txt
+- pyproject.toml
 - docs/REVIEW_POLICY.md
 - docs/REVIEW_AUTHORITY_LADDER.md
 - docs/OPERATIONS.md
@@ -33,6 +37,9 @@ human_floor_paths:
 - billing/**
 - api/public/**
 - schemas/public/**
+- policy/**
+- schemas/**
+- tools/**
 adversarial_floor_paths:
 - auth/**
 - security/**
@@ -46,6 +53,12 @@ adversarial_floor_paths:
 - profiles/**
 - policy/**
 - schemas/**
+- tools/**
+- tests/**
+- vendor/**
+- requirements.txt
+- requirements-*.txt
+- pyproject.toml
 supply_chain_files:
 - package.json
 - package-lock.json

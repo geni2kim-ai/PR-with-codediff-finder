@@ -16,9 +16,11 @@ from case_ledger import load_events,validate_events,validate_anchor
 from validate_adjudication import semantic_errors as adjudication_errors
 from validate_standard_candidate import semantic_errors as standard_errors
 
-TEST_GROUPS=[
- 'tests.test_policy_engine',
- 'tests.test_v22_integration',
+# v2.6 discovers test modules from tests/test_*.py so a newly added test file cannot
+# silently disappear from the canonical validation run. The v2.3 module remains split
+# into individual methods because those subprocess-heavy scenarios benefit from hard
+# process isolation.
+V23_SPLIT=[
  'tests.test_v23_orchestration.V23OrchestrationTests.test_low_risk_l1_pass_completes',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_auth_path_runs_independent_l2_then_requires_adversarial',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_l1_l2_disagreement_requires_adversarial',
@@ -34,14 +36,13 @@ TEST_GROUPS=[
  'tests.test_v23_orchestration.V23OrchestrationTests.test_blocked_latest_stage_sets_blocked_state',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_effective_routing_policy_digest_is_bound',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_stage_risk_escalation_reason_is_preserved',
- 'tests.test_v24_hardening.PathAndGitEvidenceTests',
- 'tests.test_v24_hardening.TraceParityTests',
- 'tests.test_v24_hardening.RuntimeIntegrityTests',
- 'tests.test_v24_hardening.LedgerTests',
- 'tests.test_v24_hardening.PolicyAndProvenanceTests',
- 'tests.test_v25_dogfood'
 ]
-VALIDATION_MODULES=['tests.test_policy_engine','tests.test_v22_integration','tests.test_v23_orchestration','tests.test_v24_hardening','tests.test_v25_dogfood']
+def validation_modules():
+    return [f'tests.{p.stem}' for p in sorted((ROOT/'tests').glob('test_*.py'))]
+
+def validation_groups():
+    mods=validation_modules()
+    return [m for m in mods if m!='tests.test_v23_orchestration']+V23_SPLIT
 
 def _enumerate_test_ids(names):
     # Import tests only in a disposable child process. Some test modules import
@@ -63,7 +64,7 @@ print(json.dumps(out))
     return json.loads(cp.stdout)
 
 def validation_coverage_errors():
-    all_ids=set(_enumerate_test_ids(VALIDATION_MODULES));covered=set(_enumerate_test_ids(TEST_GROUPS))
+    mods=validation_modules();groups=validation_groups();all_ids=set(_enumerate_test_ids(mods));covered=set(_enumerate_test_ids(groups))
     missing=sorted(all_ids-covered);extra=sorted(covered-all_ids);e=[]
     if missing:e.append('validation groups omit tests: '+', '.join(missing))
     if extra:e.append('validation groups reference unknown tests: '+', '.join(extra))
@@ -107,14 +108,14 @@ def run_harness_tests_isolated(timeout=120,jobs=1):
     if coverage:raise SystemExit('; '.join(coverage))
     # One isolated OS process per group; the parent never imports test modules.
     total=0;failures=[]
-    for group in TEST_GROUPS:
+    for group in validation_groups():
         ok,count,detail=_run_group(group,timeout);total+=count
         if not ok:failures.append((group,detail))
     if failures:
         lines=['harness isolated test-group failures:']
         for group,detail in failures:lines.append(f'- {group}: {detail}')
         raise SystemExit('\n'.join(lines))
-    print(f'harness isolated tests: {total} PASS (groups={len(TEST_GROUPS)}, sequential)')
+    print(f'harness isolated tests: {total} PASS (groups={len(validation_groups())}, sequential)')
     return total
 
 def validate_examples():
@@ -136,7 +137,7 @@ def validate_examples():
     std=load('examples/v24/standard-candidate.valid.json');assert_clean('standard candidate',schema_errors('schemas/standard-candidate.schema.json',std)+standard_errors(std))
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--full',action='store_true',help='run all harness tests plus vendored TextDiffChecker regressions');ap.add_argument('--test-timeout',type=int,default=120);ap.add_argument('--jobs',type=int,default=1,help='reserved for compatibility; v2.5 runs isolated groups sequentially to avoid fork/thread deadlocks');ns=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('--full',action='store_true',help='run all harness tests plus vendored TextDiffChecker regressions');ap.add_argument('--test-timeout',type=int,default=120);ap.add_argument('--jobs',type=int,default=1,help='reserved for compatibility; v2.6 runs discovered isolated groups sequentially to avoid fork/thread deadlocks');ns=ap.parse_args()
     run_harness_tests_isolated(ns.test_timeout,ns.jobs)
     validate_examples()
     if ns.full:

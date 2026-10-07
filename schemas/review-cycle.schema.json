@@ -151,7 +151,9 @@
         "HUMAN_REQUIRED",
         "COMPLETE",
         "BLOCKED",
-        "STALE"
+        "STALE",
+        "HUMAN_CONFIRMED",
+        "HUMAN_REJECTED"
       ]
     },
     "gate_conclusion": {

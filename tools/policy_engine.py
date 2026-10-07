@@ -7,6 +7,12 @@ LEVELS = ["L1", "L2", "ADVERSARIAL", "HUMAN"]
 
 
 def normalize_repo_path(path: str) -> str:
+    """Normalize a path only for policy matching.
+
+    Git object lookup must use Git's exact path bytes/string.  This helper intentionally
+    treats backslash as a separator so suspicious Windows-style spellings cannot evade
+    protected-path policy, but callers must never feed the normalized value back to Git.
+    """
     p=str(path).replace('\\','/')
     while p.startswith('./'):
         p=p[2:]
@@ -18,19 +24,13 @@ def normalize_repo_path(path: str) -> str:
 
 
 def _match(path: str, pattern: str) -> bool:
-    """Repository glob with explicit segment-anywhere semantics.
-
-    A pattern beginning with '/' is repository-root anchored. Other patterns may match
-    at root or at any complete path-segment suffix. This intentionally makes auth/**
-    match auth/x, src/auth/x and backend/auth/x while never turning github/** into
-    .github/**. Leading './' is removed as a prefix, never with str.lstrip().
-    """
-    p=normalize_repo_path(path)
+    """Case-insensitive repository glob with segment-anywhere semantics."""
+    p=normalize_repo_path(path).casefold()
     raw=str(pattern).replace('\\','/')
     anchored=raw.startswith('/')
     while raw.startswith('./'):
         raw=raw[2:]
-    pat=raw.lstrip('/')
+    pat=raw.lstrip('/').casefold()
     candidates=[p]
     if not anchored:
         parts=p.split('/')
@@ -114,7 +114,6 @@ def active_escalation_signals(model, path_hits, signals):
     if signals.get('payment_external_side_effect'): active.add('payment_or_irreversible_external_side_effect')
     if signals.get('ruleset_codeowners_change'): active.add('ruleset_or_codeowners_change')
     if signals.get('adversarial_unresolved'): active.add('adversarial_unresolved')
-    # sensor policy vocabulary
     if signals.get('sensor_runtime_untrusted'): active.add('runtime_untrusted')
     if signals.get('encoding_low_confidence'): active.add('encoding_low_confidence')
     if signals.get('sensor_approximate'): active.add('approximate_result')
@@ -133,13 +132,12 @@ def active_escalation_signals(model, path_hits, signals):
 
 
 def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor_cfg=None):
-    # Defaults mirror shipped policy for backwards-compatible direct callers, but the
-    # orchestrator passes the loaded YAML so editing policy changes behavior.
     if escalation_cfg is None:
         escalation_cfg={
           'L2_if_any':['reviewer_confidence_low_or_medium','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
           'ADVERSARIAL_if_any':['l1_l2_disagreement','novel_failure_family','deterministic_reviewer_conflict','blocker_candidate','security_surface_high_or_critical','post_merge_incident_similarity','protected_path_adversarial_floor','unexplained_spec_change_after_pr_open','reviewer_policy_tampering'],
-          'HUMAN_if_any':['governance_change','hard_reversibility','data_sensitivity_pii_or_secret','availability_critical','destructive_migration','public_contract_break','payment_or_irreversible_external_side_effect','ruleset_or_codeowners_change','adversarial_unresolved']}
+          'HUMAN_if_any':['governance_change','hard_reversibility','data_sensitivity_pii_or_secret','availability_critical','destructive_migration','public_contract_break','payment_or_irreversible_external_side_effect','ruleset_or_codeowners_change','adversarial_unresolved']
+        }
     if sensor_cfg is None:
         sensor_cfg={'textdiff':{'l2_if_any':['runtime_untrusted','encoding_low_confidence','approximate_result'],'adversarial_if_any':['failed_invariant','diff_false_exact','runtime_untrusted_on_protected_path','nontext_sensitive_change']}}
     active=active_escalation_signals(model,path_hits,signals)
@@ -156,7 +154,16 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         level=max_level(level,'ADVERSARIAL');reasons.extend('ADVERSARIAL:'+x for x in sorted(active & adv))
     if active & human:
         level='HUMAN';reasons.extend('HUMAN:'+x for x in sorted(active & human))
-    return level,reasons
+
+    # Hard authority floor: policy configuration may add escalation, but it may not
+    # lower a HUMAN requirement implied by protected paths or the risk matrix.
+    risk=derive_risk(model,path_hits)
+    if risk['human_review_required']:
+        level='HUMAN'
+        reasons.extend('HUMAN_FLOOR:'+x for x in risk['floor_reasons'])
+        if risk['matrix_human_review_required']:
+            reasons.append('HUMAN_FLOOR:risk_matrix')
+    return level,sorted(set(reasons))
 
 
 def gate_conclusion(result):

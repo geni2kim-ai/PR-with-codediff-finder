@@ -38,6 +38,11 @@ def merge_base(repo:Path, base_ref:str, head_ref:str)->str:
 
 
 def changed_entries(repo:Path,base:str,head:str):
+    """Return Git paths exactly as Git reported them.
+
+    Policy matching may normalize separators separately, but object lookup must never
+    rewrite a Git path. A literal backslash is a valid filename character on POSIX.
+    """
     raw=run_git(repo,'diff','--name-status','-z','-M','-C',base,head)
     toks=raw.decode('utf-8','surrogateescape').split('\0')
     if toks and toks[-1]=='': toks.pop()
@@ -47,10 +52,10 @@ def changed_entries(repo:Path,base:str,head:str):
         code=status[0] if status else '?'
         if code in {'R','C'}:
             old=toks[i];new=toks[i+1];i+=2
-            out.append((status,normalize_repo_path(old),normalize_repo_path(new)))
+            out.append((status,old,new))
         else:
             path=toks[i];i+=1
-            out.append((status,None,normalize_repo_path(path)))
+            out.append((status,None,path))
     return out
 
 
@@ -133,8 +138,8 @@ def weakening_signals(repo:Path,base:str,head:str,path:str,change_type:str,old_p
     if old_path:args.append(old_path)
     args.append(path)
     raw=run_git(repo,*args,check=False).decode('utf-8','replace') if scan_diff else ''
-    added=[x[1:] for x in raw.splitlines() if x.startswith('+') and not x.startswith('+++')]
-    deleted=[x[1:] for x in raw.splitlines() if x.startswith('-') and not x.startswith('---')]
+    added=[x[1:] for x in raw.split('\n') if x.startswith('+') and not x.startswith('+++')]
+    deleted=[x[1:] for x in raw.split('\n') if x.startswith('-') and not x.startswith('---')]
     global_patterns=[
       ('lint_suppression_added',re.compile(r'(?i)(eslint-disable|@ts-ignore|@ts-nocheck|noinspection|\bnolint\b)')),
       ('coverage_exclusion_added',re.compile(r'(?i)(pragma:\s*no\s*cover|istanbul\s+ignore|coverage:\s*ignore)')),
@@ -195,6 +200,13 @@ def main():
              'mode_before':be['mode'] if be else None,'mode_after':he['mode'] if he else None,'symlink':symlink,'submodule':submodule,'binary':False,'generated':gen,'vendor':vendor,'language':language(path),
              'encoding':{'base':None,'head':None,'confidence':'UNKNOWN','lossless_fallback_used':False},'status':'SKIPPED','skip_reason':None,'lines':{'a':0,'b':0},
              'diff':{'hunk_count':0,'changed_lines':0,'approx':False,'quality_class':'NOT_APPLICABLE','algorithm_path':[],'trace_digest':'0'*64},'weakening_signals':weak}
+        ambiguous_path=bool('\\' in path or (old and '\\' in old))
+        modified_blob_missing=(ctype=='MODIFIED' and (not be or not he or be.get('type')!='blob' or he.get('type')!='blob'))
+        if ambiguous_path or modified_blob_missing:
+            row['status']='ERROR'
+            row['skip_reason']='ambiguous_path_separator' if ambiguous_path else 'modified_blob_identity_missing'
+            files.append(row);had_error=True;coverage_gap=True;apply_ok=False
+            continue
         if submodule or symlink:
             row['skip_reason']='submodule' if submodule else 'symlink';files.append(row);coverage_gap=True;nontext_sensitive=True;continue
         if too_large:
@@ -221,14 +233,15 @@ def main():
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
     actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
-    expected=sensor_cfg.get('trusted_tool',{});hash_mismatch=[k for k,v in actual_hashes.items() if expected.get(k) and expected.get(k)!=v]
+    expected=sensor_cfg.get('trusted_tool',{});hash_mismatch=[k for k,v in actual_hashes.items() if not expected.get(k) or expected.get(k)!=v]
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
     runtime_ok=(regex_ok or not regex_required) and quality_allowed and not had_error and not coverage_gap and apply_ok and not hash_mismatch
     invariants=[
       {'id':'git-merge-base-head-binding','status':'passed','evidence':f'{base[:12]}...{head[:12]} (base tip {base_tip[:12]})'},
       {'id':'apply-opcodes-reconstruct-target','status':'passed' if apply_ok else 'failed','evidence':'all analyzed file transforms reconstruct target' if apply_ok else 'at least one file failed reconstruction'},
       {'id':'regex-timeout-runtime','status':'passed' if regex_ok else 'failed','evidence':'regex timeout engine available' if regex_ok else 'stdlib re fallback detected'},
-      {'id':'trusted-tool-hash','status':'passed' if not hash_mismatch else 'failed','evidence':'pinned tool/dependency hashes match' if not hash_mismatch else 'mismatch: '+','.join(hash_mismatch)},
+      {'id':'trusted-tool-hash','status':'passed' if not hash_mismatch else 'failed','evidence':'pinned tool/dependency hashes match' if not hash_mismatch else 'missing/mismatch: '+','.join(hash_mismatch)},
+      {'id':'git-path-identity','status':'failed' if any('\\' in f['path'] or (f.get('old_path') and '\\' in f['old_path']) for f in files) else 'passed','evidence':'literal backslash path is ambiguous for cross-platform policy/Git lookup' if any('\\' in f['path'] or (f.get('old_path') and '\\' in f['old_path']) for f in files) else 'git paths preserved exactly'},
       {'id':'nontext-coverage','status':'failed' if nontext_sensitive else 'passed','evidence':'symlink/submodule/binary requires higher review' if nontext_sensitive else 'no sensitive non-text change'},
       {'id':'repeat-determinism','status':'unknown','evidence':'not rerun by default adapter'}]
     reasons=[]

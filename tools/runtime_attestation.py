@@ -36,14 +36,14 @@ def consume_nonce(obj,replay_dir):
     except OSError as exc:
         return f'runtime attestation replay cache unavailable: {type(exc).__name__}',None
 
-def create(workspace,key,key_id='external-launcher',case_id=None,base_sha=None,head_sha=None):
-    core={'schema_version':'2.4','workspace':str(Path(workspace).resolve()),'environment_secret_stripping':True,'network_denied':True,'filesystem_scoped_to_workspace':True,
+def create(workspace,key,key_id='external-launcher',case_id=None,base_sha=None,head_sha=None,fresh_model_session_attested=False):
+    core={'schema_version':'2.6','workspace':str(Path(workspace).resolve()),'environment_secret_stripping':True,'network_denied':True,'filesystem_scoped_to_workspace':True,'fresh_model_session_attested':bool(fresh_model_session_attested),
           'case_id':case_id,'base_sha':base_sha,'head_sha':head_sha,'issued_at':utc(),'nonce':secrets.token_hex(16),'key_id':key_id}
     return {**core,'attestation_hmac':mac(core,key)}
 
 def validate(obj,workspace,key,required_fields=None,*,case_id=None,base_sha=None,head_sha=None,max_age_seconds=300,max_future_skew_seconds=5,now=None):
     e=[];core={k:v for k,v in obj.items() if k!='attestation_hmac'}
-    if obj.get('schema_version')!='2.4':e.append('runtime attestation schema mismatch')
+    if obj.get('schema_version') not in {'2.4','2.6'}:e.append('runtime attestation schema mismatch')
     if obj.get('workspace')!=str(Path(workspace).resolve()):e.append('runtime attestation workspace mismatch')
     if not isinstance(obj.get('nonce'),str) or not re.fullmatch(r'[0-9a-f]{32}',obj.get('nonce','')):e.append('runtime attestation nonce invalid')
     required_fields=tuple(required_fields or ('environment_secret_stripping','network_denied','filesystem_scoped_to_workspace'))
@@ -66,11 +66,11 @@ def digest(obj):return object_digest(obj)
 
 def main():
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest='cmd',required=True)
-    c=sub.add_parser('create');c.add_argument('--workspace',required=True);c.add_argument('--output',required=True);c.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');c.add_argument('--key-id',default='external-launcher');c.add_argument('--case-id');c.add_argument('--base-sha');c.add_argument('--head-sha')
+    c=sub.add_parser('create');c.add_argument('--workspace',required=True);c.add_argument('--output',required=True);c.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');c.add_argument('--key-id',default='external-launcher');c.add_argument('--case-id');c.add_argument('--base-sha');c.add_argument('--head-sha');c.add_argument('--fresh-model-session-attested',action='store_true')
     v=sub.add_parser('validate');v.add_argument('--workspace',required=True);v.add_argument('--attestation',required=True);v.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');v.add_argument('--case-id');v.add_argument('--base-sha');v.add_argument('--head-sha');v.add_argument('--max-age-seconds',type=int,default=300);v.add_argument('--max-future-skew-seconds',type=int,default=5)
     ns=ap.parse_args();key=os.environ.get(ns.key_env)
     if not key:raise SystemExit(f'missing {ns.key_env}')
-    if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha));print(ns.output)
+    if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha,ns.fresh_model_session_attested));print(ns.output)
     else:
         o=json.loads(Path(ns.attestation).read_text());errs=validate(o,ns.workspace,key,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
         if errs:print('INVALID');[print('-',x) for x in errs];raise SystemExit(1)
