@@ -46,7 +46,7 @@ def _git_errors(o,repo,expected_base=None):
     return e
 
 
-def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
+def semantic_errors(o,policy_path=None,repo=None,expected_base=None,verify_git=True):
     e=[]
     if o.get('output_digest') != object_digest(o,'output_digest'):e.append('output_digest mismatch')
     semantic_view={k:v for k,v in o.items() if k not in {'performance','semantic_digest','output_digest'}}
@@ -85,10 +85,15 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
     if (regex_required and not regex) and trust.get('runtime_safety')!='FAIL':e.append('runtime_safety must FAIL without required regex timeout')
     pin=sensor_cfg.get('trusted_tool',{});tool=o.get('tool',{})
     actual={'checker_sha256':tool.get('checker_sha256'),'original_package_sha256':tool.get('package_sha256'),'vendor_requirements_sha256':tool.get('dependencies_sha256'),'harness_requirements_sha256':tool.get('harness_dependencies_sha256')}
-    for k in actual:
+    for k in ('checker_sha256','vendor_requirements_sha256','harness_requirements_sha256'):
         v=pin.get(k)
         if not isinstance(v,str) or len(v)!=64:e.append(f'trusted tool pin missing/invalid: {k}')
         elif actual.get(k)!=v:e.append(f'trusted tool pin mismatch: {k}')
+    original_required=bool(pin.get('original_package_required',False));expected_original=pin.get('original_package_sha256');actual_original=actual.get('original_package_sha256')
+    if original_required and actual_original is None:e.append('trusted original package required but unavailable')
+    if actual_original is not None:
+        if not isinstance(expected_original,str) or len(expected_original)!=64:e.append('trusted tool pin missing/invalid: original_package_sha256')
+        elif actual_original!=expected_original:e.append('trusted tool pin mismatch: original_package_sha256')
     # The policy itself pins expected package bytes; additionally verify currently installed harness dependency declaration.
     if tool.get('harness_dependencies_sha256')!=canonical_source_sha256(ROOT/'requirements.txt'):e.append('harness dependency declaration hash mismatch')
     if policy_path:
@@ -96,11 +101,11 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
         for x in files:
             if x.get('old_path'):paths.append(x['old_path'])
             paths.append(x['path'])
-        self_review=is_self_protected_repository(o.get('binding',{}).get('repository'),repo,cfg)
+        self_review=is_self_protected_repository(o.get('binding',{}).get('repository'),repo,cfg,base_ref=o.get('binding',{}).get('base_sha') if repo else None)
         hits=classify_paths(paths,cfg,include_self_protection=self_review);expected=sorted(set(sum(hits.values(),[])))
         if sorted(s.get('protected_candidates',[]))!=expected:e.append('protected_candidates mismatch canonical policy')
     if o.get('binding',{}).get('comparison_mode')!='merge-base':e.append('comparison_mode must be merge-base')
-    if repo:e.extend(_git_errors(o,repo,expected_base))
+    if repo and verify_git:e.extend(_git_errors(o,repo,expected_base))
     return e
 
 
