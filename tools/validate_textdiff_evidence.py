@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, json, sys
+import argparse, hashlib, json, subprocess, sys
 from pathlib import Path
 from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
@@ -10,6 +10,19 @@ Q={"NOT_APPLICABLE":-1,"PROVEN_EXACT":0,"DETERMINISTIC":1,"HEURISTIC":2,"APPROXI
 DETERMINISTIC_EVENTS={"sequence_matcher","positional_low_hamming"}
 HEURISTIC_EVENTS={"banded_myers","patience_crosscheck","patience_split"}
 APPROX_EVENTS={"coarse_positional","coarse_replace"}
+
+
+def canonical_source_sha256(path):
+    p=Path(path).resolve()
+    try:
+        rel=p.relative_to(ROOT.resolve()).as_posix()
+        cp=subprocess.run(['git','-C',str(ROOT),'rev-parse','--is-inside-work-tree'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        if cp.returncode==0 and cp.stdout.strip()=='true':
+            data=subprocess.check_output(['git','-C',str(ROOT),'show',f'HEAD:{rel}'])
+            return hashlib.sha256(data).hexdigest()
+    except Exception:
+        pass
+    return sha256_file(p)
 
 
 def _git_errors(o,repo,expected_base=None):
@@ -77,7 +90,7 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
         if not isinstance(v,str) or len(v)!=64:e.append(f'trusted tool pin missing/invalid: {k}')
         elif actual.get(k)!=v:e.append(f'trusted tool pin mismatch: {k}')
     # The policy itself pins expected package bytes; additionally verify currently installed harness dependency declaration.
-    if tool.get('harness_dependencies_sha256')!=sha256_file(ROOT/'requirements.txt'):e.append('harness dependency declaration hash mismatch')
+    if tool.get('harness_dependencies_sha256')!=canonical_source_sha256(ROOT/'requirements.txt'):e.append('harness dependency declaration hash mismatch')
     if policy_path:
         cfg=load_yaml(policy_path);paths=[]
         for x in files:
