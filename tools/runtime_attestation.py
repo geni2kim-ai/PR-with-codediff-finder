@@ -36,7 +36,7 @@ def consume_nonce(obj,replay_dir):
     except OSError as exc:
         return f'runtime attestation replay cache unavailable: {type(exc).__name__}',None
 
-def create(workspace,key,key_id='external-launcher',case_id=None,base_sha=None,head_sha=None,*,l2_fresh_session=True,adversarial_fresh_session=True):
+def create(workspace,key,key_id='external-launcher',case_id=None,base_sha=None,head_sha=None,*,l2_fresh_session=False,adversarial_fresh_session=False):
     core={'schema_version':'2.6','workspace':str(Path(workspace).resolve()),'environment_secret_stripping':True,'network_denied':True,'filesystem_scoped_to_workspace':True,
           'l2_fresh_session':bool(l2_fresh_session),'adversarial_fresh_session':bool(adversarial_fresh_session),
           'case_id':case_id,'base_sha':base_sha,'head_sha':head_sha,'issued_at':utc(),'nonce':secrets.token_hex(16),'key_id':key_id}
@@ -67,11 +67,11 @@ def digest(obj):return object_digest(obj)
 
 def main():
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest='cmd',required=True)
-    c=sub.add_parser('create');c.add_argument('--workspace',required=True);c.add_argument('--output',required=True);c.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');c.add_argument('--key-id',default='external-launcher');c.add_argument('--case-id');c.add_argument('--base-sha');c.add_argument('--head-sha');c.add_argument('--no-l2-fresh-session',action='store_true');c.add_argument('--no-adversarial-fresh-session',action='store_true')
+    c=sub.add_parser('create');c.add_argument('--workspace',required=True);c.add_argument('--output',required=True);c.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');c.add_argument('--key-id',default='external-launcher');c.add_argument('--case-id');c.add_argument('--base-sha');c.add_argument('--head-sha');c.add_argument('--l2-fresh-session',action='store_true');c.add_argument('--adversarial-fresh-session',action='store_true')
     v=sub.add_parser('validate');v.add_argument('--workspace',required=True);v.add_argument('--attestation',required=True);v.add_argument('--key-env',default='MAESTRO_RUNTIME_ATTESTATION_KEY');v.add_argument('--case-id');v.add_argument('--base-sha');v.add_argument('--head-sha');v.add_argument('--max-age-seconds',type=int,default=300);v.add_argument('--max-future-skew-seconds',type=int,default=5)
     ns=ap.parse_args();key=os.environ.get(ns.key_env)
     if not key:raise SystemExit(f'missing {ns.key_env}')
-    if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha,l2_fresh_session=not ns.no_l2_fresh_session,adversarial_fresh_session=not ns.no_adversarial_fresh_session));print(ns.output)
+    if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha,l2_fresh_session=ns.l2_fresh_session,adversarial_fresh_session=ns.adversarial_fresh_session));print(ns.output)
     else:
         o=json.loads(Path(ns.attestation).read_text());errs=validate(o,ns.workspace,key,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
         if errs:print('INVALID');[print('-',x) for x in errs];raise SystemExit(1)
