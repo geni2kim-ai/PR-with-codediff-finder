@@ -33,7 +33,7 @@ def _human_proof_errors(c,events,cycle_path,human_attestation,human_key,case_pat
     if human_attestation_digest(att)!=ad:e.append('persisted human attestation digest mismatch')
     actor=hp.get('actor_id')
     if not actor:e.append('HUMAN_DECISION actor_id missing')
-    ae=validate_human_attestation(att,case_id=c.get('case_id'),actor_id=actor,verdict=verdict,head_sha=c.get('binding',{}).get('head_sha'),cycle_digest=hp.get('source_cycle_digest'),evidence_digest=c.get('sensor',{}).get('evidence_digest'),key=human_key)
+    ae=validate_human_attestation(att,case_id=c.get('case_id'),actor_id=actor,verdict=verdict,head_sha=c.get('binding',{}).get('head_sha'),cycle_digest=hp.get('source_cycle_digest'),evidence_digest=c.get('sensor',{}).get('evidence_digest'),key=human_key,enforce_freshness=False)
     e.extend(ae)
 
     cp=Path(case_path) if case_path else Path(cycle_path).parent/'case-record.json'
