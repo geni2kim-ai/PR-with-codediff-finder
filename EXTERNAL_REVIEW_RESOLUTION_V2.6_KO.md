@@ -21,7 +21,7 @@
 - trusted-tool pin은 빈 값도 mismatch 처리.
 - random audit는 external seed + case/head/level로 재현 가능; ENFORCED disable 금지.
 - calibration `review_due`는 누적 threshold 이상이면 true, completed windows 별도 기록.
-- L2/Adversarial fresh-session은 signed runtime attestation에 포함.
+- L2/Adversarial fresh-session은 signed runtime attestation에 포함하며 기본값은 false; 외부 launcher의 명시적 assertion이 필요.
 - worker digest는 cwd와 `python -m` module source 포함.
 - outcome/incident/human mutation은 pending snapshot 준비 → ledger append → replace 순서.
 - `route_case` case-bank/queue target immutable; standards/test refs와 L1/L2 digest 포함.
