@@ -235,8 +235,8 @@ def main():
                         stats['changed_lines']=sum(max(x[2]-x[1],x[4]-x[3]) for x in non_equal)
                         stats['quality_class']='PROVEN_EXACT';stats['approx']=False
                         tr={'api_version':tr.get('api_version'),'quality_class':'PROVEN_EXACT',
-                            'algorithm_path':list(tr.get('algorithm_path',[]))+['adapter_full_myers_verify'],
-                            'events':list(tr.get('events',[]))+[{'event':'adapter_full_myers_verify','quality':'PROVEN_EXACT','a_len':len(a),'b_len':len(b),'d_cap':512}]}
+                            'algorithm_path':['adapter_full_myers_verify'],
+                            'events':[{'event':'adapter_full_myers_verify','quality':'PROVEN_EXACT','a_len':len(a),'b_len':len(b),'d_cap':512}]}
                 except Exception:
                     pass
             ok=(reconstruct(a,b,ops)==b);apply_ok &= ok
