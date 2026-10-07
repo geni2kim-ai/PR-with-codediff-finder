@@ -75,27 +75,30 @@ def load(rel):return json.loads((ROOT/rel).read_text())
 def assert_clean(label,errs):
     if errs:raise SystemExit(label+': '+'; '.join(errs))
     print(label+': PASS')
+def _terminate_test_group(group_id):
+    if os.name!='nt':
+        try:os.killpg(group_id,signal.SIGKILL)
+        except ProcessLookupError:pass
+        except PermissionError:pass
+
 def _run_group(group, timeout):
     with tempfile.TemporaryDirectory(prefix='harness-test-') as td:
         op=Path(td)/'stdout';ep=Path(td)/'stderr'
         with op.open('wb') as of,ep.open('wb') as ef:
-            proc=subprocess.Popen([sys.executable,'-m','unittest','-q',group],cwd=ROOT,stdout=of,stderr=ef,start_new_session=(os.name!='nt'))
-            try:
-                proc.wait(timeout=timeout)
+            kwargs={'cwd':ROOT,'stdout':of,'stderr':ef}
+            if os.name!='nt':kwargs['start_new_session']=True
+            proc=subprocess.Popen([sys.executable,'-m','unittest','-q',group],**kwargs);group_id=proc.pid;timed_out=False
+            try:proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                if os.name!='nt':
-                    try: os.killpg(proc.pid,signal.SIGKILL)
-                    except ProcessLookupError: pass
+                timed_out=True
+                if os.name!='nt':_terminate_test_group(group_id)
                 else:proc.kill()
                 proc.wait(timeout=5)
+            finally:
+                if os.name!='nt':_terminate_test_group(group_id)
+            if timed_out:
                 err=ep.read_text(encoding='utf-8',errors='replace') if ep.exists() else ''
                 return False,0,f'timeout after {timeout}s\n{err[-4000:]}'
-            finally:
-                # On timeout we kill the whole process group above.  On PASS the tested
-                # worker runtime is itself responsible for descendant cleanup; sending a
-                # signal to a leader PID after it has exited can race with PID reuse in a
-                # long validation parent.
-                pass
         out=op.read_text(encoding='utf-8',errors='replace');err=ep.read_text(encoding='utf-8',errors='replace')
         if proc.returncode:return False,0,f'exit {proc.returncode}\n{out[-2000:]}\n{err[-4000:]}'
         m=re.search(r'Ran\s+(\d+)\s+tests?',out+'\n'+err)

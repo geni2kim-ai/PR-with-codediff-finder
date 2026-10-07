@@ -73,7 +73,7 @@ def scan_stage_result(o):
     flags=[
         scan_text(
             v,
-            bare_host=(k in {'source_ref','failure_family'} and not (k=='source_ref' and looks_repo_ref(v)))
+            bare_host=not (k=='source_ref' and looks_repo_ref(v))
         )
         for k,v in vals
     ]

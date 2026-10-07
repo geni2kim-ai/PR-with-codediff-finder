@@ -4,6 +4,8 @@ from datetime import datetime,timezone
 from pathlib import Path
 from common import canonical_bytes,write_json,object_digest
 
+V26_REQUIRED_FIELDS=('environment_secret_stripping','network_denied','filesystem_scoped_to_workspace','l2_fresh_session','adversarial_fresh_session')
+
 
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 def mac(core,key):return hmac.new(key.encode(),canonical_bytes(core),hashlib.sha256).hexdigest()
@@ -73,7 +75,7 @@ def main():
     if not key:raise SystemExit(f'missing {ns.key_env}')
     if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha,l2_fresh_session=ns.l2_fresh_session,adversarial_fresh_session=ns.adversarial_fresh_session));print(ns.output)
     else:
-        o=json.loads(Path(ns.attestation).read_text());errs=validate(o,ns.workspace,key,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
+        o=json.loads(Path(ns.attestation).read_text());required=V26_REQUIRED_FIELDS if o.get('schema_version')=='2.6' else None;errs=validate(o,ns.workspace,key,required_fields=required,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
         if errs:print('INVALID');[print('-',x) for x in errs];raise SystemExit(1)
         print('VALID')
 if __name__=='__main__':main()

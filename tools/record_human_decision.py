@@ -94,7 +94,14 @@ def main():
     persisted_att=cycle_path.parent/'human-decision-attestation.json'
     ledger_key=os.environ.get(ns.ledger_hmac_key_env);human_key=os.environ.get(ns.human_key_env)
     supplied_att=json.loads(Path(ns.attestation).read_text());supplied_digest=human_attestation_digest(supplied_att)
-    replay_dir=Path(ns.human_replay_dir or os.environ.get('MAESTRO_HUMAN_DECISION_REPLAY_DIR') or (cycle_path.parent/'.human-decision-replay')).resolve()
+    configured_replay=os.environ.get('MAESTRO_HUMAN_DECISION_REPLAY_DIR')
+    if not configured_replay:raise SystemExit('trusted shared human replay cache required: set MAESTRO_HUMAN_DECISION_REPLAY_DIR')
+    replay_dir=Path(configured_replay).resolve()
+    if ns.human_replay_dir and Path(ns.human_replay_dir).resolve()!=replay_dir:
+        raise SystemExit('--human-replay-dir must match trusted MAESTRO_HUMAN_DECISION_REPLAY_DIR')
+    case_bundle_dir=cycle_path.parent.resolve()
+    if replay_dir==case_bundle_dir or case_bundle_dir in replay_dir.parents:
+        raise SystemExit('human replay cache must be outside the mutable case bundle')
 
     if tx_path.exists():
         tx=json.loads(tx_path.read_text())
