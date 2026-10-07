@@ -15,6 +15,7 @@ SECRET_PATTERNS=[
  re.compile(r'(?i)(?:^|[^A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}(?:$|[^A-Za-z0-9_])'),
  re.compile(r'(?:^|[^A-Z0-9])AKIA[0-9A-Z]{16}(?:$|[^A-Z0-9])'),
  re.compile(r'(?:^|[^A-Za-z0-9_-])sk_(?:live|test)_[A-Za-z0-9]{12,}(?:$|[^A-Za-z0-9_-])'),
+ re.compile(r'(?i)(?:^|[^A-Za-z0-9_-])sk-(?:proj-)?[A-Za-z0-9_-]{16,}(?:$|[^A-Za-z0-9_-])'),
  re.compile(r'(?:^|[^A-Za-z0-9_-])xox[baprs]-[A-Za-z0-9-]{10,}(?:$|[^A-Za-z0-9_-])'),
  re.compile(r'(?:^|[^A-Za-z0-9_-])AIza[0-9A-Za-z_-]{30,}(?:$|[^A-Za-z0-9_-])'),
  re.compile(r'(?i)Bearer\s+[A-Za-z0-9._~+/-]{12,}={0,2}'),
