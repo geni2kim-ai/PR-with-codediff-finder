@@ -44,7 +44,8 @@ runtime:
   - environment_secret_stripping
   - network_denied
   - filesystem_scoped_to_workspace
-  - fresh_model_session_attested
+  - l2_fresh_session
+  - adversarial_fresh_session
   attestation_max_age_seconds: 300
   attestation_max_future_skew_seconds: 5
   ledger_hmac_required_in_enforced: true

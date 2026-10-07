@@ -5,8 +5,8 @@
  _REGEX_TIMEOUT = 1.0  # 정규식 단일 finditer 상한(초). 사용자 패턴 ReDoS 방지용.
  
 +# Harness integration metadata. This does not change the desktop product version.
-+HARNESS_API_VERSION = "1.4.6-harness.1"
-+_DIFF_QUALITY_ORDER = {"PROVEN_EXACT": 0, "HEURISTIC": 1, "APPROXIMATE": 2}
++HARNESS_API_VERSION = "1.4.6-harness.2"
++_DIFF_QUALITY_ORDER = {"PROVEN_EXACT": 0, "DETERMINISTIC": 1, "HEURISTIC": 2, "APPROXIMATE": 3}
 +
 +def _trace_event(trace, event: str, quality: str | None = None, **data) -> None:
 +    """Append a machine-readable diff-path event for external evidence collection."""
@@ -104,7 +104,7 @@
              ops.append(("delete", a0, a1, b0, b0))
              continue
          if max(n, m) <= _DIFF_SMALL_LIMIT:
-+            _trace_event(trace, "sequence_matcher", "HEURISTIC", a_len=n, b_len=m, autojunk=False)
++            _trace_event(trace, "sequence_matcher", "DETERMINISTIC", a_len=n, b_len=m, autojunk=False)
              if cancel is not None and cancel.is_set():
                  raise Cancelled("사용자 취소")
              for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
@@ -117,7 +117,7 @@
 +        if n == m:
 +            ham = _ham_frac(a, a0, b, b0, n, cancel)
 +            if ham <= _DIFF_POSITIONAL_MAX_FRAC:
-+                _trace_event(trace, "positional_low_hamming", "HEURISTIC", a_len=n, b_len=m, hamming_fraction=ham)
++                _trace_event(trace, "positional_low_hamming", "DETERMINISTIC", a_len=n, b_len=m, hamming_fraction=ham)
 +                ops.extend(_positional_opcodes(a, b, a0, b0, n))
 +                continue
          done = False

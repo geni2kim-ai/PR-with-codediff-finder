@@ -9,10 +9,10 @@
     "head_sha": "a89d41619cac11b8195f76b93b3598b99eca9edf"
   },
   "sensor": {
-    "evidence_digest": "1c83bdc4ea48aeaa692505bb0820a285b8c477354aa29cd55c169d2d11e37de8",
-    "semantic_digest": "e6607b74c6afeb9a3067918c88a1cbf0a4910f28f7eb71b26becc7f921c8c3bf",
-    "tool_version": "1.4.6-harness.1",
-    "quality_class": "HEURISTIC",
+    "evidence_digest": "e770b94f4649f892d008c247abfe91ebf7c8b705c7d44963a558a6c571ca4b03",
+    "semantic_digest": "2ab301ddcca33714d638e5f1f1d67256242a4554e0390bb8ca507ab3da971943",
+    "tool_version": "1.4.6-harness.2",
+    "quality_class": "DETERMINISTIC",
     "score_ref": null
   },
   "review_trail": [
@@ -29,7 +29,7 @@
       "confidence": "high",
       "result_digest": "228f6341346eaeaaae2393a8a5981bb7a8e4f775584ef04eb5b428b3c107b7c3",
       "reviewed_head_sha": "a89d41619cac11b8195f76b93b3598b99eca9edf",
-      "evidence_digest": "1c83bdc4ea48aeaa692505bb0820a285b8c477354aa29cd55c169d2d11e37de8",
+      "evidence_digest": "e770b94f4649f892d008c247abfe91ebf7c8b705c7d44963a558a6c571ca4b03",
       "input_digest": "e4aae6bcbbea80d3fcc720deffa0596dad6837eabca8850f2da1ae09ffcef25c",
       "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
       "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -54,7 +54,7 @@
       "confidence": "high",
       "result_digest": "e349f88c0daa143dbabaae4ddae423daa530765b3b7c23b1f5c02a99b63f9d77",
       "reviewed_head_sha": "a89d41619cac11b8195f76b93b3598b99eca9edf",
-      "evidence_digest": "1c83bdc4ea48aeaa692505bb0820a285b8c477354aa29cd55c169d2d11e37de8",
+      "evidence_digest": "e770b94f4649f892d008c247abfe91ebf7c8b705c7d44963a558a6c571ca4b03",
       "input_digest": "ecf40895dc78fca2ee37e4fd24220fd683659e750b1945663051c5ff08874c44",
       "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
       "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",

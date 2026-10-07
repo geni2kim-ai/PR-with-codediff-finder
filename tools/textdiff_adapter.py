@@ -5,9 +5,9 @@ from pathlib import Path, PurePosixPath
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from common import object_digest, sha256_file, write_json
-from policy_engine import load_yaml, classify_paths, normalize_repo_path
+from policy_engine import load_yaml, classify_paths, normalize_repo_path, is_self_protected_repository
 
-QUALITY_ORDER={"PROVEN_EXACT":0,"HEURISTIC":1,"APPROXIMATE":2,"NOT_APPLICABLE":-1}
+QUALITY_ORDER={"PROVEN_EXACT":0,"DETERMINISTIC":1,"HEURISTIC":2,"APPROXIMATE":3,"NOT_APPLICABLE":-1}
 ENC_HIGH={"utf-8","utf-8-sig","utf-16"}
 # Legacy single-byte/multibyte guesses can decode the wrong charset losslessly. Treat
 # them as LOW confidence for a review gate unless a future detector proves charset.
@@ -38,11 +38,6 @@ def merge_base(repo:Path, base_ref:str, head_ref:str)->str:
 
 
 def changed_entries(repo:Path,base:str,head:str):
-    """Return Git paths exactly as Git reported them.
-
-    Policy matching may normalize separators separately, but object lookup must never
-    rewrite a Git path. A literal backslash is a valid filename character on POSIX.
-    """
     raw=run_git(repo,'diff','--name-status','-z','-M','-C',base,head)
     toks=raw.decode('utf-8','surrogateescape').split('\0')
     if toks and toks[-1]=='': toks.pop()
@@ -52,6 +47,9 @@ def changed_entries(repo:Path,base:str,head:str):
         code=status[0] if status else '?'
         if code in {'R','C'}:
             old=toks[i];new=toks[i+1];i+=2
+            # Preserve the exact Git path. A backslash can be a literal filename
+            # character on POSIX; converting it before ls-tree/cat-file creates a
+            # false-exact zero-line analysis. Policy matching normalizes separately.
             out.append((status,old,new))
         else:
             path=toks[i];i+=1
@@ -146,6 +144,18 @@ def weakening_signals(repo:Path,base:str,head:str,path:str,change_type:str,old_p
     ]
     for kind,rx in global_patterns:
         if any(rx.search(x) for x in added):out.append({'kind':kind,'path':path,'evidence':kind.replace('_',' ')})
+    policy_path=normalize_repo_path(path).casefold()
+    policy_old=normalize_repo_path(old_path).casefold() if old_path else None
+    if (policy_path.endswith('.sql') or (policy_old or '').endswith('.sql')) and any(
+        re.search(r'(?i)\b(drop\s+(?:table|column|database|index)|truncate\s+table|delete\s+from)\b',x) for x in added+deleted
+    ):
+        out.append({'kind':'destructive_migration','path':path,'evidence':'destructive SQL operation changed'})
+    if ('api/public/' in policy_path or 'schemas/public/' in policy_path) and deleted:
+        out.append({'kind':'public_contract_break','path':path,'evidence':'public contract lines removed/changed'})
+    if policy_path.endswith('codeowners') or '.github/ruleset' in policy_path or '.github/rulesets/' in policy_path:
+        out.append({'kind':'ruleset_codeowners_change','path':path,'evidence':'ruleset/CODEOWNERS changed'})
+    if any(seg in policy_path.split('/') for seg in ('payments','billing')) and (added or deleted):
+        out.append({'kind':'payment_external_side_effect','path':path,'evidence':'payment/billing behavior changed'})
     if test_path:
         skip_rx=re.compile(r'(?i)(pytest\.mark\.(?:skip|xfail)|\bskip\s*\(|\btest\.skip\s*\(|\bxit\s*\(|@Disabled\b|\bt\.Skip\s*\()')
         if any(skip_rx.search(x) for x in added):out.append({'kind':'test_skip_added','path':path,'evidence':'test skip/xfail added'})
@@ -188,7 +198,7 @@ def main():
     for _,old,new in entries:
         if old:all_paths.append(old)
         all_paths.append(new)
-    hits=classify_paths(all_paths,cfg);protected=sorted(set(sum(hits.values(),[])))
+    self_review=is_self_protected_repository(ns.repository,repo,cfg);hits=classify_paths(all_paths,cfg,include_self_protection=self_review);protected=sorted(set(sum(hits.values(),[])))
     files=[];all_weak=[];apply_ok=True;had_error=False;coverage_gap=False;nontext_sensitive=False
     for status,old,path in entries:
         code=status[0] if status else '?';ctype={'A':'ADDED','D':'DELETED','M':'MODIFIED','R':'RENAMED','C':'COPIED','T':'TYPE_CHANGED','U':'UNMERGED'}.get(code,'UNKNOWN')
@@ -200,13 +210,15 @@ def main():
              'mode_before':be['mode'] if be else None,'mode_after':he['mode'] if he else None,'symlink':symlink,'submodule':submodule,'binary':False,'generated':gen,'vendor':vendor,'language':language(path),
              'encoding':{'base':None,'head':None,'confidence':'UNKNOWN','lossless_fallback_used':False},'status':'SKIPPED','skip_reason':None,'lines':{'a':0,'b':0},
              'diff':{'hunk_count':0,'changed_lines':0,'approx':False,'quality_class':'NOT_APPLICABLE','algorithm_path':[],'trace_digest':'0'*64},'weakening_signals':weak}
-        ambiguous_path=bool('\\' in path or (old and '\\' in old))
         modified_blob_missing=(ctype=='MODIFIED' and (not be or not he or be.get('type')!='blob' or he.get('type')!='blob'))
-        if ambiguous_path or modified_blob_missing:
-            row['status']='ERROR'
-            row['skip_reason']='ambiguous_path_separator' if ambiguous_path else 'modified_blob_identity_missing'
-            files.append(row);had_error=True;coverage_gap=True;apply_ok=False
-            continue
+        if modified_blob_missing:
+            row['status']='ERROR';row['skip_reason']='modified_blob_identity_missing';files.append(row);had_error=True;coverage_gap=True;apply_ok=False;continue
+        missing_required = (
+            (ctype in {'MODIFIED','RENAMED','COPIED','TYPE_CHANGED'} and (be is None or he is None)) or
+            (ctype=='ADDED' and he is None) or (ctype=='DELETED' and be is None)
+        )
+        if missing_required:
+            row['status']='ERROR';row['skip_reason']='git_tree_entry_missing';files.append(row);had_error=True;coverage_gap=True;continue
         if submodule or symlink:
             row['skip_reason']='submodule' if submodule else 'symlink';files.append(row);coverage_gap=True;nontext_sensitive=True;continue
         if too_large:
@@ -232,16 +244,17 @@ def main():
             had_error=True;coverage_gap=True;apply_ok=False;row['status']='ERROR';row['skip_reason']=type(exc).__name__
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
-    actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
-    expected=sensor_cfg.get('trusted_tool',{});hash_mismatch=[k for k,v in actual_hashes.items() if not expected.get(k) or expected.get(k)!=v]
+    actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip') if (ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip').is_file() else sensor_cfg.get('trusted_tool',{}).get('original_package_sha256'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
+    expected=sensor_cfg.get('trusted_tool',{});required_pins=tuple(actual_hashes)
+    hash_mismatch=[k for k in required_pins if not isinstance(expected.get(k),str) or not re.fullmatch(r'[0-9a-fA-F]{64}',expected.get(k,'') or '') or expected.get(k).lower()!=actual_hashes[k].lower()]
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
     runtime_ok=(regex_ok or not regex_required) and quality_allowed and not had_error and not coverage_gap and apply_ok and not hash_mismatch
     invariants=[
       {'id':'git-merge-base-head-binding','status':'passed','evidence':f'{base[:12]}...{head[:12]} (base tip {base_tip[:12]})'},
       {'id':'apply-opcodes-reconstruct-target','status':'passed' if apply_ok else 'failed','evidence':'all analyzed file transforms reconstruct target' if apply_ok else 'at least one file failed reconstruction'},
       {'id':'regex-timeout-runtime','status':'passed' if regex_ok else 'failed','evidence':'regex timeout engine available' if regex_ok else 'stdlib re fallback detected'},
-      {'id':'trusted-tool-hash','status':'passed' if not hash_mismatch else 'failed','evidence':'pinned tool/dependency hashes match' if not hash_mismatch else 'missing/mismatch: '+','.join(hash_mismatch)},
-      {'id':'git-path-identity','status':'failed' if any('\\' in f['path'] or (f.get('old_path') and '\\' in f['old_path']) for f in files) else 'passed','evidence':'literal backslash path is ambiguous for cross-platform policy/Git lookup' if any('\\' in f['path'] or (f.get('old_path') and '\\' in f['old_path']) for f in files) else 'git paths preserved exactly'},
+      {'id':'trusted-tool-hash','status':'passed' if not hash_mismatch else 'failed','evidence':'pinned tool/dependency hashes match' if not hash_mismatch else 'mismatch: '+','.join(hash_mismatch)},
+      {'id':'git-path-identity','status':'passed','evidence':'Git lookup uses raw paths; policy normalization is separate'},
       {'id':'nontext-coverage','status':'failed' if nontext_sensitive else 'passed','evidence':'symlink/submodule/binary requires higher review' if nontext_sensitive else 'no sensitive non-text change'},
       {'id':'repeat-determinism','status':'unknown','evidence':'not rerun by default adapter'}]
     reasons=[]

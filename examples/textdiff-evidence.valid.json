@@ -3,9 +3,9 @@
   "tool": {
     "name": "TextDiffChecker",
     "product_version": "1.4.6",
-    "harness_api_version": "1.4.6-harness.1",
+    "harness_api_version": "1.4.6-harness.2",
     "package_sha256": "8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9",
-    "checker_sha256": "46380220db542507888178a62eea55d864aa3477ef339a4818144c9b243da790",
+    "checker_sha256": "b3c82ea46e2d440e2fa2cc2196d57b735192563dea782b048f7fe3be26ffae24",
     "syntax_db_sha256": "1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf",
     "dependencies_sha256": "7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124",
     "harness_dependencies_sha256": "a07baf4812dec8ccaa2cbc8fbd8b955a3f28abee022255f0820ca7b0e134d596",
@@ -15,7 +15,7 @@
       "PyYAML": "6.0.3",
       "regex": "2026.5.9"
     },
-    "config_sha256": "1450e4342c24abf0b585f891b0d8280a964dfcbf1be607d301ef08d5ffced748",
+    "config_sha256": "e224744a360306e3ec9007e7f98f862c70d57db93fb47e5c27f67a3f5ce7e59b",
     "regex_timeout_available": true
   },
   "binding": {
@@ -32,7 +32,7 @@
     "b_lines": 1,
     "hunk_count": 1,
     "changed_lines": 1,
-    "quality_class": "HEURISTIC",
+    "quality_class": "DETERMINISTIC",
     "protected_candidates": [
       "requirements.txt"
     ],
@@ -70,7 +70,7 @@
         "hunk_count": 1,
         "changed_lines": 1,
         "approx": false,
-        "quality_class": "HEURISTIC",
+        "quality_class": "DETERMINISTIC",
         "algorithm_path": [
           "diff_start",
           "sequence_matcher"
@@ -123,6 +123,6 @@
     "trusted_for_gate": true,
     "reasons": []
   },
-  "semantic_digest": "e6607b74c6afeb9a3067918c88a1cbf0a4910f28f7eb71b26becc7f921c8c3bf",
-  "output_digest": "1c83bdc4ea48aeaa692505bb0820a285b8c477354aa29cd55c169d2d11e37de8"
+  "semantic_digest": "2ab301ddcca33714d638e5f1f1d67256242a4554e0390bb8ca507ab3da971943",
+  "output_digest": "e770b94f4649f892d008c247abfe91ebf7c8b705c7d44963a558a6c571ca4b03"
 }

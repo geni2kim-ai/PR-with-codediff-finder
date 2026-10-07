@@ -226,6 +226,7 @@
         "quality_class": {
           "enum": [
             "PROVEN_EXACT",
+            "DETERMINISTIC",
             "HEURISTIC",
             "APPROXIMATE",
             "NOT_APPLICABLE"

@@ -1,9 +1,9 @@
-# Stable v2.4 dogfood evidence
+# Historical stable-v2.4 dogfood evidence
 
-This bundle preserves the stable-v2.4 SHADOW policy-routing evidence for the final v2.5 code candidate (`864ef63404f3b9997ce123a661afdf0a8056efc8`).
+This directory is retained as historical v2.4 → v2.5 SHADOW routing evidence.
 
-Scope:
-- reviewers in this bundle are deterministic `mock_reviewer --mode pass` workers;
-- therefore this proves sensor binding, escalation routing and governance floors, not semantic approval by a real L1/L2/Adversarial model;
-- the final stable result is `HUMAN_REQUIRED`, required `HUMAN`, achieved `ADVERSARIAL`, gate `action_required`;
-- see `../../DOGFOOD_V2.4_TO_V2.5_KO.md` for the narrative and limitations.
+- Review workers were deterministic `mock_reviewer --mode pass` workers.
+- It demonstrates sensor binding, escalation routing and governance floors, not semantic approval by a real reviewer model.
+- The stored result is `HUMAN_REQUIRED`, required `HUMAN`, achieved `ADVERSARIAL`, gate `action_required`.
+- The commit identifier recorded in the historical narrative was producer-reported; this package does not include the original Git history needed to independently verify that commit identity.
+- `textdiff-evidence.json` is the canonical evidence copy in this directory.

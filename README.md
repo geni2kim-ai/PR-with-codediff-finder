@@ -1,100 +1,97 @@
-# GitHub / Local PR Review Harness v2.5
+# GitHub / Local PR Review Harness v2.6
 
-v2.5 is the first release developed **under v2.4 SHADOW self-review (dogfooding)**. It keeps the v2.4 evidence/gate hardening and adds temporal trust, reviewer execution provenance, and validation-runner hardening.
+v2.6 is the hardening release produced from the external v2.5 adversarial review. It keeps the v2.5 stable SHADOW operating model and closes authority, ledger, sensor, output-safety, and worker-runtime bypasses found by direct reproduction.
 
-> Package version: **2.5**
-> Wire/schema compatibility: existing JSON objects remain `schema_version: "2.4"`; v2.5 adds backward-compatible optional provenance fields and one new ledger event type.
-
-```text
-stable baseline v2.4
-      ↓ SHADOW review of candidate changes
-candidate v2.5
-      ↓
-TextDiff evidence → L1 → L2 → Adversarial → Human
-      ↓
-case/ledger + dogfood findings
-      ↓
-Leonardo/Davinchi improvement loop
-```
-
-## What v2.5 adds
-
-- **base-ref freshness**: HEAD and the trusted base ref/merge-base are re-resolved at review close; either moving makes the cycle `STALE`;
-- **runtime-attestation freshness/context binding**: ENFORCED attestation is bound to workspace + case id + base SHA + head SHA and rejected when stale/future-skewed;
-- **truthful sandbox signaling**: workers receive `MAESTRO_REVIEW_SANDBOX_VERIFIED=1` only when externally attested controls were verified; the old unconditional sandbox claim is removed;
-- **runtime attestation provenance**: an accepted attestation is recorded as `RUNTIME_ATTESTED` in the case ledger and its digest is propagated into reviewer tasks;
-- **attestation replay defense**: ENFORCED consumes each attestation nonce exactly once through a launcher-owned replay cache outside the repository;
-- **reviewer worker fingerprint**: configured worker argv plus executable/script bytes are bound to `worker_command_digest` and retained in case backdata/calibration;
-- **environment allowlist defense**: secret-like environment variable names are rejected at runtime config and defensively not forwarded;
-- **validation runner hardening**: child test output uses files instead of inherited pipes and multiprocessing-sensitive tests are isolated in explicit OS-process groups; test enumeration is disposable, descendant process groups are cleaned after each run, and a coverage guard fails if registered test modules contain tests missing from the validation groups.
-
-## Stable v2.4 protections retained
-
-- merge-base → HEAD diff;
-- rename/copy old + new path classification;
-- protected-path floors and deterministic escalation;
-- evidence revalidation against Git plus deterministic sensor recomputation;
-- binary/symlink/submodule coverage escalation;
-- reviewer output size/time/safety enforcement;
-- anchored/HMAC ledger;
-- L1/L2 independent context and Adversarial-only lower-layer visibility;
-- Case Bank / RSI / calibration / standard-candidate governance.
-
-## SHADOW workflow
-
-1. Freeze the stable reviewer version used as the judge.
-2. Commit the candidate code change.
-3. Generate evidence with the **stable** adapter, not the candidate adapter.
-4. Run the stable review cycle in `SHADOW`.
-5. Preserve its authority result even when the candidate's own tests pass.
-6. Fix candidate issues, rerun, and store the dogfood summary in backdata.
-7. Never allow the candidate version to be its own final approval authority.
-
-See `docs/DOGFOOD_WORKFLOW.md` and `DOGFOOD_V2.4_TO_V2.5_KO.md`.
-
-## Recommended operating pattern: use v2.5 as the stable SHADOW baseline
-
-For the next coding change, keep **v2.5 frozen as the stable SHADOW reviewer** and let it review the candidate version. The candidate must never be its own final approval authority.
-
-Recommended loop:
+> Package version: **2.6**  
+> Wire compatibility: reviewer/task/evidence/event JSON objects intentionally retain the established `schema_version: "2.4"` wire contracts unless a specific v2.6 runtime/policy document says otherwise.
 
 ```text
 stable v2.5 SHADOW baseline
         ↓
-actual development / code change
+candidate v2.6
         ↓
 TextDiff evidence
         ↓
-L1 self-review
+L1 → L2 → Adversarial → Human
         ↓
-L2 independent review when required
+anchored Case Bank + outcome/incident feedback
         ↓
-Adversarial review for disagreement, novel failures, high risk, or low confidence
-        ↓
-Human authority when the policy floor requires it
-        ↓
-fix / rerun / close
-        ↓
-Case Bank + ledger + outcome + post-merge feedback
-        ↓
-Leonardo reviewer calibration / backdata
-        ↓
-regression fixture / standard candidate / next improvement
+Leonardo/Davinchi calibration / regression / standards loop
 ```
 
-Operational tips:
+## v2.6 hardening highlights
 
-- Keep the stable reviewer version immutable during one candidate cycle. Upgrade the baseline only after the candidate has been independently reviewed and accepted.
-- Run the stable adapter/reviewer on each meaningful change bundle, not only once at the end. This preserves *when* a defect entered and *which* review level first detected it.
-- Preserve L1, L2, Adversarial, and Human decisions as an append-only review trail. Do not overwrite an earlier verdict when a higher layer disagrees.
-- Treat `L1 != L2`, deterministic-sensor disagreement, protected/governance paths, novel failure families, blocker candidates, or low-confidence results as escalation candidates.
-- Use random audits on otherwise easy L1 cases so calibration is not based only on difficult escalated cases.
-- Record author action (`fixed`, `rejected`, `accepted risk`), merge outcome, and post-merge incidents. These later outcomes are stronger calibration labels than reviewer self-reports.
-- Promote repeated confirmed misses into regression fixtures and standard candidates. A reviewer or RSI component may propose a standard change, but must not approve its own rule change.
-- Keep raw source/hunk content out of centralized backdata where possible; retain hashes, bounded evidence, failure-family labels, provenance, and outcome metadata instead.
-- Do not switch to ENFORCED merely because SHADOW accuracy looks good. Require the external sandbox/attestation, real worker adapters, GitHub required-check E2E, and sufficient calibration evidence first.
+- **Canonical ledger anchor**: `case-events.anchor.json`; post-cycle tools use the same anchor and validate it before mutation.
+- **No HMAC downgrade**: an HMAC-backed ledger cannot be appended without the key, and deleting the anchor cannot silently restart history.
+- **Real HUMAN floor in the cycle**: human-floor paths, high/critical security surface, hard reversibility and other deterministic floors cannot stop at Adversarial.
+- **Harness self-protection**: when this repository reviews itself, `tools/**`, `tests/**`, `vendor/**`, requirements and integrity files are governance/HUMAN protected without imposing that floor on unrelated application repositories.
+- **Case-insensitive policy matching** with exact Git-path preservation.
+- **HUMAN terminal transition**: signed external human-decision attestation + current HEAD check + anchored ledger validation produces `HUMAN_CONFIRMED` or `HUMAN_REJECTED`.
+- **Cycle/ledger binding**: GitHub check rendering rejects a recomputed-but-forged `review-cycle.json` unless it matches the latest `CYCLE_CLOSED` ledger event.
+- **Backslash-path false-exact fix**: Git paths remain exact for Git object lookup while policy matching normalizes separately.
+- **Quality classification**: deterministic non-minimal diff paths use `DETERMINISTIC`; heuristic fallbacks remain `HEURISTIC`.
+- **Stronger output safety**: normal code identifiers such as `java.net.URL` are not mistaken for domains, while URL schemes/reference-host fields/zero-width mentions/common secrets/tokens/JWT/Bearer/DB URLs are checked by the harness.
+- **Unicode-safe JSONL and weakening scans**: LF is the physical boundary; U+2028/U+2029/U+0085 and form-feed no longer alter parsing semantics.
+- **Worker bounds**: stdin is file-backed before launch, stdout/stderr are capped while running, and timeout kills the reviewer process tree.
+- **Deterministic policy signals are live**: destructive migration, public-contract break, CODEOWNERS/ruleset changes, payment/billing changes and deterministic-reviewer conflict are generated and routed.
+- **Reproducible random audits**: selection is derived from external audit seed + case/head/level; ENFORCED forbids `--disable-random-audit`.
+- **Worker provenance** includes cwd and resolvable `python -m` module source bytes.
+- **Validation auto-discovery** includes new `tests/test_*.py` modules so a new test file cannot silently miss the canonical run.
 
-This means normal local coding activity becomes useful review data automatically: **the more real code is produced and reviewed, the larger the Leonardo calibration/backdata corpus becomes**. Over time, reviewer accuracy should be measured per layer and per failure family rather than as one overall score.
+## Authority model
+
+```text
+SENSOR
+  ↓
+L1 — high-volume first review
+  ↓ when policy/signal requires
+L2 — independent cross-check
+  ↓ on disagreement, novelty, protected risk, deterministic conflict
+ADVERSARIAL — independent adjudication
+  ↓ when HUMAN floor applies
+HUMAN_REQUIRED
+  ↓ external signed human decision + same reviewed HEAD
+HUMAN_CONFIRMED / HUMAN_REJECTED
+```
+
+The harness may raise authority but may not lower a deterministic HUMAN floor. A mock/model PASS is not authorization to bypass that floor.
+
+## Recommended operating pattern
+
+Keep the prior stable reviewer frozen while reviewing a candidate release. After v2.6 is independently accepted, it can become the next stable SHADOW baseline.
+
+```text
+actual code change
+   ↓
+TextDiff evidence
+   ↓
+L1
+   ↓
+L2 when required
+   ↓
+Adversarial when required
+   ↓
+Human authority when required
+   ↓
+fix / rerun / outcome
+   ↓
+Case Bank + ledger
+   ↓
+Leonardo reviewer calibration / backdata
+   ↓
+regression fixture / candidate standard / next release
+```
+
+Operational rules:
+
+- freeze the reviewing baseline for a candidate cycle;
+- bind every case to base SHA, head SHA, sensor digest, reviewer provenance and policy/standards digest;
+- preserve disagreements instead of overwriting lower-layer verdicts;
+- separate random-audit strata from risk escalation in calibration;
+- treat author fixes, merge outcomes and post-merge incidents as stronger labels than reviewer self-reports;
+- centralize hashes/structured evidence rather than raw proprietary source where possible;
+- a reviewer/RSI component may propose its own improvement but may not approve its own rule or promotion;
+- do not move to ENFORCED merely because SHADOW accuracy is high.
 
 ## Evidence generation
 
@@ -108,7 +105,7 @@ python tools/textdiff_adapter.py \
   --output /review/CASE-001-evidence.json
 ```
 
-## Shadow review cycle
+## SHADOW review cycle
 
 ```bash
 python tools/run_review_cycle.py \
@@ -121,32 +118,36 @@ python tools/run_review_cycle.py \
   --l2-cmd-json '["python","l2_worker.py"]'
 ```
 
-The cycle is invalidated if HEAD **or the trusted base ref/merge-base** changes before close.
+The cycle becomes stale if HEAD or the trusted base ref/merge-base changes before close.
+
+## HUMAN decision
+
+`record_human_decision.py` no longer accepts an unauthenticated self-declaration. The current HEAD, anchored cycle and an external HMAC-backed human-decision attestation must agree.
+
+```bash
+python tools/human_decision_attestation.py create \
+  --case-id CASE-001 \
+  --actor-id owner-1 \
+  --verdict CONFIRMED \
+  --head-sha <reviewed-head> \
+  --output /secure/human-decision.json
+
+python tools/record_human_decision.py \
+  --case /review/cases/CASE-001/case-record.json \
+  --cycle /review/cases/CASE-001/review-cycle.json \
+  --ledger /review/cases/CASE-001/case-events.jsonl \
+  --repo /repo \
+  --attestation /secure/human-decision.json \
+  --review-id H-001 \
+  --node-id owner-1 \
+  --verdict CONFIRMED
+```
 
 ## ENFORCED runtime attestation
 
-ENFORCED still requires a real external launcher that actually applies OS/network/filesystem controls. `runtime_attestation.py` only creates/verifies the authenticated statement format; it does **not** create the sandbox.
+ENFORCED still requires a trusted external launcher that actually applies network/filesystem/secret isolation. The attestation helper authenticates the statement; it does **not** create the OS sandbox.
 
-The attestation must bind:
-
-- workspace;
-- case id;
-- merge-base SHA;
-- reviewed HEAD SHA;
-- required sandbox assertions;
-- recent `issued_at`;
-- external HMAC key.
-
-Example format helper after the launcher has applied controls:
-
-```bash
-python tools/runtime_attestation.py create \
-  --workspace /repo \
-  --case-id CASE-001 \
-  --base-sha <merge-base-sha> \
-  --head-sha <head-sha> \
-  --output /secure/runtime-attestation.json
-```
+The v2.6 attestation binds workspace, case/base/head, sandbox assertions, freshness nonce/timestamp, plus external claims that the L2 and Adversarial sessions are fresh.
 
 ## Validation
 
@@ -156,16 +157,25 @@ Canonical command:
 python tools/run_validation.py --full
 ```
 
-v2.5 intentionally isolates multiprocessing-sensitive regression groups in separate OS processes. See `VALIDATION_COMMANDS.md` and `VALIDATION_REPORT_KO.md` for the exact validation performed for this package.
+Validated candidate results:
+
+- harness: **88 PASS** across 39 isolated groups;
+- vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
+- DIFF-FALSE-EXACT fixture: PASS;
+- schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
+- `python -m compileall -q tools tests`: PASS.
+
+See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md`.
 
 ## Deployment status
 
-**HARDENED SHADOW / DOGFOOD CANDIDATE.**
+**HARDENED SHADOW CANDIDATE.**
 
-Do not switch to production merge-blocking ENFORCED mode until the remaining external dependencies are proven end to end:
+Do not promote to production merge-blocking ENFORCED until these external dependencies are demonstrated end to end:
 
-1. actual OS network deny and workspace-only filesystem sandbox;
-2. protected external attestation issuer/key handling;
-3. actual L1/L2/Adversarial worker adapters and fresh-session proof;
-4. GitHub Check Run + ruleset/branch-protection E2E;
-5. production post-merge incident connector and sufficient calibration data.
+1. OS-level network deny and workspace-only filesystem sandbox;
+2. protected external runtime/human attestation issuers and key handling;
+3. real L1/L2/Adversarial model workers and fresh-session issuance;
+4. GitHub Check Run + required ruleset/branch-protection E2E;
+5. production post-merge incident connector and sufficient calibration data;
+6. Windows-specific path/process behavior and GUI/PyInstaller E2E where applicable.

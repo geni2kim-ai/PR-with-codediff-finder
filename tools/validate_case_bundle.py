@@ -4,14 +4,14 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'))
 from validate_case_record import semantic_errors as case_errors
-from case_ledger import load_events,validate_events,validate_anchor,canonical_anchor_path
+from case_ledger import load_events,validate_events,validate_anchor,canonical_anchor_path,default_anchor_path
 SCHEMA=json.loads((ROOT/'schemas/case-record.schema.json').read_text())
 
 def errors(case,ledger=None,anchor=None,require_hmac=False,hmac_key=None):
     e=[x.message for x in Draft202012Validator(SCHEMA).iter_errors(case)]+case_errors(case)
     if not ledger:return e
     events=load_events(ledger);e+=validate_events(events,case.get('case_id'))
-    anchor=anchor or canonical_anchor_path(ledger);e+=validate_anchor(ledger,anchor,events,case.get('case_id'),hmac_key,require_hmac)
+    anchor=anchor or default_anchor_path(ledger);e+=validate_anchor(ledger,anchor,events,case.get('case_id'),hmac_key,require_hmac)
     completed={(x.get('payload',{}).get('level'),x.get('payload',{}).get('result_digest')) for x in events if x.get('event_type')=='REVIEW_COMPLETED'}
     humans={(x.get('payload',{}).get('review_id'),x.get('payload',{}).get('result_digest')) for x in events if x.get('event_type')=='HUMAN_DECISION'}
     for r in case.get('review_trail',[]):

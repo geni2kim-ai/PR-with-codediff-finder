@@ -1,12 +1,12 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,json,os,re,secrets,shutil,signal,subprocess,sys,tempfile,time
+import argparse,hashlib,hmac,importlib.util,json,os,re,signal,shutil,subprocess,sys,tempfile,time
 from datetime import datetime,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from common import canonical_bytes,named_files_digest,object_digest,sha256_bytes,sha256_file,write_json
-from policy_engine import load_yaml,classify_paths,derive_required_level,max_level
+from policy_engine import load_yaml,classify_paths,derive_required_level,max_level,is_self_protected_repository
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
@@ -73,9 +73,9 @@ SECRET_ENV_NAME=re.compile(r'(?i)(?:secret|token|password|passwd|credential|priv
 
 def sensitive_env_names(names):return sorted({str(x) for x in names if SECRET_ENV_NAME.search(str(x))})
 
-def worker_command_digest(cmd):
+def worker_command_digest(cmd,cwd=None):
     if not cmd:return ZERO
-    tokens=[]
+    cwd_path=Path(cwd or os.getcwd()).resolve();tokens=[]
     for i,arg in enumerate(cmd):
         resolved=None
         if i==0:
@@ -84,11 +84,27 @@ def worker_command_digest(cmd):
         if resolved is None:
             try:
                 p=Path(arg)
+                if not p.is_absolute():p=cwd_path/p
                 if p.is_file():resolved=p.resolve()
             except Exception:pass
         if resolved is not None and resolved.is_file():tokens.append({'index':i,'kind':'file','name':resolved.name,'sha256':sha256_file(resolved)})
         else:tokens.append({'index':i,'kind':'literal','value':arg})
-    return object_digest({'argv':tokens})
+    module_provenance=[]
+    if len(cmd)>=3 and cmd[1]=='-m':
+        module=cmd[2]
+        script="import importlib.util,json,sys;sys.path.insert(0,sys.argv[2]);s=importlib.util.find_spec(sys.argv[1]);print(json.dumps({'origin':getattr(s,'origin',None),'locations':list(getattr(s,'submodule_search_locations',[]) or [])}))"
+        try:
+            cp=subprocess.run([cmd[0],'-c',script,module,str(cwd_path)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=5)
+            info=json.loads(cp.stdout) if cp.returncode==0 else {}
+            paths=[]
+            if info.get('origin') and info['origin'] not in {'built-in','frozen'}:paths.append(Path(info['origin']))
+            for loc in info.get('locations',[]):
+                lp=Path(loc)
+                if lp.is_dir():paths.extend(sorted(lp.glob('*.py')))
+            for mp in paths:
+                if mp.is_file():module_provenance.append({'path':mp.name,'sha256':sha256_file(mp)})
+        except Exception:module_provenance.append({'module':module,'unresolved':True})
+    return object_digest({'argv':tokens,'cwd':str(cwd_path),'module_provenance':module_provenance})
 
 def safe_env(allow,task=None):
     env={}
@@ -100,14 +116,13 @@ def safe_env(allow,task=None):
     env['MAESTRO_REVIEW_SANDBOX_VERIFIED']='1' if verified else '0'
     return env
 
-def audit_sample(percent,key=None,label='AUDIT',subject=''):
+def audit_sample(percent,key,subject,label='AUDIT'):
     if percent<=0:return False
-    if key:
-        msg=f'{label}:{subject}'.encode();n=int.from_bytes(hmac.new(key.encode(),msg,hashlib.sha256).digest()[:8],'big')/2**64
-    else:n=secrets.randbelow(10**9)/10**9
+    if not key:raise ValueError('random audit requires external MAESTRO_AUDIT_SEED')
+    msg=f'{label}:{subject}'.encode();n=int.from_bytes(hmac.new(key.encode(),msg,hashlib.sha256).digest()[:8],'big')/2**64
     return n < percent/100.0
 
-def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None):
+def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None,worker_cwd=None):
     r=cfg['reviewers'][level];prompt=(ROOT/r['prompt_ref']).resolve()
     if not prompt.is_file():raise FileNotFoundError(f'reviewer prompt missing: {r["prompt_ref"]}')
     skill=r.get('skill_ref');skill_digest=ZERO
@@ -116,7 +131,7 @@ def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None):
         if not sp.is_file():raise FileNotFoundError(f'reviewer skill missing: {skill}')
         skill_digest=sha256_file(sp)
     return {'node_id':r['node_id'],'model':r['model'],'prompt_digest':sha256_file(prompt),'skill_digest':skill_digest,
-            'policy_digest':policy_digest(routing_policy),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd)}
+            'policy_digest':policy_digest(routing_policy),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd,worker_cwd)}
 
 def _resolve_refs(refs):
     out=[]
@@ -126,7 +141,7 @@ def _resolve_refs(refs):
         out.append(str(p))
     return out
 
-def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits_cfg,standards_refs,spec_ref,test_refs,lower_refs=None,lower_digests=None,routing_policy=None,runtime_verified=False,runtime_attestation_digest_value=None,worker_cmd=None):
+def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits_cfg,standards_refs,spec_ref,test_refs,lower_refs=None,lower_digests=None,routing_policy=None,runtime_verified=False,runtime_attestation_digest_value=None,runtime_fresh_sessions=None,worker_cmd=None):
     rt=cfg['runtime'];prior=level=='ADVERSARIAL';standards=_resolve_refs(standards_refs);tests=_resolve_refs(test_refs);spec=None
     if spec_ref:
         sp=Path(spec_ref).resolve()
@@ -139,49 +154,55 @@ def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits
       'changed_paths':changed_paths,'trusted_refs':{'policy':[str((ROOT/'policy/protected-paths.yml').resolve()),str((ROOT/'policy/escalation-policy.yml').resolve()),str((ROOT/'policy/sensor-policy.yml').resolve())],'standards':standards,'spec':spec,'tests':tests},
       'lower_layer_result_refs':[str(Path(x).resolve()) for x in (lower_refs or [])],'lower_layer_result_digests':lower_digests or [],
       'security_boundary':{'repo_content_untrusted':True,'external_network_allowed':False,'secrets_allowed':False,'delegation_allowed':False,'fresh_context_required':level in {'L2','ADVERSARIAL'},'prior_review_conclusions_visible':prior},
-      'runtime_enforcement':{'fresh_process_spawned':True,'environment_secret_stripping':True,'network_denied':bool(runtime_verified),'filesystem_scoped_to_workspace':bool(runtime_verified),'fresh_model_session_attested':bool(runtime_verified),'runtime_attestation_digest':runtime_attestation_digest_value},
+      'runtime_enforcement':{'fresh_process_spawned':True,'environment_secret_stripping':True,'network_denied':bool(runtime_verified),'filesystem_scoped_to_workspace':bool(runtime_verified),'fresh_model_session_attested':bool((runtime_fresh_sessions or {}).get(level,False)) if level in {'L2','ADVERSARIAL'} else True,'runtime_attestation_digest':runtime_attestation_digest_value},
       'limits':{'timeout_seconds':int(rt['timeout_seconds']),'max_findings':int(review_limits.get('max_findings',12)),'max_nits':int(review_limits.get('max_nits',2)),'max_output_bytes':int(rt['max_output_bytes']),'max_subagents':int(sub.get('default_max_children',0))},
-      'review_focus':['correctness_security','standards','spec','test_integrity','supply_chain_compatibility','risk'],'output_contract':'schemas/reviewer-stage-result.schema.json','reviewer_contract':make_contract(level,cfg,standards_refs,routing_policy,worker_cmd)}
+      'review_focus':['correctness_security','standards','spec','test_integrity','supply_chain_compatibility','risk'],'output_contract':'schemas/reviewer-stage-result.schema.json','reviewer_contract':make_contract(level,cfg,standards_refs,routing_policy,worker_cmd,repo)}
 
 def _kill_worker_tree(p):
-    if p.poll() is not None:return
-    if os.name=='nt':
-        subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
-        try:p.wait(timeout=5)
-        except Exception:p.kill()
-    else:
+    if os.name!='nt':
         try:os.killpg(p.pid,signal.SIGKILL)
         except ProcessLookupError:pass
-        try:p.wait(timeout=5)
-        except Exception:pass
+        except PermissionError:pass
+    else:
+        try:subprocess.run(['taskkill','/PID',str(p.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5)
+        except Exception:
+            try:p.kill()
+            except Exception:pass
+
 
 def run_worker(cmd,task,cfg):
     errs=validate_task(task)
     if errs:raise ReviewerExecutionError('INVALID_TASK','invalid reviewer task: '+'; '.join(errs))
     rt=cfg['runtime'];limit=int(rt['max_output_bytes']);stderr_limit=int(rt.get('max_stderr_bytes',min(limit,262144)));timeout=int(rt['timeout_seconds']);payload=json.dumps(task,ensure_ascii=False).encode('utf-8');start=time.monotonic()
     with tempfile.TemporaryDirectory(prefix='maestro-review-') as td:
-        op=Path(td)/'stdout';ep=Path(td)/'stderr';ip=Path(td)/'stdin'
-        ip.write_bytes(payload)
+        ip=Path(td)/'stdin';op=Path(td)/'stdout';ep=Path(td)/'stderr';ip.write_bytes(payload)
         with ip.open('rb') as inf,op.open('wb') as of,ep.open('wb') as ef:
-            kwargs={'stdin':inf,'stdout':of,'stderr':ef,'shell':False,'env':safe_env(rt.get('environment_allowlist',[]),task)}
-            if os.name=='nt':kwargs['creationflags']=getattr(subprocess,'CREATE_NEW_PROCESS_GROUP',0)
-            else:kwargs['start_new_session']=True
+            kwargs={'stdin':inf,'stdout':of,'stderr':ef,'shell':False,'env':safe_env(rt.get('environment_allowlist',[]),task),'cwd':task['binding']['workspace_ref']}
+            if os.name!='nt':kwargs['start_new_session']=True
+            else:kwargs['creationflags']=getattr(subprocess,'CREATE_NEW_PROCESS_GROUP',0)
             p=subprocess.Popen(cmd,**kwargs)
-            try:
-                while p.poll() is None:
-                    if time.monotonic()-start>timeout:
-                        _kill_worker_tree(p);raise ReviewerExecutionError('TIMEOUT',f'reviewer exceeded {timeout}s')
-                    try:size=op.stat().st_size
-                    except FileNotFoundError:size=0
-                    if size>limit:
-                        _kill_worker_tree(p);raise ReviewerExecutionError('OUTPUT_LIMIT',f'reviewer output exceeded {limit} bytes while running')
-                    try:err_size=ep.stat().st_size
-                    except FileNotFoundError:err_size=0
-                    if err_size>stderr_limit:
-                        _kill_worker_tree(p);raise ReviewerExecutionError('STDERR_LIMIT',f'reviewer stderr exceeded {stderr_limit} bytes while running')
-                    time.sleep(0.02)
-            finally:
-                if p.poll() is None:_kill_worker_tree(p)
+            failure=None
+            while p.poll() is None:
+                if time.monotonic()-start>timeout:
+                    failure=ReviewerExecutionError('TIMEOUT',f'reviewer exceeded {timeout}s');_kill_worker_tree(p);break
+                try:size=op.stat().st_size
+                except FileNotFoundError:size=0
+                if size>limit:
+                    failure=ReviewerExecutionError('OUTPUT_LIMIT',f'reviewer output exceeded {limit} bytes while running');_kill_worker_tree(p);break
+                try:err_size=ep.stat().st_size
+                except FileNotFoundError:err_size=0
+                if err_size>stderr_limit:
+                    failure=ReviewerExecutionError('STDERR_LIMIT',f'reviewer stderr exceeded {stderr_limit} bytes while running');_kill_worker_tree(p);break
+                time.sleep(0.02)
+            try:p.wait(timeout=3)
+            except subprocess.TimeoutExpired:_kill_worker_tree(p);p.wait(timeout=3)
+            # A worker can exit while descendants remain. Kill the process group on
+            # both success and failure so reviewer children cannot survive the cycle.
+            if os.name!='nt':
+                try:os.killpg(p.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                except PermissionError:pass
+            if failure:raise failure
         out=op.read_bytes();err_raw=ep.read_bytes();err=err_raw[:8192].decode('utf-8','replace')
         if len(err_raw)>stderr_limit:raise ReviewerExecutionError('STDERR_LIMIT',f'reviewer stderr exceeds {stderr_limit} bytes',err)
         if len(out)>limit:raise ReviewerExecutionError('OUTPUT_LIMIT',f'reviewer output exceeds {limit} bytes',err)
@@ -206,29 +227,10 @@ def disagreement(a,b):
     if a['verdict']!=b['verdict']:return True
     sa={(f['severity'],f.get('failure_family'),f['axis']) for f in a['findings'] if f['severity'] in {'blocker','major'}};sb={(f['severity'],f.get('failure_family'),f['axis']) for f in b['findings'] if f['severity'] in {'blocker','major'}};return sa!=sb
 
-def deterministic_diff_signals(repo,base,head,evidence):
-    signals={}
-    files=evidence.get('files',[]);paths=[f.get('path','') for f in files]
-    lows=[p.replace('\\','/').casefold() for p in paths]
-    args=['diff','--unified=0','--no-ext-diff',base,head,'--']+paths
-    raw=git(repo,*args,check=False) if paths else ''
-    added=[x[1:] for x in raw.split('\n') if x.startswith('+') and not x.startswith('+++')]
-    deleted=[x[1:] for x in raw.split('\n') if x.startswith('-') and not x.startswith('---')]
-    migration=any('/migrations/' in '/'+p or p.startswith('migrations/') for p in lows)
-    if migration and any(re.search(r'(?i)\b(?:DROP\s+(?:TABLE|COLUMN|DATABASE|INDEX)|TRUNCATE\s+TABLE|ALTER\s+TABLE\b.*\bDROP\b)',x) for x in added):
-        signals['destructive_migration']=True
-    public=any('/api/public/' in '/'+p or p.startswith('api/public/') or '/schemas/public/' in '/'+p or p.startswith('schemas/public/') for p in lows)
-    if public and (deleted or any(f.get('change_type')=='DELETED' for f in files)):
-        signals['public_contract_break']=True
-    if any(p.endswith('codeowners') or '/.github/rulesets/' in '/'+p or p.startswith('.github/rulesets/') for p in lows):
-        signals['ruleset_codeowners_change']=True
-    payment=any('/payments/' in '/'+p or p.startswith('payments/') or '/billing/' in '/'+p or p.startswith('billing/') for p in lows)
-    if payment and any(re.search(r'(?i)\b(?:charge|refund|capture|payout|transfer|withdraw|external[_ -]?payment)\b',x) for x in added):
-        signals['payment_external_side_effect']=True
-    return signals
-
 def cycle_gate(state,required,achieved,stage):
     if state=='STALE':return 'cancelled'
+    if state=='HUMAN_CONFIRMED':return 'success'
+    if state=='HUMAN_REJECTED':return 'failure'
     if state in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED','BLOCKED'}:return 'action_required'
     if not stage:return 'action_required'
     if stage['verdict']=='BLOCKED':return 'action_required'
@@ -267,26 +269,33 @@ def main():
     subcfg=limits_cfg.get('subagents',{});default_children=int(subcfg.get('default_max_children',0));hard_children=int(subcfg.get('hard_max_children',default_children))
     if default_children<0 or hard_children<0 or default_children>hard_children:raise SystemExit('invalid subagent limits: default_max_children must be between 0 and hard_max_children')
     if mode not in {'SHADOW','ENFORCED'}:raise SystemExit('routing policy mode must be shadow or enforced')
-    binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None
+    ra_cfg=esc_cfg.get('random_audit',{})
+    if mode=='ENFORCED' and ns.disable_random_audit:raise SystemExit('--disable-random-audit is forbidden in ENFORCED mode')
+    if bool(ra_cfg.get('enabled')) and not ns.disable_random_audit and not audit_key:raise SystemExit('random audit enabled but MAESTRO_AUDIT_SEED is unavailable')
+    binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None;runtime_fresh_sessions={}
     def ev(type_,payload):return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None)
     def terminal_block(kind,msg,stage='HARNESS',required='L1',achieved='SENSOR',stage_rows=None,labels=None,families=None,reasons=None,current_stage=None):
         nonlocal ledger_ok
-        stage_rows=stage_rows or [];labels=set(labels or []);families=set(families or []);reasons=list(reasons or [])+[kind]
-        safe=sanitize(str(msg))[:4000];write_json(out/'review-failure.json',{'schema_version':'2.4','case_id':ns.case_id,'stage':stage,'failure_kind':kind,'message':safe,'timestamp':utc()})
+        stage_rows=stage_rows or [];labels=set(labels or []);families=set(families or []);reasons=list(reasons or [])+[kind];ledger_failures=[]
+        safe=sanitize(str(msg))[:4000]
+        failure={'schema_version':'2.4','case_id':ns.case_id,'stage':stage,'failure_kind':kind,'message':safe,'timestamp':utc(),'ledger_write_errors':[]}
+        write_json(out/'review-failure.json',failure)
         try:ev('CYCLE_BLOCKED',{'stage':stage,'failure_kind':kind,'message_digest':sha256_bytes(safe.encode())})
-        except Exception as exc:write_json(out/'ledger-error.json',{'operation':'CYCLE_BLOCKED','error_type':type(exc).__name__,'message':sanitize(str(exc))[:1000]})
+        except Exception as exc:ledger_failures.append('CYCLE_BLOCKED:'+type(exc).__name__+':'+str(exc)[:300])
         if evidence:
             case=make_case(ns.case_id,evidence,stage_rows,labels,families);write_json(out/'case-record.json',case)
+        if ledger_failures:reasons.append('LEDGER_WRITE_FAILED');ledger_ok=False
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]
         cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,'BLOCKED',reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage);write_json(out/'review-cycle.json',cyc)
         try:ev('CYCLE_CLOSED',{'state':'BLOCKED','cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
-        except Exception as exc:write_json(out/'ledger-close-error.json',{'operation':'CYCLE_CLOSED','error_type':type(exc).__name__,'message':sanitize(str(exc))[:1000]})
+        except Exception as exc:ledger_failures.append('CYCLE_CLOSED:'+type(exc).__name__+':'+str(exc)[:300])
+        if ledger_failures:
+            failure['ledger_write_errors']=ledger_failures;write_json(out/'review-failure.json',failure)
+            write_json(out/'ledger-write-failure.json',{'case_id':ns.case_id,'errors':ledger_failures,'timestamp':utc()})
         print(out)
     try:
         head=git_resolve(repo,'HEAD');base_tip=git_resolve(repo,ns.expected_base);mb=git_merge_base(repo,base_tip,head);binding.update({'base_sha':mb,'head_sha':head})
         ev('CASE_OPENED',{'repository':str(repo),'base_sha':mb,'head_sha':head,'expected_base_ref':ns.expected_base})
-        if mode=='ENFORCED' and ns.disable_random_audit:
-            terminal_block('RANDOM_AUDIT_DISABLE_FORBIDDEN','--disable-random-audit is forbidden in ENFORCED mode');return
         bad_env=sensitive_env_names(cfg.get('runtime',{}).get('environment_allowlist',[]))
         if bad_env:terminal_block('RUNTIME_CONFIG_INVALID','sensitive environment names in allowlist: '+', '.join(bad_env));return
         dirty=worktree_dirty(repo,[ns.evidence,out]);worktree_ok=not dirty['tracked'] and not dirty['untracked']
@@ -330,8 +339,6 @@ def main():
             if not runtime_replay_dir:missing.append('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR')
             elif _inside(runtime_replay_dir,repo):missing.append('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR must be outside repository workspace')
             if not ns.runtime_attestation:missing.append('--runtime-attestation')
-            for lvl in ('L2','ADVERSARIAL'):
-                if not cfg.get('reviewers',{}).get(lvl,{}).get('fresh_model_session_attested'):missing.append(f'{lvl}.fresh_model_session_attested')
             if missing:terminal_block('ENFORCED_ATTESTATION_MISSING',', '.join(missing));return
             try:
                 att=json.loads(Path(ns.runtime_attestation).read_text())
@@ -340,7 +347,7 @@ def main():
             if ae:terminal_block('ENFORCED_ATTESTATION_INVALID','; '.join(ae));return
             replay_error,replay_id=consume_runtime_attestation_nonce(att,runtime_replay_dir)
             if replay_error:terminal_block('ENFORCED_ATTESTATION_REPLAYED' if 'replay detected' in replay_error else 'ENFORCED_ATTESTATION_REPLAY_CACHE_INVALID',replay_error);return
-            runtime_verified=True;runtime_att_digest=runtime_attestation_digest(att);ev('RUNTIME_ATTESTED',{'attestation_digest':runtime_att_digest,'replay_token':replay_id,'key_id':att.get('key_id'),'issued_at':att.get('issued_at'),'base_sha':mb,'head_sha':head})
+            runtime_verified=True;runtime_att_digest=runtime_attestation_digest(att);runtime_fresh_sessions={'L2':bool(att.get('l2_fresh_session')),'ADVERSARIAL':bool(att.get('adversarial_fresh_session'))};ev('RUNTIME_ATTESTED',{'attestation_digest':runtime_att_digest,'replay_token':replay_id,'key_id':att.get('key_id'),'issued_at':att.get('issued_at'),'base_sha':mb,'head_sha':head,'l2_fresh_session':runtime_fresh_sessions['L2'],'adversarial_fresh_session':runtime_fresh_sessions['ADVERSARIAL']})
         # Validate ledger anchor immediately after sensor acceptance.
         from case_ledger import load_events,validate_anchor
         ledger_ok=not validate_anchor(ledger,anchor,load_events(ledger),ns.case_id,ledger_key,require_hmac=(mode=='ENFORCED'))
@@ -349,18 +356,21 @@ def main():
         for f in evidence['files']:
             if f.get('old_path'):paths.append(f['old_path'])
             paths.append(f['path'])
-        changed=sorted(set(paths));hits=classify_paths(changed,protected)
-        base_model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'};sig=deterministic_diff_signals(repo,mb,head,evidence);invfail=[x['id'] for x in evidence['invariants'] if x['status']=='failed'];lowenc=[f['path'] for f in evidence['files'] if f['encoding']['confidence']=='LOW']
+        changed=sorted(set(paths));self_review=is_self_protected_repository(evidence.get('binding',{}).get('repository'),repo,protected);hits=classify_paths(changed,protected,include_self_protection=self_review)
+        base_model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'};sig={};invfail=[x['id'] for x in evidence['invariants'] if x['status']=='failed'];lowenc=[f['path'] for f in evidence['files'] if f['encoding']['confidence']=='LOW']
         if not evidence['trust']['trusted_for_gate']:sig['sensor_runtime_untrusted']=True
         if evidence['summary']['quality_class']=='APPROXIMATE':sig['sensor_approximate']=True
         if invfail:sig['sensor_failed_invariant']=True
         if lowenc:sig['encoding_low_confidence']=True
+        weak_kinds={x.get('kind') for x in evidence['summary']['weakening_signals']}
         if evidence['summary']['weakening_signals']:sig['test_integrity_finding']=True
+        for deterministic_kind in ('destructive_migration','public_contract_break','payment_external_side_effect','ruleset_codeowners_change'):
+            if deterministic_kind in weak_kinds:sig[deterministic_kind]=True
         if evidence['summary'].get('nontext_sensitive_paths'):sig['sensor_nontext_sensitive']=True
         if not evidence['trust']['trusted_for_gate'] and (hits['adversarial_floor'] or hits['human_floor'] or hits['governance']):sig['sensor_runtime_untrusted_on_protected']=True
         if evidence['summary']['files_changed']>=limits_cfg['large_diff']['soft_files'] or evidence['summary']['changed_lines']>=limits_cfg['large_diff']['soft_changed_lines']:sig['soft_large_diff']=True
         if evidence['summary']['files_changed']>=limits_cfg['large_diff']['hard_files'] or evidence['summary']['changed_lines']>=limits_cfg['large_diff']['hard_changed_lines']:sig['sensor_failed_invariant']=True;sig['hard_large_diff']=True
-        if evidence['summary']['quality_class']=='HEURISTIC' and (hits['adversarial_floor'] or hits['human_floor'] or hits['governance']):sig['sensor_heuristic_high_risk']=True;sig['failed_invariant']=False
+        if evidence['summary']['quality_class']=='HEURISTIC' and (hits['adversarial_floor'] or hits['human_floor'] or hits['governance']):sig['sensor_heuristic_high_risk']=True
         required,reasons=derive_required_level(base_model,hits,sig,esc_cfg,sensor_cfg)
         l1cmd=parse_cmd(ns.l1_cmd_json);l2cmd=parse_cmd(ns.l2_cmd_json);advcmd=parse_cmd(ns.adversarial_cmd_json);stage_rows=[];families=set();labels=set();state=None;achieved='SENSOR';current_stage=None
         if hits['governance']:labels.add('governance')
@@ -371,20 +381,22 @@ def main():
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']});achieved=level;current_stage=r;return r
-        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
+        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
         if not l1cmd:state='WAITING_L1'
         else:
             l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
             if l1 is None:return
             s,ff=stage_signals(l1);families|=ff;sig.update({k:v for k,v in s.items() if v})
-            deterministic_risk=any(sig.get(k) for k in ('destructive_migration','public_contract_break','payment_external_side_effect','ruleset_codeowners_change','test_integrity_finding','sensor_nontext_sensitive'))
-            if l1['verdict']=='PASS' and deterministic_risk:sig['deterministic_reviewer_conflict']=True;reasons.append('DETERMINISTIC_REVIEWER_CONFLICT')
+            deterministic_issue=any(sig.get(k) for k in ('test_integrity_finding','sensor_failed_invariant','sensor_nontext_sensitive','destructive_migration','public_contract_break','ruleset_codeowners_change'))
+            if l1['verdict']=='PASS' and deterministic_issue:sig['deterministic_reviewer_conflict']=True;reasons.append('DETERMINISTIC_REVIEWER_CONFLICT')
             _lvl,_why=derive_required_level(l1['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l1);required=max_level(required,_req)
             if l1['escalation']['requested']:reasons.append('L1_REQUEST_'+_req)
-            ra=esc_cfg.get('random_audit',{});audit=bool(ra.get('enabled')) and not ns.disable_random_audit and audit_sample(float(ra.get('l1_final_sample_percent',0)),audit_key,'L1',f'{ns.case_id}:{head}')
-            if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1');labels.add('random_audit_l1')
+            ra=esc_cfg.get('random_audit',{});audit_eligible=(required=='L1');audit=bool(ra.get('enabled')) and not ns.disable_random_audit and audit_eligible and audit_sample(float(ra.get('l1_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L1')
+            labels.add('random_audit_l1_selected' if audit else ('random_audit_l1_not_selected' if audit_eligible and bool(ra.get('enabled')) and not ns.disable_random_audit else 'random_audit_l1_not_eligible'))
+            if ns.disable_random_audit:labels.add('random_audit_disabled')
+            if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
-                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
+                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
                 if not l2cmd:state='WAITING_L2'
                 else:
                     l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
@@ -393,17 +405,18 @@ def main():
                     if disagreement(l1,l2):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
                     _lvl,_why=derive_required_level(l2['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l2);required=max_level(required,_req)
                     if l2['escalation']['requested']:reasons.append('L2_REQUEST_'+_req)
-                    audit2=bool(ra.get('enabled')) and not ns.disable_random_audit and audit_sample(float(ra.get('l2_final_sample_percent',0)),audit_key,'L2',f'{ns.case_id}:{head}')
-                    if audit2:required=max_level(required,'ADVERSARIAL');reasons.append('RANDOM_AUDIT_L2');labels.add('random_audit_l2')
+                    audit2_eligible=(required=='L2');audit2=bool(ra.get('enabled')) and not ns.disable_random_audit and audit2_eligible and audit_sample(float(ra.get('l2_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L2')
+                    labels.add('random_audit_l2_selected' if audit2 else ('random_audit_l2_not_selected' if audit2_eligible and bool(ra.get('enabled')) and not ns.disable_random_audit else 'random_audit_l2_not_eligible'))
+                    if audit2:required=max_level(required,'ADVERSARIAL');reasons.append('RANDOM_AUDIT_L2')
                     if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('ADVERSARIAL'):
                         lower=[out/'l1-review.json',out/'l2-review.json'];ld=[l1['result_digest'],l2['result_digest']]
-                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,lower,ld,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
+                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,lower,ld,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
                         if not advcmd:state='ADVERSARIAL_REQUIRED'
                         else:
                             adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
                             if adv is None:return
                             s3,ff3=stage_signals(adv);families|=ff3;sig.update({k:v for k,v in s3.items() if v})
-                            if adv['verdict']=='FINDINGS' and any(f['severity'] in {'blocker','major'} for f in adv['findings']):sig['adversarial_unresolved']=True;reasons.append('ADVERSARIAL_UNRESOLVED')
+                            if adv['verdict']=='FINDINGS' and any(f['severity'] in {'blocker','major'} for f in adv.get('findings',[])):sig['adversarial_unresolved']=True;reasons.append('ADVERSARIAL_UNRESOLVED')
                             _lvl,_why=derive_required_level(adv['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(adv);required=max_level(required,_req)
                             if adv['escalation']['requested']:reasons.append('ADVERSARIAL_REQUEST_'+_req)
                             state='HUMAN_REQUIRED' if required=='HUMAN' else 'COMPLETE'
@@ -419,7 +432,7 @@ def main():
         dirty_after=worktree_dirty(repo,[ns.evidence,out]);worktree_ok=not dirty_after['tracked'] and not dirty_after['untracked']
         if not worktree_ok and state!='STALE':state='BLOCKED';reasons.append('WORKTREE_DIRTY_AFTER_REVIEW')
         executed_levels={level for level,_,_,_ in stage_rows}
-        if any(lvl in executed_levels and not cfg.get('reviewers',{}).get(lvl,{}).get('fresh_model_session_attested') for lvl in ('L2','ADVERSARIAL')):labels.add('model_session_independence_unverified')
+        if any(lvl in executed_levels and not runtime_fresh_sessions.get(lvl,False) for lvl in ('L2','ADVERSARIAL')):labels.add('model_session_independence_unverified')
         case=make_case(ns.case_id,evidence,stage_rows,labels,families);write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
         if cerr:terminal_block('CASE_RECORD_INVALID','; '.join(cerr),'HARNESS',required,achieved,stage_rows,labels,families,reasons,current_stage);return
         if state in {'WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED'}:ev('ESCALATION_REQUIRED',{'state':state,'required_level':required,'reasons':sorted(set(reasons))})
@@ -427,7 +440,7 @@ def main():
         from case_ledger import load_events,validate_anchor
         ledger_ok=not validate_anchor(ledger,anchor,load_events(ledger),ns.case_id,ledger_key,require_hmac=(mode=='ENFORCED'))
         cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage);write_json(out/'review-cycle.json',cyc)
-        if state in {'COMPLETE','BLOCKED','STALE'}:ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
+        ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
         if state=='ADVERSARIAL_REQUIRED':
             q=choose_queue(reasons,labels,None,families);packet={'schema_version':'2.4','case_id':case['case_id'],'binding':case['binding'],'queue':q,'escalation_reasons':sorted(set(reasons or ['POLICY_ESCALATION'])),
               'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str((ROOT/'policy').resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':_resolve_refs(ns.standards_ref),'spec_ref':str(Path(ns.spec_ref).resolve()) if ns.spec_ref else None,'test_results':_resolve_refs(ns.test_ref)},

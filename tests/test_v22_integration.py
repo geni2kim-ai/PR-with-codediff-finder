@@ -28,11 +28,11 @@ class V22SemanticTests(unittest.TestCase):
         self.assertFalse(evidence_errors(x,ROOT/'policy/protected-paths.yml'))
     def test_false_proven_exact_path_rejected(self):
         x=copy.deepcopy(self.ev);f=x['files'][0];f['diff']['quality_class']='PROVEN_EXACT';x['summary']['quality_class']='PROVEN_EXACT'
-        self.assertTrue(any('heuristic path cannot be PROVEN_EXACT' in z for z in evidence_errors(x,ROOT/'policy/protected-paths.yml')))
+        self.assertTrue(any('cannot be PROVEN_EXACT' in z for z in evidence_errors(x,ROOT/'policy/protected-paths.yml')))
     def test_size_limit_gap_cannot_claim_trusted_gate(self):
         from common import object_digest
         x=copy.deepcopy(self.ev);f=x['files'][0];f['status']='SKIPPED';f['skip_reason']='size_limit';f['diff']={'hunk_count':0,'changed_lines':0,'approx':False,'quality_class':'NOT_APPLICABLE','algorithm_path':[],'trace_digest':'0'*64}
-        x['summary']['hunk_count']=sum(y['diff']['hunk_count'] for y in x['files']);x['summary']['changed_lines']=sum(y['diff']['changed_lines'] for y in x['files']);qs=[y['diff']['quality_class'] for y in x['files'] if y['status']=='ANALYZED'];order={'PROVEN_EXACT':0,'HEURISTIC':1,'APPROXIMATE':2};x['summary']['quality_class']=max(qs,key=lambda q:order[q]) if qs else 'NOT_APPLICABLE'
+        x['summary']['hunk_count']=sum(y['diff']['hunk_count'] for y in x['files']);x['summary']['changed_lines']=sum(y['diff']['changed_lines'] for y in x['files']);qs=[y['diff']['quality_class'] for y in x['files'] if y['status']=='ANALYZED'];order={'PROVEN_EXACT':0,'DETERMINISTIC':1,'HEURISTIC':2,'APPROXIMATE':3};x['summary']['quality_class']=max(qs,key=lambda q:order[q]) if qs else 'NOT_APPLICABLE'
         x['trust']['trusted_for_gate']=True;semantic_view={k:v for k,v in x.items() if k not in {'performance','semantic_digest','output_digest'}};x['semantic_digest']=object_digest(semantic_view);x['output_digest']=object_digest(x,'output_digest')
         self.assertTrue(any('trusted_for_gate must be false' in z for z in evidence_errors(x,ROOT/'policy/protected-paths.yml')))
     def test_tampered_rsi_score_rejected(self):

@@ -1,8 +1,9 @@
-schema_version: '2.4'
+schema_version: '2.6'
 textdiff:
   trusted_runtime_requires_regex_timeout: true
   accepted_quality_classes:
   - PROVEN_EXACT
+  - DETERMINISTIC
   - HEURISTIC
   - APPROXIMATE
   adversarial_if_heuristic_and_any:
@@ -37,7 +38,7 @@ raw_data:
   persist_hunks: false
   persist_trace_events: false
 trusted_tool:
-  checker_sha256: 46380220db542507888178a62eea55d864aa3477ef339a4818144c9b243da790
+  checker_sha256: b3c82ea46e2d440e2fa2cc2196d57b735192563dea782b048f7fe3be26ffae24
   original_package_sha256: 8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9
   vendor_requirements_sha256: 7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124
   harness_requirements_sha256: a07baf4812dec8ccaa2cbc8fbd8b955a3f28abee022255f0820ca7b0e134d596

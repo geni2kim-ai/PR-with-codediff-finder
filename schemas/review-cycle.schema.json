@@ -100,7 +100,8 @@
             "enum": [
               "L1",
               "L2",
-              "ADVERSARIAL"
+              "ADVERSARIAL",
+              "HUMAN"
             ]
           },
           "result_ref": {
@@ -113,14 +114,17 @@
             "enum": [
               "PASS",
               "FINDINGS",
-              "BLOCKED"
+              "BLOCKED",
+              "CONFIRMED",
+              "REJECTED"
             ]
           },
           "confidence": {
             "enum": [
               "high",
               "medium",
-              "low"
+              "low",
+              "not_applicable"
             ]
           }
         }

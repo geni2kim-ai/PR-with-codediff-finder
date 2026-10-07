@@ -1,4 +1,7 @@
 schema_version: '2.6'
+self_protection_repository_names:
+- geni2kim-ai/PR-with-codediff-finder
+
 governance_paths:
 - .github/workflows/**
 - .github/actions/**
@@ -15,14 +18,11 @@ governance_paths:
 - profiles/**
 - policy/**
 - schemas/**
-- tools/**
-- requirements.txt
-- requirements-*.txt
-- pyproject.toml
 - docs/REVIEW_POLICY.md
 - docs/REVIEW_AUTHORITY_LADDER.md
 - docs/OPERATIONS.md
 - docs/RETRO_GOVERNANCE.md
+
 human_floor_paths:
 - .github/workflows/**
 - .github/actions/**
@@ -37,9 +37,7 @@ human_floor_paths:
 - billing/**
 - api/public/**
 - schemas/public/**
-- policy/**
-- schemas/**
-- tools/**
+
 adversarial_floor_paths:
 - auth/**
 - security/**
@@ -53,12 +51,28 @@ adversarial_floor_paths:
 - profiles/**
 - policy/**
 - schemas/**
-- tools/**
-- tests/**
-- vendor/**
-- requirements.txt
-- requirements-*.txt
-- pyproject.toml
+
+# Applied only when the reviewed repository is this harness (repository name or
+# sentinel files match). This avoids forcing HUMAN review on every application's
+# ordinary tests/tools directory while preventing the harness from weakening its
+# own gate implementation under L1.
+self_protection_paths:
+- /tools/**
+- /tests/**
+- /vendor/**
+- /requirements.txt
+- /requirements*.txt
+- /PACKAGE_VERSION
+- /MANIFEST.sha256
+- /.gitignore
+
+self_protection_adversarial_paths:
+- /tools/**
+- /tests/**
+- /vendor/**
+- /requirements.txt
+- /requirements*.txt
+
 supply_chain_files:
 - package.json
 - package-lock.json

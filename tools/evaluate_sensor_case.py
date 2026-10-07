@@ -29,7 +29,7 @@ def main():
     analyzed=sum(f['status']=='ANALYZED' for f in applicable);coverage=1.0 if not applicable else analyzed/len(applicable)
     det=inv_status(ev,'repeat-determinism');stability={'passed':1.0,'failed':0.0,'unknown':0.75,'not_required':0.8}.get(det,0.75)
     ms=ev['performance']['elapsed_ms'];performance=1.0 if ms<=2000 else 0.8 if ms<=10000 else 0.5 if ms<=30000 else 0.2
-    calibration={'PROVEN_EXACT':1.0,'HEURISTIC':0.9,'APPROXIMATE':0.9,'NOT_APPLICABLE':0.8}[q]
+    calibration={'PROVEN_EXACT':1.0,'DETERMINISTIC':0.98,'HEURISTIC':0.9,'APPROXIMATE':0.9,'NOT_APPLICABLE':0.8}[q]
     safety=1.0 if ev['trust']['runtime_safety']=='PASS' else 0.25
     if q=='HEURISTIC':tags.add('DIFF-HEURISTIC')
     if q=='APPROXIMATE':tags.add('DIFF-APPROXIMATE')

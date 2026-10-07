@@ -3,10 +3,7 @@ import argparse,json
 from pathlib import Path
 from jsonschema import Draft202012Validator
 from common import object_digest
-ROOT=Path(__file__).resolve().parents[1]
-SCHEMA=json.loads((ROOT/'schemas/review-cycle.schema.json').read_text())
-LEVEL={'SENSOR':0,'L1':1,'L2':2,'ADVERSARIAL':3,'HUMAN':4}
-
+ROOT=Path(__file__).resolve().parents[1];SCHEMA=json.loads((ROOT/'schemas/review-cycle.schema.json').read_text());LEVEL={'SENSOR':0,'L1':1,'L2':2,'ADVERSARIAL':3,'HUMAN':4}
 def semantic_errors(o):
     e=[]
     if o.get('cycle_digest')!=object_digest(o,'cycle_digest'):e.append('cycle_digest mismatch')
@@ -32,7 +29,6 @@ def semantic_errors(o):
     if o.get('state') in {'COMPLETE','HUMAN_CONFIRMED','HUMAN_REJECTED'} and not o.get('worktree_clean_verified'):e.append('terminal reviewed state requires clean worktree')
     if o.get('execution_mode')=='ENFORCED' and not o.get('ledger_anchor_verified'):e.append('ENFORCED cycle requires verified ledger anchor')
     return e
-
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('json');ns=ap.parse_args();o=json.loads(Path(ns.json).read_text());errs=[x.message for x in Draft202012Validator(SCHEMA).iter_errors(o)]+semantic_errors(o)
     if errs:[print('INVALID',x) for x in errs];raise SystemExit(1)

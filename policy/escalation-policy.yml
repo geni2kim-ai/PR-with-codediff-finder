@@ -1,4 +1,4 @@
-schema_version: '2.4'
+schema_version: '2.6'
 levels:
 - L1
 - L2
@@ -9,7 +9,6 @@ L2_if_any:
 - moderate_reversibility
 - service_or_larger_blast_radius
 - soft_large_diff
-- protected_path_human_floor
 - test_integrity_finding
 - supply_chain_change
 ADVERSARIAL_if_any:
@@ -18,11 +17,12 @@ ADVERSARIAL_if_any:
 - deterministic_reviewer_conflict
 - blocker_candidate
 - security_surface_high_or_critical
-- post_merge_incident_similarity
 - protected_path_adversarial_floor
 - unexplained_spec_change_after_pr_open
 - reviewer_policy_tampering
 HUMAN_if_any:
+- protected_path_human_floor
+- security_surface_high_or_critical
 - governance_change
 - hard_reversibility
 - data_sensitivity_pii_or_secret

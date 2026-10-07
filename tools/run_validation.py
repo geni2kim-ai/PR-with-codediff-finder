@@ -16,10 +16,7 @@ from case_ledger import load_events,validate_events,validate_anchor
 from validate_adjudication import semantic_errors as adjudication_errors
 from validate_standard_candidate import semantic_errors as standard_errors
 
-# v2.6 discovers test modules from tests/test_*.py so a newly added test file cannot
-# silently disappear from the canonical validation run. The v2.3 module remains split
-# into individual methods because those subprocess-heavy scenarios benefit from hard
-# process isolation.
+# v2.6 discovers tests/test_*.py automatically; v2.3 remains split for hard process isolation.
 V23_SPLIT=[
  'tests.test_v23_orchestration.V23OrchestrationTests.test_low_risk_l1_pass_completes',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_auth_path_runs_independent_l2_then_requires_adversarial',
@@ -37,12 +34,14 @@ V23_SPLIT=[
  'tests.test_v23_orchestration.V23OrchestrationTests.test_effective_routing_policy_digest_is_bound',
  'tests.test_v23_orchestration.V23OrchestrationTests.test_stage_risk_escalation_reason_is_preserved',
 ]
-def validation_modules():
-    return [f'tests.{p.stem}' for p in sorted((ROOT/'tests').glob('test_*.py'))]
-
+def validation_modules():return [f'tests.{p.stem}' for p in sorted((ROOT/'tests').glob('test_*.py'))]
 def validation_groups():
-    mods=validation_modules()
-    return [m for m in mods if m!='tests.test_v23_orchestration']+V23_SPLIT
+    mods=validation_modules();groups=[]
+    for m in mods:
+        if m=='tests.test_v23_orchestration':groups.extend(V23_SPLIT)
+        elif m=='tests.test_v26_hardening':groups.extend(_enumerate_test_ids([m]))
+        else:groups.append(m)
+    return groups
 
 def _enumerate_test_ids(names):
     # Import tests only in a disposable child process. Some test modules import
@@ -92,12 +91,11 @@ def _run_group(group, timeout):
                 err=ep.read_text(encoding='utf-8',errors='replace') if ep.exists() else ''
                 return False,0,f'timeout after {timeout}s\n{err[-4000:]}'
             finally:
-                # A test may exit while a descendant remains alive in its process
-                # group.  Clean the whole group even on PASS so one test cannot
-                # perturb later validation groups.
-                if os.name!='nt':
-                    try: os.killpg(proc.pid,signal.SIGTERM)
-                    except ProcessLookupError: pass
+                # On timeout we kill the whole process group above.  On PASS the tested
+                # worker runtime is itself responsible for descendant cleanup; sending a
+                # signal to a leader PID after it has exited can race with PID reuse in a
+                # long validation parent.
+                pass
         out=op.read_text(encoding='utf-8',errors='replace');err=ep.read_text(encoding='utf-8',errors='replace')
         if proc.returncode:return False,0,f'exit {proc.returncode}\n{out[-2000:]}\n{err[-4000:]}'
         m=re.search(r'Ran\s+(\d+)\s+tests?',out+'\n'+err)
@@ -109,8 +107,11 @@ def run_harness_tests_isolated(timeout=120,jobs=1):
     # One isolated OS process per group; the parent never imports test modules.
     total=0;failures=[]
     for group in validation_groups():
+        print(f'validation group: {group}',flush=True)
         ok,count,detail=_run_group(group,timeout);total+=count
-        if not ok:failures.append((group,detail))
+        if ok: print(f'  PASS ({count})',flush=True)
+        else:
+            print('  FAIL',flush=True);failures.append((group,detail))
     if failures:
         lines=['harness isolated test-group failures:']
         for group,detail in failures:lines.append(f'- {group}: {detail}')
@@ -137,7 +138,7 @@ def validate_examples():
     std=load('examples/v24/standard-candidate.valid.json');assert_clean('standard candidate',schema_errors('schemas/standard-candidate.schema.json',std)+standard_errors(std))
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--full',action='store_true',help='run all harness tests plus vendored TextDiffChecker regressions');ap.add_argument('--test-timeout',type=int,default=120);ap.add_argument('--jobs',type=int,default=1,help='reserved for compatibility; v2.6 runs discovered isolated groups sequentially to avoid fork/thread deadlocks');ns=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('--full',action='store_true',help='run all harness tests plus vendored TextDiffChecker regressions');ap.add_argument('--test-timeout',type=int,default=120);ap.add_argument('--jobs',type=int,default=1,help='reserved for compatibility; v2.6 runs isolated groups sequentially to avoid fork/thread deadlocks');ns=ap.parse_args()
     run_harness_tests_isolated(ns.test_timeout,ns.jobs)
     validate_examples()
     if ns.full:

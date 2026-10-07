@@ -1198,8 +1198,8 @@ class HarnessTraceTest(unittest.TestCase):
         self.assertEqual(sx["quality_class"], "PROVEN_EXACT")
         self.assertIn("full_myers", tracex["algorithm_path"])
 
-    def test_small_diff_is_conservatively_heuristic(self):
+    def test_small_diff_is_deterministic(self):
         _, s, _, trace = checker.diff_texts_with_trace(["a"], ["b"], "a", "b")
-        self.assertEqual(s["quality_class"], "HEURISTIC")
-        self.assertEqual(trace["quality_class"], "HEURISTIC")
+        self.assertEqual(s["quality_class"], "DETERMINISTIC")
+        self.assertEqual(trace["quality_class"], "DETERMINISTIC")
         self.assertIn("sequence_matcher", trace["algorithm_path"])

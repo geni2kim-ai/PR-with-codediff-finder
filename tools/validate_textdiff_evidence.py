@@ -5,9 +5,10 @@ from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from common import object_digest, sha256_file
-from policy_engine import load_yaml,classify_paths
-Q={"NOT_APPLICABLE":-1,"PROVEN_EXACT":0,"HEURISTIC":1,"APPROXIMATE":2}
-HEURISTIC_EVENTS={"sequence_matcher","positional_low_hamming","banded_myers","patience_crosscheck","patience_split"}
+from policy_engine import load_yaml,classify_paths,is_self_protected_repository
+Q={"NOT_APPLICABLE":-1,"PROVEN_EXACT":0,"DETERMINISTIC":1,"HEURISTIC":2,"APPROXIMATE":3}
+DETERMINISTIC_EVENTS={"sequence_matcher","positional_low_hamming"}
+HEURISTIC_EVENTS={"banded_myers","patience_crosscheck","patience_split"}
 APPROX_EVENTS={"coarse_positional","coarse_replace"}
 
 
@@ -51,11 +52,17 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
     if sorted(s.get('nontext_sensitive_paths',[]))!=nontext:e.append('summary nontext_sensitive_paths mismatch')
     for f in files:
         d=f['diff'];path=f['path'];alg=set(d.get('algorithm_path',[]))
+        ctype=f.get('change_type')
+        if ctype in {'MODIFIED','RENAMED','COPIED'} and (not f.get('base_blob_sha') or not f.get('head_blob_sha')) and not (f.get('submodule') or f.get('symlink')):
+            e.append(f'{path}: {ctype} requires both Git blob SHAs')
+        if ctype=='ADDED' and not f.get('head_blob_sha') and not f.get('submodule'):e.append(f'{path}: ADDED requires head blob SHA')
+        if ctype=='DELETED' and not f.get('base_blob_sha') and not f.get('submodule'):e.append(f'{path}: DELETED requires base blob SHA')
         if f['status']=='ANALYZED' and d['quality_class']=='NOT_APPLICABLE':e.append(f'{path}: analyzed file cannot be NOT_APPLICABLE')
         if f['status']!='ANALYZED' and d['quality_class']!='NOT_APPLICABLE':e.append(f'{path}: non-analyzed file must be NOT_APPLICABLE')
         if d.get('approx') and d['quality_class']!='APPROXIMATE':e.append(f'{path}: approx=true requires APPROXIMATE')
         if alg & APPROX_EVENTS and d['quality_class']!='APPROXIMATE':e.append(f'{path}: coarse path requires APPROXIMATE')
-        if alg & HEURISTIC_EVENTS and d['quality_class']=='PROVEN_EXACT':e.append(f'{path}: heuristic path cannot be PROVEN_EXACT')
+        if alg & DETERMINISTIC_EVENTS and d['quality_class']=='PROVEN_EXACT':e.append(f'{path}: deterministic non-minimal path cannot be PROVEN_EXACT')
+        if alg & HEURISTIC_EVENTS and d['quality_class'] in {'PROVEN_EXACT','DETERMINISTIC'}:e.append(f'{path}: heuristic path requires HEURISTIC or APPROXIMATE')
         if 'full_myers_exceeded' in alg and 'banded_myers' in alg and d['quality_class']=='PROVEN_EXACT':e.append(f'{path}: banded after full cap cannot be PROVEN_EXACT')
     inv=o.get('invariants',[]);failed=[x['id'] for x in inv if x['status']=='failed'];trust=o.get('trust',{});regex=o.get('tool',{}).get('regex_timeout_available')
     sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=s.get('quality_class') in set(tdcfg.get('accepted_quality_classes',[]))
@@ -65,8 +72,10 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
     if (regex_required and not regex) and trust.get('runtime_safety')!='FAIL':e.append('runtime_safety must FAIL without required regex timeout')
     pin=sensor_cfg.get('trusted_tool',{});tool=o.get('tool',{})
     actual={'checker_sha256':tool.get('checker_sha256'),'original_package_sha256':tool.get('package_sha256'),'vendor_requirements_sha256':tool.get('dependencies_sha256'),'harness_requirements_sha256':tool.get('harness_dependencies_sha256')}
-    for k,v in pin.items():
-        if actual.get(k)!=v:e.append(f'trusted tool pin mismatch: {k}')
+    for k in actual:
+        v=pin.get(k)
+        if not isinstance(v,str) or len(v)!=64:e.append(f'trusted tool pin missing/invalid: {k}')
+        elif actual.get(k)!=v:e.append(f'trusted tool pin mismatch: {k}')
     # The policy itself pins expected package bytes; additionally verify currently installed harness dependency declaration.
     if tool.get('harness_dependencies_sha256')!=sha256_file(ROOT/'requirements.txt'):e.append('harness dependency declaration hash mismatch')
     if policy_path:
@@ -74,7 +83,8 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None):
         for x in files:
             if x.get('old_path'):paths.append(x['old_path'])
             paths.append(x['path'])
-        hits=classify_paths(paths,cfg);expected=sorted(set(sum(hits.values(),[])))
+        self_review=is_self_protected_repository(o.get('binding',{}).get('repository'),repo,cfg)
+        hits=classify_paths(paths,cfg,include_self_protection=self_review);expected=sorted(set(sum(hits.values(),[])))
         if sorted(s.get('protected_candidates',[]))!=expected:e.append('protected_candidates mismatch canonical policy')
     if o.get('binding',{}).get('comparison_mode')!='merge-base':e.append('comparison_mode must be merge-base')
     if repo:e.extend(_git_errors(o,repo,expected_base))

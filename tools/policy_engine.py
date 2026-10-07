@@ -1,6 +1,6 @@
 from __future__ import annotations
 import fnmatch
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import yaml
 
 LEVELS = ["L1", "L2", "ADVERSARIAL", "HUMAN"]
@@ -9,9 +9,9 @@ LEVELS = ["L1", "L2", "ADVERSARIAL", "HUMAN"]
 def normalize_repo_path(path: str) -> str:
     """Normalize a path only for policy matching.
 
-    Git object lookup must use Git's exact path bytes/string.  This helper intentionally
-    treats backslash as a separator so suspicious Windows-style spellings cannot evade
-    protected-path policy, but callers must never feed the normalized value back to Git.
+    Git object lookup must use Git's exact path. This helper intentionally treats a
+    backslash as a policy separator so Windows-style spellings cannot evade protected
+    path rules, but the normalized value must never be fed back into Git.
     """
     p=str(path).replace('\\','/')
     while p.startswith('./'):
@@ -43,9 +43,22 @@ def load_yaml(path):
         return yaml.safe_load(f)
 
 
-def classify_paths(changed_paths, protected_cfg):
+
+def is_self_protected_repository(repository: str | None = None, repo_path=None, protected_cfg=None) -> bool:
+    cfg = protected_cfg or {}
+    names = {str(x).casefold() for x in cfg.get('self_protection_repository_names', [])}
+    if repository and str(repository).casefold() in names:
+        return True
+    if repo_path:
+        root = Path(repo_path)
+        return (root / 'tools/run_review_cycle.py').is_file() and (root / 'policy/protected-paths.yml').is_file()
+    return False
+
+def classify_paths(changed_paths, protected_cfg, *, include_self_protection=False):
     out = {"governance":[], "human_floor":[], "adversarial_floor":[], "supply_chain":[]}
     mappings = [("governance","governance_paths"),("human_floor","human_floor_paths"),("adversarial_floor","adversarial_floor_paths"),("supply_chain","supply_chain_files")]
+    if include_self_protection:
+        mappings += [("governance","self_protection_paths"),("human_floor","self_protection_paths"),("adversarial_floor","self_protection_adversarial_paths")]
     for original in changed_paths:
         path=normalize_repo_path(original)
         for dst, key in mappings:
@@ -101,7 +114,6 @@ def active_escalation_signals(model, path_hits, signals):
     if signals.get('deterministic_reviewer_conflict'): active.add('deterministic_reviewer_conflict')
     if signals.get('blocker_candidate'): active.add('blocker_candidate')
     if model['security_surface'] in {'HIGH','CRITICAL'}: active.add('security_surface_high_or_critical')
-    if signals.get('post_merge_incident_similarity'): active.add('post_merge_incident_similarity')
     if path_hits['adversarial_floor']: active.add('protected_path_adversarial_floor')
     if signals.get('spec_changed_after_open'): active.add('unexplained_spec_change_after_pr_open')
     if signals.get('reviewer_policy_tampering'): active.add('reviewer_policy_tampering')
@@ -135,7 +147,7 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
     if escalation_cfg is None:
         escalation_cfg={
           'L2_if_any':['reviewer_confidence_low_or_medium','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
-          'ADVERSARIAL_if_any':['l1_l2_disagreement','novel_failure_family','deterministic_reviewer_conflict','blocker_candidate','security_surface_high_or_critical','post_merge_incident_similarity','protected_path_adversarial_floor','unexplained_spec_change_after_pr_open','reviewer_policy_tampering'],
+          'ADVERSARIAL_if_any':['l1_l2_disagreement','novel_failure_family','deterministic_reviewer_conflict','blocker_candidate','security_surface_high_or_critical','protected_path_adversarial_floor','unexplained_spec_change_after_pr_open','reviewer_policy_tampering'],
           'HUMAN_if_any':['governance_change','hard_reversibility','data_sensitivity_pii_or_secret','availability_critical','destructive_migration','public_contract_break','payment_or_irreversible_external_side_effect','ruleset_or_codeowners_change','adversarial_unresolved']
         }
     if sensor_cfg is None:
@@ -154,15 +166,13 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         level=max_level(level,'ADVERSARIAL');reasons.extend('ADVERSARIAL:'+x for x in sorted(active & adv))
     if active & human:
         level='HUMAN';reasons.extend('HUMAN:'+x for x in sorted(active & human))
-
-    # Hard authority floor: policy configuration may add escalation, but it may not
-    # lower a HUMAN requirement implied by protected paths or the risk matrix.
+    # Hard authority floor: configuration may add escalation but may not lower a HUMAN
+    # requirement implied by protected paths or the deterministic risk matrix.
     risk=derive_risk(model,path_hits)
     if risk['human_review_required']:
         level='HUMAN'
         reasons.extend('HUMAN_FLOOR:'+x for x in risk['floor_reasons'])
-        if risk['matrix_human_review_required']:
-            reasons.append('HUMAN_FLOOR:risk_matrix')
+        if risk['matrix_human_review_required']:reasons.append('HUMAN_FLOOR:risk_matrix')
     return level,sorted(set(reasons))
 
 
