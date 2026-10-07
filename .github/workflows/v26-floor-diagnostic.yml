@@ -34,4 +34,5 @@ jobs:
               print(json.dumps({'paths':paths,'protected':e['summary']['protected_candidates'],'hits':hits,'direct':direct},sort_keys=True))
               out=r/'out';subprocess.run([sys.executable,'tools/run_review_cycle_v26b.py','--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','DIAG','--output-dir',str(out),'--l1-cmd-json',json.dumps([sys.executable,'tools/mock_reviewer.py','--mode','pass']),'--l2-cmd-json',json.dumps([sys.executable,'tools/mock_reviewer.py','--mode','pass']),'--adversarial-cmd-json',json.dumps([sys.executable,'tools/mock_reviewer.py','--mode','pass']),'--disable-random-audit'],check=True)
               print((out/'review-cycle.json').read_text())
+              if (out/'review-failure.json').is_file(): print((out/'review-failure.json').read_text())
           PY
