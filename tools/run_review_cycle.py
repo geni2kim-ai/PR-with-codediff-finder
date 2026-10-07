@@ -28,11 +28,11 @@ def _logical_path(p:Path):
     try:return p.resolve().relative_to(ROOT.resolve()).as_posix()
     except Exception:return p.name
 
-def policy_digest(routing_policy=None):
-    entries=[]
-    for p in sorted((ROOT/'policy').glob('*.yml')):
+def policy_digest(routing_policy=None,policy_dir=None):
+    root=Path(policy_dir).resolve() if policy_dir else (ROOT/'policy').resolve();entries=[]
+    for p in sorted(root.glob('*.yml')):
         if p.name!='reviewer-routing.yml':entries.append((f'policy/{p.name}',p))
-    rp=Path(routing_policy).resolve() if routing_policy else (ROOT/'policy/reviewer-routing.yml').resolve();entries.append(('policy/reviewer-routing.effective.yml',rp))
+    rp=Path(routing_policy).resolve() if routing_policy else (root/'reviewer-routing.yml').resolve();entries.append(('policy/reviewer-routing.effective.yml',rp))
     return named_files_digest(entries)
 
 def refs_digest(refs):
@@ -163,7 +163,7 @@ def audit_sample(percent,key,subject,label='AUDIT'):
     msg=f'{label}:{subject}'.encode();n=int.from_bytes(hmac.new(key.encode(),msg,hashlib.sha256).digest()[:8],'big')/2**64
     return n < percent/100.0
 
-def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None,worker_cwd=None):
+def make_contract(level,cfg,standards_refs,routing_policy=None,policy_dir=None,worker_cmd=None,worker_cwd=None):
     r=cfg['reviewers'][level];prompt=(ROOT/r['prompt_ref']).resolve()
     if not prompt.is_file():raise FileNotFoundError(f'reviewer prompt missing: {r["prompt_ref"]}')
     skill=r.get('skill_ref');skill_digest=ZERO
@@ -172,7 +172,7 @@ def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None,w
         if not sp.is_file():raise FileNotFoundError(f'reviewer skill missing: {skill}')
         skill_digest=sha256_file(sp)
     return {'node_id':r['node_id'],'model':r['model'],'prompt_digest':sha256_file(prompt),'skill_digest':skill_digest,
-            'policy_digest':policy_digest(routing_policy),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd,worker_cwd,os.environ.get('PYTHONPATH') if 'PYTHONPATH' in set(cfg.get('runtime',{}).get('environment_allowlist',[])) else None)}
+            'policy_digest':policy_digest(routing_policy,policy_dir),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd,worker_cwd,os.environ.get('PYTHONPATH') if 'PYTHONPATH' in set(cfg.get('runtime',{}).get('environment_allowlist',[])) else None)}
 
 def _resolve_refs(refs):
     out=[]
@@ -201,22 +201,22 @@ def freeze_trusted_inputs(out,standards_refs,spec_ref,test_refs):
         dest=root/'spec';dest.mkdir(parents=True,exist_ok=True);suffix=src.suffix if src.suffix else '.dat';target=dest/('spec'+suffix);shutil.copy2(src,target);spec=str(target.resolve())
     return standards,spec,tests
 
-def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits_cfg,standards_refs,spec_ref,test_refs,lower_refs=None,lower_digests=None,routing_policy=None,runtime_verified=False,runtime_attestation_digest_value=None,runtime_fresh_sessions=None,worker_cmd=None):
+def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits_cfg,standards_refs,spec_ref,test_refs,lower_refs=None,lower_digests=None,routing_policy=None,policy_dir=None,runtime_verified=False,runtime_attestation_digest_value=None,runtime_fresh_sessions=None,worker_cmd=None):
     rt=cfg['runtime'];prior=level=='ADVERSARIAL';standards=_resolve_refs(standards_refs);tests=_resolve_refs(test_refs);spec=None
     if spec_ref:
         sp=Path(spec_ref).resolve()
         if not sp.is_file():raise FileNotFoundError(f'spec ref missing: {spec_ref}')
         spec=str(sp)
-    review_limits=limits_cfg.get('review',{});sub=limits_cfg.get('subagents',{})
+    review_limits=limits_cfg.get('review',{});sub=limits_cfg.get('subagents',{});policy_root=Path(policy_dir).resolve() if policy_dir else (ROOT/'policy').resolve()
     return {'schema_version':'2.4','task_id':f'{case_id}-{level}','case_id':case_id,'level':level,
       'binding':{'repository':evidence['binding']['repository'],'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha'],'workspace_ref':str(Path(repo).resolve()),'pr_number':None,'work_unit':evidence['binding'].get('work_unit')},
       'sensor':{'evidence_ref':str(Path(evidence_path).resolve()),'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'quality_class':evidence['summary']['quality_class'],'trusted_for_gate':evidence['trust']['trusted_for_gate']},
-      'changed_paths':changed_paths,'trusted_refs':{'policy':[str((ROOT/'policy/protected-paths.yml').resolve()),str((ROOT/'policy/escalation-policy.yml').resolve()),str((ROOT/'policy/sensor-policy.yml').resolve())],'standards':standards,'spec':spec,'tests':tests},
+      'changed_paths':changed_paths,'trusted_refs':{'policy':[str((policy_root/'protected-paths.yml').resolve()),str((policy_root/'escalation-policy.yml').resolve()),str((policy_root/'sensor-policy.yml').resolve())],'standards':standards,'spec':spec,'tests':tests},
       'lower_layer_result_refs':[str(Path(x).resolve()) for x in (lower_refs or [])],'lower_layer_result_digests':lower_digests or [],
       'security_boundary':{'repo_content_untrusted':True,'external_network_allowed':False,'secrets_allowed':False,'delegation_allowed':False,'fresh_context_required':level in {'L2','ADVERSARIAL'},'prior_review_conclusions_visible':prior},
       'runtime_enforcement':{'fresh_process_spawned':True,'environment_secret_stripping':True,'network_denied':bool(runtime_verified),'filesystem_scoped_to_workspace':bool(runtime_verified),'fresh_model_session_attested':bool((runtime_fresh_sessions or {}).get(level,False)) if level in {'L2','ADVERSARIAL'} else True,'runtime_attestation_digest':runtime_attestation_digest_value},
       'limits':{'timeout_seconds':int(rt['timeout_seconds']),'max_findings':int(review_limits.get('max_findings',12)),'max_nits':int(review_limits.get('max_nits',2)),'max_output_bytes':int(rt['max_output_bytes']),'max_subagents':int(sub.get('default_max_children',0))},
-      'review_focus':['correctness_security','standards','spec','test_integrity','supply_chain_compatibility','risk'],'output_contract':'schemas/reviewer-stage-result.schema.json','reviewer_contract':make_contract(level,cfg,standards_refs,routing_policy,worker_cmd,repo)}
+      'review_focus':['correctness_security','standards','spec','test_integrity','supply_chain_compatibility','risk'],'output_contract':'schemas/reviewer-stage-result.schema.json','reviewer_contract':make_contract(level,cfg,standards_refs,routing_policy,policy_dir,worker_cmd,repo)}
 
 def _kill_worker_tree(p):
     if os.name!='nt':
@@ -332,7 +332,7 @@ def main():
     for p in sorted((ROOT/'policy').glob('*.yml')):
         if p.name!='reviewer-routing.yml':shutil.copy2(p,effective_policy_dir/p.name)
     shutil.copy2(effective_routing,effective_policy_dir/'reviewer-routing.yml')
-    cfg=load_yaml(effective_routing);mode=str(cfg.get('mode','shadow')).upper();limits_cfg=load_yaml(ROOT/'policy/limits.yml');esc_cfg=load_yaml(ROOT/'policy/escalation-policy.yml');sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');protected=load_yaml(ROOT/'policy/protected-paths.yml')
+    cfg=load_yaml(effective_routing);mode=str(cfg.get('mode','shadow')).upper();limits_cfg=load_yaml(effective_policy_dir/'limits.yml');esc_cfg=load_yaml(effective_policy_dir/'escalation-policy.yml');sensor_cfg=load_yaml(effective_policy_dir/'sensor-policy.yml');protected=load_yaml(effective_policy_dir/'protected-paths.yml')
     subcfg=limits_cfg.get('subagents',{});default_children=int(subcfg.get('default_max_children',0));hard_children=int(subcfg.get('hard_max_children',default_children))
     if default_children<0 or hard_children<0 or default_children>hard_children:raise SystemExit('invalid subagent limits: default_max_children must be between 0 and hard_max_children')
     if mode not in {'SHADOW','ENFORCED'}:raise SystemExit('routing policy mode must be shadow or enforced')
@@ -456,7 +456,7 @@ def main():
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']});achieved=level;current_stage=r;return r
-        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
+        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
         if not l1cmd:state='WAITING_L1'
         else:
             l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
@@ -471,7 +471,7 @@ def main():
             if ns.disable_random_audit:labels.add('random_audit_shadow_unseeded' if shadow_audit_unseeded else 'random_audit_disabled')
             if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
-                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
+                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
                 if not l2cmd:state='WAITING_L2'
                 else:
                     l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
@@ -485,7 +485,7 @@ def main():
                     if audit2:required=max_level(required,'ADVERSARIAL');reasons.append('RANDOM_AUDIT_L2')
                     if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('ADVERSARIAL'):
                         lower=[out/'l1-review.json',out/'l2-review.json'];ld=[l1['result_digest'],l2['result_digest']]
-                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,lower,ld,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
+                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,lower,ld,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
                         if not advcmd:state='ADVERSARIAL_REQUIRED'
                         else:
                             adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
@@ -521,7 +521,7 @@ def main():
               'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str(effective_policy_dir.resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':frozen_standards,'spec_ref':frozen_spec,'test_results':frozen_tests},
               'digests':{
                 'textdiff_evidence':evidence['output_digest'],
-                'deterministic_policy':policy_digest(effective_routing),
+                'deterministic_policy':policy_digest(effective_routing,effective_policy_dir),
                 'l1_review':l1['result_digest'] if 'l1' in locals() else None,
                 'l2_review':l2['result_digest'] if 'l2' in locals() else None,
                 'trusted_standards':[sha256_file(Path(x)) for x in frozen_standards],
