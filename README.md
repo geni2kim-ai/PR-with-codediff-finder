@@ -147,7 +147,18 @@ python tools/record_human_decision.py \
 
 ENFORCED still requires a trusted external launcher that actually applies network/filesystem/secret isolation. The attestation helper authenticates the statement; it does **not** create the OS sandbox.
 
-The v2.6 attestation binds workspace, case/base/head, sandbox assertions, freshness nonce/timestamp, plus external claims that the L2 and Adversarial sessions are fresh.
+The v2.6 attestation binds workspace, case/base/head, sandbox assertions, freshness nonce/timestamp, plus external claims that the L2 and Adversarial sessions are fresh. These fresh-session claims are **fail-closed by default**: the launcher must explicitly assert them.
+
+```bash
+python tools/runtime_attestation.py create \
+  --workspace /repo \
+  --case-id CASE-001 \
+  --base-sha <merge-base-sha> \
+  --head-sha <head-sha> \
+  --l2-fresh-session \
+  --adversarial-fresh-session \
+  --output /secure/runtime-attestation.json
+```
 
 ## Validation
 
@@ -159,11 +170,11 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **88 PASS** across 39 isolated groups;
+- harness: **100 PASS** across 51 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
-- `python -m compileall -q tools tests`: PASS.
+- latest GitHub Actions canonical full validation: **SUCCESS** (Harness Full Validation #69);
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md`.
 
