@@ -1,4 +1,4 @@
-# Validation Commands — v2.6
+# Validation Commands — v2.7
 
 ## Canonical full validation
 
@@ -30,7 +30,7 @@ python -m unittest -q tests.test_v24_hardening
 python -m unittest -q tests.test_v25_dogfood
 ```
 
-v2.3 and v2.6 subprocess-heavy tests should normally be run through the canonical runner. To inspect discovered groups:
+v2.3 and v2.6 subprocess-heavy regression tests should normally be run through the canonical runner. To inspect discovered groups:
 
 ```bash
 python - <<'PY'
