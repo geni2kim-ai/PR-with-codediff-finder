@@ -376,13 +376,13 @@ def main():
         try:evidence=json.loads(Path(ns.evidence).read_text())
         except Exception as exc:terminal_block('EVIDENCE_UNREADABLE',type(exc).__name__);return
         binding={'repository':evidence.get('binding',{}).get('repository','unknown'),'base_sha':mb,'head_sha':head,'pr_number':None,'work_unit':evidence.get('binding',{}).get('work_unit')}
-        structural=evidence_errors(evidence,ROOT/'policy/protected-paths.yml',repo,ns.expected_base,verify_git=False)
+        structural=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base,verify_git=False)
         if structural:
             ev('SENSOR_REJECTED',{'reasons':structural[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(structural));return
         if evidence.get('binding',{}).get('head_sha')!=head:
             write_json(out/'textdiff-evidence.json',evidence);ev('SENSOR_REJECTED',{'reasons':['HEAD_MISMATCH']})
             cyc=cycle_obj(ns.case_id,binding,evidence,[],'L1','SENSOR','STALE',['HEAD_MISMATCH'],mode,False,False,worktree_ok,False,None);write_json(out/'review-cycle.json',cyc);ev('CYCLE_CLOSED',{'state':'STALE','cycle_digest':cyc['cycle_digest'],'gate_conclusion':'cancelled'});print(out);return
-        errs=evidence_errors(evidence,ROOT/'policy/protected-paths.yml',repo,ns.expected_base)
+        errs=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base)
         if errs:
             ev('SENSOR_REJECTED',{'reasons':errs[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(errs));return
         git_ok=True
@@ -392,7 +392,7 @@ def main():
         try:
             with tempfile.TemporaryDirectory(prefix='maestro-sensor-verify-') as td:
                 rp=Path(td)/'recomputed.json'
-                cmd=[sys.executable,str(ROOT/'tools/textdiff_adapter.py'),'--repo',str(repo),'--repository',str(evidence['binding']['repository']),'--base',str(ns.expected_base),'--head',str(head),'--output',str(rp)]
+                cmd=[sys.executable,str(ROOT/'tools/textdiff_adapter.py'),'--repo',str(repo),'--repository',str(evidence['binding']['repository']),'--base',str(ns.expected_base),'--head',str(head),'--output',str(rp),'--policy',str(effective_policy_dir/'protected-paths.yml'),'--sensor-policy',str(effective_policy_dir/'sensor-policy.yml')]
                 if evidence['binding'].get('work_unit') is not None:cmd += ['--work-unit',str(evidence['binding']['work_unit'])]
                 cp=subprocess.run(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True,timeout=max(30,int(cfg['runtime'].get('timeout_seconds',180))))
                 if cp.returncode:raise RuntimeError('adapter recomputation failed: '+cp.stderr[-1000:])
