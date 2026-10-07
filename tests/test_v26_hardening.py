@@ -347,6 +347,7 @@ class V26CodexFollowupTests(unittest.TestCase):
         s=(ROOT/'.github/workflows/harness-validation.yml').read_text()
         self.assertIn('Require committed manifest on PR/manual validation',s)
         self.assertIn('cmp -s MANIFEST.sha256 MANIFEST.generated.sha256',s)
+        self.assertIn("github.event.pull_request.head.sha",s)
         self.assertLess(s.index('Require committed manifest on PR/manual validation'),s.index('Apply generated manifest for hardening-branch push validation'))
         self.assertNotIn('git push origin HEAD:hardening/v2.6',s)
 
