@@ -290,6 +290,14 @@ class RoutingFreezeTests(unittest.TestCase):
         std.write_text('MUTATED\n');spec.unlink();test.unlink();self.assertEqual(frozen_std.read_text(),'STANDARD-V1\n');self.assertEqual(frozen_spec.read_text(),'SPEC-V1\n')
         queue.unlink();cp2=run(args);self.assertEqual(Path(cp2.stdout.strip()),queue);self.assertTrue(queue.is_file())
 
+    def test_existing_case_bank_rejects_changed_case_with_same_id(self):
+        r,out=self._case('ROUTE-COLLISION');root=r/'routing'
+        args=self._route_args(out,root)
+        run(args)
+        casep=out/'case-record.json';case=json.loads(casep.read_text());case['outcome']['author_response']='fixed';casep.write_text(json.dumps(case))
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('immutable case-bank case mismatch',cp.stderr+cp.stdout)
+
 
 
 class V26FollowupRegressionTests(unittest.TestCase):
