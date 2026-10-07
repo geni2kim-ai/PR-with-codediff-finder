@@ -11,11 +11,15 @@ ZERO='0'*64
 
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 
+def default_anchor_path(ledger):
+    p=Path(ledger)
+    return p.with_name('case-events.anchor.json') if p.name=='case-events.jsonl' else Path(str(p)+'.anchor.json')
+
 def load_events(path):
     p=Path(path)
     if not p.exists():return []
     out=[]
-    for n,line in enumerate(p.read_text(encoding='utf-8').splitlines(),1):
+    for n,line in enumerate(p.read_text(encoding='utf-8').split('\n'),1):
         if line.strip():out.append(json.loads(line))
     return out
 
@@ -61,7 +65,7 @@ def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
 
 def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac=False):
     p=Path(anchor);errs=[]
-    if not p.is_file():return ['ledger anchor missing'] if require_hmac else []
+    if not p.is_file():return ['ledger anchor missing']
     try:a=json.loads(p.read_text())
     except Exception:return ['ledger anchor invalid JSON']
     cid=case_id or (events[0]['case_id'] if events else a.get('case_id'))
@@ -80,13 +84,19 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
     if hmac_key is None:
         hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY')
         if hmac_key and key_id is None:key_id='MAESTRO_LEDGER_HMAC_KEY'
-    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else Path(str(p)+'.anchor.json')
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else default_anchor_path(p)
     with ledger_lock(p):
         events=load_events(p);errs=validate_events(events,case_id if events else None)
         if errs:raise ValueError('invalid existing ledger: '+'; '.join(errs))
-        # If an anchor exists, it must match before append; this detects truncation even without HMAC.
+        if events and not anchor.exists():
+            raise ValueError('invalid existing ledger anchor: ledger anchor missing')
+        existing_hmac=False
         if anchor.exists():
-            ae=validate_anchor(p,anchor,events,case_id,hmac_key,require_hmac=bool(hmac_key))
+            try:existing_hmac=bool(json.loads(anchor.read_text()).get('hmac_sha256'))
+            except Exception:raise ValueError('invalid existing ledger anchor: ledger anchor invalid JSON')
+            if existing_hmac and not hmac_key:
+                raise ValueError('invalid existing ledger anchor: HMAC-protected ledger cannot be appended without key')
+            ae=validate_anchor(p,anchor,events,case_id,hmac_key,require_hmac=existing_hmac or bool(hmac_key))
             if ae:raise ValueError('invalid existing ledger anchor: '+'; '.join(ae))
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
@@ -104,7 +114,7 @@ def main():
     if ns.cmd=='append':
         payload=json.loads(Path(ns.payload_json).read_text());print(json.dumps(append_event(ns.ledger,ns.case_id,ns.event_type,payload,anchor_path=ns.anchor,hmac_key=key,key_id=ns.key_id),ensure_ascii=False))
     else:
-        events=load_events(ns.ledger);errs=validate_events(events,ns.case_id);anchor=ns.anchor or str(ns.ledger)+'.anchor.json';errs+=validate_anchor(ns.ledger,anchor,events,ns.case_id,key,ns.require_hmac)
+        events=load_events(ns.ledger);errs=validate_events(events,ns.case_id);anchor=ns.anchor or str(default_anchor_path(ns.ledger));errs+=validate_anchor(ns.ledger,anchor,events,ns.case_id,key,ns.require_hmac)
         if errs:[print('INVALID',x) for x in errs];raise SystemExit(1)
         print('VALID')
 if __name__=='__main__':main()

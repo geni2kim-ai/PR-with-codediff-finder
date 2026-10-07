@@ -7,7 +7,14 @@ LEVELS = ["L1", "L2", "ADVERSARIAL", "HUMAN"]
 
 
 def normalize_repo_path(path: str) -> str:
-    p=str(path).replace('\\','/')
+    """Validate a Git path without changing its byte-level separator semantics.
+
+    Backslash is a legal Git filename character on POSIX.  Keep it intact for Git I/O;
+    policy matching canonicalizes it separately and conservatively.
+    """
+    p=str(path)
+    if '\x00' in p:
+        raise ValueError(f'unsafe repository path: {path!r}')
     while p.startswith('./'):
         p=p[2:]
     p=p.lstrip('/')
@@ -25,8 +32,8 @@ def _match(path: str, pattern: str) -> bool:
     match auth/x, src/auth/x and backend/auth/x while never turning github/** into
     .github/**. Leading './' is removed as a prefix, never with str.lstrip().
     """
-    p=normalize_repo_path(path)
-    raw=str(pattern).replace('\\','/')
+    p=normalize_repo_path(path).replace('\\','/').lower()
+    raw=str(pattern).replace('\\','/').lower()
     anchored=raw.startswith('/')
     while raw.startswith('./'):
         raw=raw[2:]
@@ -144,6 +151,14 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         sensor_cfg={'textdiff':{'l2_if_any':['runtime_untrusted','encoding_low_confidence','approximate_result'],'adversarial_if_any':['failed_invariant','diff_false_exact','runtime_untrusted_on_protected_path','nontext_sensitive_change']}}
     active=active_escalation_signals(model,path_hits,signals)
     level='L1';reasons=[]
+    # Hard authority floors are not configurable hints.  They must remain identical
+    # across legacy validation and the live cycle orchestrator.
+    hard_risk=derive_risk(model,path_hits)
+    if hard_risk['human_review_required']:
+        level='HUMAN'
+        reasons.extend('HUMAN:'+x for x in sorted(set(hard_risk['floor_reasons'] or ['risk_matrix'])))
+        if hard_risk['matrix_human_review_required'] and not hard_risk['floor_reasons']:
+            reasons.append('HUMAN:risk_matrix')
     l2=set(escalation_cfg.get('L2_if_any',[]))|set(sensor_cfg.get('textdiff',{}).get('l2_if_any',[]))
     tdc=sensor_cfg.get('textdiff',{})
     adv=set(escalation_cfg.get('ADVERSARIAL_if_any',[]))|set(tdc.get('adversarial_if_any',[]))
@@ -151,7 +166,7 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         adv |= set(tdc.get('adversarial_if_heuristic_and_any',[]))
     human=set(escalation_cfg.get('HUMAN_if_any',[]))
     if active & l2:
-        level='L2';reasons.extend('L2:'+x for x in sorted(active & l2))
+        level=max_level(level,'L2');reasons.extend('L2:'+x for x in sorted(active & l2))
     if active & adv:
         level=max_level(level,'ADVERSARIAL');reasons.extend('ADVERSARIAL:'+x for x in sorted(active & adv))
     if active & human:

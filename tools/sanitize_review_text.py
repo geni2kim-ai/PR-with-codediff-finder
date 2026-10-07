@@ -7,22 +7,28 @@ SCHEME_URL=re.compile(r'(?i)\b(?:https?|ftp)://[^\s<>()]+')
 PROTO_URL=re.compile(r'(?i)(?<!:)//(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>()]*)?')
 WWW_URL=re.compile(r'(?i)\bwww\.(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>()]*)?')
 MD_DANGEROUS_LINK=re.compile(r'(?i)\[[^\]]*\]\(\s*(?:javascript|data|vbscript|file):[^)]*\)')
-BARE_DOMAIN=re.compile(r'(?i)(?<![\w@])(?:[a-z0-9](?:[a-z0-9-]{0,62})\.)+(?:com|net|org|io|dev|app|ai|co|kr|jp|cn|ru|uk|de|fr|xyz|info|biz|gov|edu)(?:[/:?#][^\s<>()]*)?')
 MENTION=re.compile(r'(?<![\w.])@[A-Za-z0-9_-]{1,64}')
 SECRET_PATTERNS=[
  re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
  re.compile(r'\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b'),
  re.compile(r'\bgithub_pat_[A-Za-z0-9_]{20,}\b'),
  re.compile(r'\bAKIA[0-9A-Z]{16}\b'),
+ re.compile(r'\bAIza[0-9A-Za-z_-]{30,}\b'),
+ re.compile(r'\b(?:xox[baprs]-[0-9A-Za-z-]{10,})\b'),
+ re.compile(r'\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b'),
  re.compile(r'\bsk-[A-Za-z0-9_-]{20,}\b'),
- re.compile(r'(?i)\b(?:password|passwd|api[_-]?key|secret|token)\s*[:=]\s*["\']?[^\s"\']{8,}')]
+ re.compile(r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'),
+ re.compile(r'(?i)(?:^|[^A-Za-z0-9])bearer\s+[A-Za-z0-9._~+/-]{12,}'),
+ re.compile(r'(?i)(?:^|[^A-Za-z0-9])(?:[A-Za-z0-9_]*(?:password|passwd|api[_-]?key|secret|token|credential)[A-Za-z0-9_]*)\s*[:=]\s*["\']?[^\s"\']{8,}'),
+ re.compile(r'(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis)://[^\s]+')
+]
 
 def normalized(s:str)->str:return ZERO_WIDTH.sub('',s)
 
 def scan_text(s:str):
     t=normalized(s)
     return {
-      'external_urls_present':bool(SCHEME_URL.search(t) or PROTO_URL.search(t) or WWW_URL.search(t) or BARE_DOMAIN.search(t) or MD_DANGEROUS_LINK.search(t)),
+      'external_urls_present':bool(SCHEME_URL.search(t) or PROTO_URL.search(t) or WWW_URL.search(t) or MD_DANGEROUS_LINK.search(t)),
       'markdown_images_present':bool(MD_IMAGE.search(t) or HTML_IMAGE.search(t)),
       'mentions_present':bool(MENTION.search(t)),
       'secret_scan_passed':not any(rx.search(t) for rx in SECRET_PATTERNS)}
@@ -47,7 +53,7 @@ def scan_stage_result(o):
 
 def sanitize(s):
     s=normalized(s);s=MD_IMAGE.sub('[image removed]',s);s=HTML_IMAGE.sub('[image removed]',s);s=MD_DANGEROUS_LINK.sub('[external link removed]',s)
-    s=SCHEME_URL.sub('[external link removed]',s);s=PROTO_URL.sub('[external link removed]',s);s=WWW_URL.sub('[external link removed]',s);s=BARE_DOMAIN.sub('[external link removed]',s);s=MENTION.sub('[mention removed]',s)
+    s=SCHEME_URL.sub('[external link removed]',s);s=PROTO_URL.sub('[external link removed]',s);s=WWW_URL.sub('[external link removed]',s);s=MENTION.sub('[mention removed]',s)
     for rx in SECRET_PATTERNS:s=rx.sub('[secret removed]',s)
     return s
 

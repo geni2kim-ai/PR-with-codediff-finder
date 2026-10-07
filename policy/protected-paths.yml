@@ -19,6 +19,11 @@ governance_paths:
 - docs/REVIEW_AUTHORITY_LADDER.md
 - docs/OPERATIONS.md
 - docs/RETRO_GOVERNANCE.md
+- tools/**
+- tests/**
+- vendor/**
+- requirements*.txt
+- pyproject.toml
 human_floor_paths:
 - .github/workflows/**
 - .github/actions/**
@@ -33,6 +38,11 @@ human_floor_paths:
 - billing/**
 - api/public/**
 - schemas/public/**
+- tools/**
+- tests/**
+- vendor/**
+- requirements*.txt
+- pyproject.toml
 adversarial_floor_paths:
 - auth/**
 - security/**
@@ -46,6 +56,11 @@ adversarial_floor_paths:
 - profiles/**
 - policy/**
 - schemas/**
+- tools/**
+- tests/**
+- vendor/**
+- requirements*.txt
+- pyproject.toml
 supply_chain_files:
 - package.json
 - package-lock.json

@@ -133,8 +133,8 @@ def weakening_signals(repo:Path,base:str,head:str,path:str,change_type:str,old_p
     if old_path:args.append(old_path)
     args.append(path)
     raw=run_git(repo,*args,check=False).decode('utf-8','replace') if scan_diff else ''
-    added=[x[1:] for x in raw.splitlines() if x.startswith('+') and not x.startswith('+++')]
-    deleted=[x[1:] for x in raw.splitlines() if x.startswith('-') and not x.startswith('---')]
+    added=[x[1:] for x in raw.split('\n') if x.startswith('+') and not x.startswith('+++')]
+    deleted=[x[1:] for x in raw.split('\n') if x.startswith('-') and not x.startswith('---')]
     global_patterns=[
       ('lint_suppression_added',re.compile(r'(?i)(eslint-disable|@ts-ignore|@ts-nocheck|noinspection|\bnolint\b)')),
       ('coverage_exclusion_added',re.compile(r'(?i)(pragma:\s*no\s*cover|istanbul\s+ignore|coverage:\s*ignore)')),
@@ -195,6 +195,13 @@ def main():
              'mode_before':be['mode'] if be else None,'mode_after':he['mode'] if he else None,'symlink':symlink,'submodule':submodule,'binary':False,'generated':gen,'vendor':vendor,'language':language(path),
              'encoding':{'base':None,'head':None,'confidence':'UNKNOWN','lossless_fallback_used':False},'status':'SKIPPED','skip_reason':None,'lines':{'a':0,'b':0},
              'diff':{'hunk_count':0,'changed_lines':0,'approx':False,'quality_class':'NOT_APPLICABLE','algorithm_path':[],'trace_digest':'0'*64},'weakening_signals':weak}
+        blob_binding_invalid = (
+            (ctype=='MODIFIED' and (not be or be.get('type')!='blob' or not he or he.get('type')!='blob')) or
+            (ctype=='RENAMED' and (not be or be.get('type')!='blob' or not he or he.get('type')!='blob')) or
+            (ctype=='COPIED' and (not be or be.get('type')!='blob' or not he or he.get('type')!='blob'))
+        )
+        if blob_binding_invalid and not (submodule or symlink):
+            row['status']='ERROR';row['skip_reason']='missing_git_blob_binding';files.append(row);had_error=True;coverage_gap=True;continue
         if submodule or symlink:
             row['skip_reason']='submodule' if submodule else 'symlink';files.append(row);coverage_gap=True;nontext_sensitive=True;continue
         if too_large:
@@ -213,7 +220,26 @@ def main():
                 row['binary']=True;row['status']='BINARY';row['skip_reason']='binary';files.append(row);coverage_gap=True;nontext_sensitive=True;continue
             at=at or '';bt=bt or '';a=checker._split_text_lines(at);b=checker._split_text_lines(bt);conf,lf=encoding_conf([(am or {}).get('encoding'),(bm or {}).get('encoding')],sensor_cfg)
             row['encoding']={'base':(am or {}).get('encoding'),'head':(bm or {}).get('encoding'),'confidence':conf,'lossless_fallback_used':lf};row['lines']={'a':len(a),'b':len(b)}
-            _,stats,ops,tr=checker.diff_texts_with_trace(a,b,old or path,path);ok=(reconstruct(a,b,ops)==b);apply_ok &= ok
+            _,stats,ops,tr=checker.diff_texts_with_trace(a,b,old or path,path)
+            # SequenceMatcher is a useful heuristic, but ordinary small edits can be
+            # cheaply proven optimal with bounded Myers.  Upgrade only after an
+            # independent exact reconstruction succeeds.
+            if stats['quality_class']=='HEURISTIC' and max(len(a),len(b))<=512:
+                try:
+                    a_id,b_id=checker._line_ids(a,b,False)
+                    exact_ops=checker._myers_opcodes(a_id,b_id,None,d_cap=512)
+                    if reconstruct(a,b,exact_ops)==b:
+                        ops=exact_ops
+                        non_equal=[x for x in ops if x[0]!='equal']
+                        stats['hunks']=len(non_equal)
+                        stats['changed_lines']=sum(max(x[2]-x[1],x[4]-x[3]) for x in non_equal)
+                        stats['quality_class']='PROVEN_EXACT';stats['approx']=False
+                        tr={'api_version':tr.get('api_version'),'quality_class':'PROVEN_EXACT',
+                            'algorithm_path':list(tr.get('algorithm_path',[]))+['adapter_full_myers_verify'],
+                            'events':list(tr.get('events',[]))+[{'event':'adapter_full_myers_verify','quality':'PROVEN_EXACT','a_len':len(a),'b_len':len(b),'d_cap':512}]}
+                except Exception:
+                    pass
+            ok=(reconstruct(a,b,ops)==b);apply_ok &= ok
             row['diff']={'hunk_count':stats['hunks'],'changed_lines':stats['changed_lines'],'approx':stats['approx'],'quality_class':stats['quality_class'],'algorithm_path':tr['algorithm_path'],'trace_digest':object_digest(tr)}
             row['status']='ANALYZED';row['skip_reason']=None
         except Exception as exc:
@@ -221,7 +247,9 @@ def main():
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
     actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
-    expected=sensor_cfg.get('trusted_tool',{});hash_mismatch=[k for k,v in actual_hashes.items() if expected.get(k) and expected.get(k)!=v]
+    expected=sensor_cfg.get('trusted_tool',{});required_pin_keys=set(actual_hashes)
+    hash_mismatch=[k for k,v in actual_hashes.items() if not expected.get(k) or expected.get(k)!=v]
+    missing_pins=sorted(k for k in required_pin_keys if not expected.get(k))
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
     runtime_ok=(regex_ok or not regex_required) and quality_allowed and not had_error and not coverage_gap and apply_ok and not hash_mismatch
     invariants=[
@@ -238,6 +266,7 @@ def main():
     if nontext_sensitive:reasons.append('nontext_sensitive_change')
     if not apply_ok:reasons.append('opcode_reconstruction_failed')
     if hash_mismatch:reasons.append('trusted_tool_hash_mismatch')
+    if missing_pins:reasons.append('trusted_tool_pin_missing')
     tool={'name':'TextDiffChecker','product_version':'1.4.6','harness_api_version':getattr(checker,'HARNESS_API_VERSION','unknown'),
       'package_sha256':actual_hashes['original_package_sha256'],'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
       'dependencies_sha256':actual_hashes['vendor_requirements_sha256'],'harness_dependencies_sha256':actual_hashes['harness_requirements_sha256'],
