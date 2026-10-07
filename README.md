@@ -114,6 +114,26 @@ python tools/textdiff_adapter.py \
   --output /review/CASE-001-evidence.json
 ```
 
+## Privacy-safe mutation receipt
+
+For evidence-only closure where raw artifacts must remain local, keep a local-only spec containing logical names and paths, capture a pre-run digest snapshot, then finalize after the closure work. The distributable receipt contains no source path or content and has `authority_effect=NONE`.
+
+```bash
+python tools/mutation_receipt.py capture \
+  --spec /local-only/artifacts.json \
+  --output /local-only/pre-snapshot.json
+
+python tools/mutation_receipt.py finalize \
+  --pre /local-only/pre-snapshot.json \
+  --spec /local-only/artifacts.json \
+  --output /distributable/mutation-receipt.json
+
+python tools/mutation_receipt.py validate \
+  --receipt /distributable/mutation-receipt.json
+```
+
+The final receipt binds `pre_snapshot_digest`, per-artifact pre/post SHA-256 and equality. Preserve or externally anchor the pre-snapshot before mutation when stronger independent chronology is required.
+
 ## SHADOW review cycle
 
 ```bash
