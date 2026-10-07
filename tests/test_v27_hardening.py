@@ -10,7 +10,7 @@ sys.path.insert(0,str(TOOLS))
 from case_ledger import append_event,default_anchor_path
 from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
-from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision
+from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision,validate_receipt
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -41,7 +41,9 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             same=finalize_mutation_receipt(pre_path,spec)
             schema=json.loads((ROOT/'schemas/mutation-receipt.schema.json').read_text(encoding='utf-8'))
             self.assertEqual(list(Draft202012Validator(schema).iter_errors(same)),[])
-            self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE');self.assertEqual(same['pre_snapshot_digest'],pre['snapshot_digest'])
+            self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE');self.assertEqual(same['pre_snapshot_digest'],pre['snapshot_digest']);self.assertEqual(validate_receipt(same),[])
+            tampered=json.loads(json.dumps(same));tampered['items'][0]['post_sha256']='0'*64
+            self.assertTrue(validate_receipt(tampered))
             serialized=json.dumps(same)
             self.assertNotIn(str(secret),serialized);self.assertNotIn('sensitive-original',serialized);self.assertNotIn('"path"',serialized)
             secret.write_text('mutated\n',encoding='utf-8')
