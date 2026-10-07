@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy, hashlib, json, os, subprocess, sys, tempfile, time, unittest
+from datetime import datetime,timedelta,timezone
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ from sanitize_review_text import scan_text,scan_stage_result
 from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation
 from textdiff_adapter import weakening_signals,canonical_source_sha256
 from validate_textdiff_evidence import semantic_errors as evidence_errors
+import human_decision_attestation
 from human_decision_attestation import create as create_human_attestation,validate as validate_human_attestation,consume_nonce as consume_human_nonce
 
 
@@ -199,10 +201,17 @@ class HumanAndGateTests(unittest.TestCase):
         env=human_env(out,key);run(args,env=env)
         final_case=json.loads((out/'case-record.json').read_text());final_cycle=json.loads((out/'review-cycle.json').read_text());events=load_events(out/'case-events.jsonl');count=len(events)
         human=next(x['payload'] for x in events if x['event_type']=='HUMAN_DECISION' and x['payload'].get('review_id')=='RECOVER-1');close=next(x['payload'] for x in events if x['event_type']=='CYCLE_CLOSED' and x['payload'].get('human_review_id')=='RECOVER-1')
-        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':sha256_bytes(canonical_bytes({'case_id':'HUMAN-GATE','review_id':'RECOVER-1','attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest']}))},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
+        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':sha256_bytes(canonical_bytes({'case_id':'HUMAN-GATE','review_id':'RECOVER-1','attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest']}))},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close,'transaction_digest':''}
+        tx['transaction_digest']=object_digest(tx,'transaction_digest')
         (out/'case-record.json').write_text(json.dumps(original_case));(out/'review-cycle.json').write_text(json.dumps(original_cycle));(out/'human-decision-transaction.json').write_text(json.dumps(tx));(out/'human-decision-attestation.json').unlink(missing_ok=True)
         run(args,env=env)
         self.assertEqual(len(load_events(out/'case-events.jsonl')),count);self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'HUMAN_CONFIRMED');self.assertFalse((out/'human-decision-transaction.json').exists());self.assertTrue((out/'human-decision-attestation.json').is_file())
+
+        tampered=json.loads(json.dumps(tx));tampered['updated_cycle']['gate_conclusion']='neutral'
+        (out/'case-record.json').write_text(json.dumps(original_case));(out/'review-cycle.json').write_text(json.dumps(original_cycle));(out/'human-decision-transaction.json').write_text(json.dumps(tampered))
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env=env)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('human transaction digest mismatch',cp.stderr+cp.stdout)
+        (out/'human-decision-transaction.json').unlink(missing_ok=True)
 
     def test_human_decision_rejects_head_drift(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
@@ -359,6 +368,15 @@ class V26CodexFollowupTests(unittest.TestCase):
             self.assertNotEqual(cp.returncode,0);self.assertIn('l2_fresh_session=true',cp.stdout+cp.stderr)
             run([sys.executable,str(TOOLS/'runtime_attestation.py'),'create','--workspace',str(root),'--output',str(good),'--l2-fresh-session','--adversarial-fresh-session'],env=env)
             run([sys.executable,str(TOOLS/'runtime_attestation.py'),'validate','--workspace',str(root),'--attestation',str(good)],env=env)
+
+    def test_human_attestation_freshness_is_only_an_acceptance_window(self):
+        key='human-key';head='a'*40;cycle='b'*64;evidence='c'*64
+        att=create_human_attestation('CASE','owner','CONFIRMED',head,key,cycle,evidence)
+        att['issued_at']=(datetime.now(timezone.utc)-timedelta(minutes=10)).isoformat().replace('+00:00','Z')
+        core={k:v for k,v in att.items() if k!='attestation_hmac'};att['attestation_hmac']=human_decision_attestation._mac(core,key)
+        fresh_errs=validate_human_attestation(att,case_id='CASE',actor_id='owner',verdict='CONFIRMED',head_sha=head,cycle_digest=cycle,evidence_digest=evidence,key=key,max_age_seconds=300)
+        self.assertIn('human attestation stale',fresh_errs)
+        self.assertEqual(validate_human_attestation(att,case_id='CASE',actor_id='owner',verdict='CONFIRMED',head_sha=head,cycle_digest=cycle,evidence_digest=evidence,key=key,enforce_freshness=False),[])
 
     def test_human_decision_requires_external_shared_replay_cache(self):
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'infra').mkdir();(r/'infra/main.tf').write_text('x=1\n');base=commit(r,'base');(r/'infra/main.tf').write_text('x=2\n');commit(r,'head')
