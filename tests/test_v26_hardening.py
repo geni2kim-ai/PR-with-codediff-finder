@@ -39,10 +39,13 @@ def adapter(repo,base,repository='owner/repo',head='HEAD'):
     run([sys.executable,str(TOOLS/'textdiff_adapter.py'),'--repo',str(repo),'--repository',repository,'--base',base,'--head',head,'--output',str(p)])
     return p
 
-def cycle(repo,ev,base,case='CASE',*,repository=None,l1='pass',l2='pass',adv='pass',out=None,routing_policy=None):
+def cycle(repo,ev,base,case='CASE',*,repository=None,l1='pass',l2='pass',adv='pass',out=None,routing_policy=None,standards=None,spec=None,tests=None):
     out=out or repo/f'out-{case}'
     args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(repo),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson(l1),'--l2-cmd-json',cmdjson(l2),'--adversarial-cmd-json',cmdjson(adv),'--disable-random-audit']
     if routing_policy:args+=['--routing-policy',str(routing_policy)]
+    for p in standards or []:args+=['--standards-ref',str(p)]
+    if spec:args+=['--spec-ref',str(spec)]
+    for p in tests or []:args+=['--test-ref',str(p)]
     cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
     if cp.returncode!=0:raise AssertionError(cp.stderr)
     return out
@@ -219,6 +222,19 @@ class HumanAndGateTests(unittest.TestCase):
         oldc=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',oldc['binding']['head_sha'],key,oldc['cycle_digest'],oldc['sensor']['evidence_digest'])))
         cp=subprocess.run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env=human_env(out,key))
         self.assertNotEqual(cp.returncode,0);self.assertIn('HEAD',cp.stderr+cp.stdout)
+
+class TrustedInputFreezeTests(unittest.TestCase):
+    def test_review_cycle_freezes_external_standards_spec_and_tests(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');ev=adapter(r,base)
+        with tempfile.TemporaryDirectory() as ext:
+            ext=Path(ext);std=ext/'standard.md';spec=ext/'spec.md';test=ext/'result.json'
+            std.write_text('STANDARD-V1\n');spec.write_text('SPEC-V1\n');test.write_text('{"status":"pass"}\n')
+            out=cycle(r,ev,base,'TRUST-FREEZE',standards=[std],spec=spec,tests=[test])
+            task=json.loads((out/'l1-task.json').read_text());fstd=Path(task['trusted_refs']['standards'][0]);fspec=Path(task['trusted_refs']['spec']);ftest=Path(task['trusted_refs']['tests'][0])
+            self.assertTrue(str(fstd).startswith(str((out/'trusted-inputs').resolve())));self.assertEqual(fstd.read_text(),'STANDARD-V1\n');self.assertEqual(fspec.read_text(),'SPEC-V1\n');self.assertEqual(ftest.read_text(),'{"status":"pass"}\n')
+            std.write_text('MUTATED\n');spec.write_text('MUTATED\n');test.write_text('{"status":"fail"}\n')
+            self.assertEqual(fstd.read_text(),'STANDARD-V1\n');self.assertEqual(fspec.read_text(),'SPEC-V1\n');self.assertEqual(ftest.read_text(),'{"status":"pass"}\n')
+
 
 class WorkerAndAuditTests(unittest.TestCase):
     def test_deterministic_audit_sampling_is_reproducible(self):
