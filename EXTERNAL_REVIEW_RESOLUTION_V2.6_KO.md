@@ -9,7 +9,7 @@
 | 5 | cycle digest 재계산으로 success 위조 | check renderer가 latest `CYCLE_CLOSED`의 digest/state/gate를 대조 | 해결 |
 | 6 | backslash Git filename false-exact | Git exact path 보존, policy normalization 분리; 실제 변경 lines/diff 회귀 | 해결 |
 | 7 | output safety 오탐/미탐 | prose bare-TLD 제거, ref fields host 검사; URL/zero-width/secret/token/JWT/Bearer/DB URI 확대 | 해결 |
-| 8 | HMAC downgrade/anchor 삭제 | 기존 HMAC anchor에 키 없으면 append 거부; ledger event가 있는데 anchor가 없으면 거부 | 해결 |
+| 8 | HMAC downgrade/anchor 삭제 | 기존 HMAC anchor에 키 없으면 append 거부; **기존 ledger 파일은 0바이트로 잘린 상태라도 anchor가 없으면 재시작 거부** | 해결 |
 | 9 | Unicode line separator로 ledger 손상 | JSONL physical separator를 LF로 고정 | 해결 |
 | 10 | FF/NEL로 weakening 회피 | diff line parsing을 `split('\n')` 기준으로 변경 | 해결 |
 | 11 | 보호 경로 case-sensitive | policy matching casefold 적용 | 해결 |
