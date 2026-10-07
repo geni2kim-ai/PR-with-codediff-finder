@@ -51,11 +51,17 @@ def _atomic_queue_write(path,obj):
         return
     try:os.write(fd,data);os.fsync(fd)
     finally:os.close(fd)
-def _recover_completed_case_bank(cb,root,schema):
-    packet_path=cb/'adversarial-packet.json'
-    if not packet_path.is_file():raise SystemExit(f'incomplete immutable case-bank target requires manual quarantine: {cb}')
+def _recover_completed_case_bank(cb,root,schema,expected_case):
+    stored_case_path=cb/'case-record.json';packet_path=cb/'adversarial-packet.json'
+    if not stored_case_path.is_file() or not packet_path.is_file():raise SystemExit(f'incomplete immutable case-bank target requires manual quarantine: {cb}')
+    stored_case=json.loads(stored_case_path.read_text())
+    if stored_case!=expected_case:raise SystemExit(f'immutable case-bank case mismatch for reused case_id: {expected_case.get("case_id")}')
     packet=json.loads(packet_path.read_text());errs=[e.message for e in Draft202012Validator(schema).iter_errors(packet)]
     if errs:raise SystemExit('stored adversarial packet invalid: '+'; '.join(errs))
+    if packet.get('case_id')!=expected_case.get('case_id') or packet.get('binding')!=expected_case.get('binding'):
+        raise SystemExit('stored adversarial packet binding does not match immutable case record')
+    if packet.get('digests',{}).get('textdiff_evidence')!=expected_case.get('sensor',{}).get('evidence_digest'):
+        raise SystemExit('stored adversarial packet evidence digest does not match immutable case record')
     target=root/'adversarial_queue'/packet['queue']/f"{packet['case_id']}.json";_atomic_queue_write(target,packet);print(target);return True
 def _copy(src,dst):
     dst=Path(dst);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dst)
@@ -69,7 +75,7 @@ def main():
     root=Path(ns.root).resolve();schema=json.loads((ROOT/'schemas/adversarial-packet.schema.json').read_text());case_path=Path(ns.case).resolve();case=json.loads(case_path.read_text());case_schema=json.loads((ROOT/'schemas/case-record.schema.json').read_text())
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',case.get('case_id','')):raise SystemExit('unsafe case_id')
     cb=root/'case-bank'/case['case_id']
-    if cb.exists():_recover_completed_case_bank(cb,root,schema);return
+    if cb.exists():_recover_completed_case_bank(cb,root,schema,case);return
     anchor=Path(ns.anchor) if ns.anchor else default_anchor_path(ns.ledger);errs=[e.message for e in Draft202012Validator(case_schema).iter_errors(case)]+semantic_errors(case);hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');errs+=bundle_errors(case,ns.ledger,anchor,False,hmac_key)
     if errs:raise SystemExit('invalid case bundle: '+'; '.join(errs))
     evidence_path=_load_file(ns.evidence,'evidence');evidence=json.loads(evidence_path.read_text());evidence_schema=json.loads((ROOT/'schemas/textdiff-evidence.schema.json').read_text());ee=[e.message for e in Draft202012Validator(evidence_schema).iter_errors(evidence)]+evidence_semantic_errors(evidence,ROOT/'policy/protected-paths.yml',verify_git=False)
