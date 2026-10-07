@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:adversarial-packet:2.4",
+  "title": "Adversarial Review Packet v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "binding",
+    "escalation_reasons",
+    "queue",
+    "refs",
+    "exact_question",
+    "digests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "base_sha",
+        "head_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "work_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        }
+      }
+    },
+    "queue": {
+      "enum": [
+        "critical",
+        "disagreement",
+        "low-confidence",
+        "novel-pattern",
+        "governance",
+        "random-audit",
+        "rsi-followup"
+      ]
+    },
+    "escalation_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textdiff_evidence",
+        "deterministic_policy",
+        "l1_review"
+      ],
+      "properties": {
+        "textdiff_evidence": {
+          "type": "string"
+        },
+        "deterministic_policy": {
+          "type": "string"
+        },
+        "l1_review": {
+          "type": "string"
+        },
+        "l2_review": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trusted_standards": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spec_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "test_results": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "known_failure_families": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "exact_question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_output": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "final_verdict",
+          "wrong_layer",
+          "failure_family_class",
+          "standard_gap",
+          "regression_fixture_recommendation"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textdiff_evidence",
+        "l1_review"
+      ],
+      "properties": {
+        "textdiff_evidence": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "l1_review": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "l2_review": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

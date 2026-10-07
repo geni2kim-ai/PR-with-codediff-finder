@@ -1,0 +1,20 @@
+{
+  "schema_version": "2.3",
+  "case_id": "CASE-V23-EXAMPLE",
+  "authority_level": "ADVERSARIAL",
+  "final_verdict": "FINDINGS",
+  "wrong_layers": [
+    "L1"
+  ],
+  "failure_family_class": "MOCK-MAJOR",
+  "standard_gap": true,
+  "standard_gap_reason": "The existing review standard does not explicitly require this boundary check.",
+  "regression_fixture_recommendation": true,
+  "evidence_refs": [
+    "cycle/textdiff-evidence.json",
+    "cycle/l1-review.json",
+    "cycle/l2-review.json"
+  ],
+  "confidence": "high",
+  "adjudication_digest": "6ac61847f9bf629b7d8bc634fafaf697e3b322556bfb2ab974d0d4975760ff48"
+}

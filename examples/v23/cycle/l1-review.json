@@ -1,0 +1,47 @@
+{
+  "schema_version": "2.3",
+  "task_id": "CASE-V23-EXAMPLE-L1",
+  "case_id": "CASE-V23-EXAMPLE",
+  "level": "L1",
+  "binding": {
+    "repository": "owner/repo",
+    "reviewed_head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379"
+  },
+  "evidence_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e",
+  "reviewer": {
+    "node_id": "L1-local",
+    "model": {
+      "family": "configured-local-reviewer",
+      "version": "unconfigured"
+    },
+    "prompt_digest": "cae6cc57614a74ee67888e09a03c89866f66d99e4a38f7332433b68c08fb48e2",
+    "skill_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy_digest": "d57ad2a4e3de2a832671127a9f49240cd151713b4fb6d4352d90e2fdbea86c9e",
+    "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "independent_context": false
+  },
+  "verdict": "PASS",
+  "confidence": "high",
+  "findings": [],
+  "risk_signal": {
+    "reversibility": "EASY",
+    "blast_radius": "LOCAL",
+    "data_sensitivity": "NONE",
+    "security_surface": "LOW",
+    "availability_criticality": "LOW"
+  },
+  "escalation": {
+    "requested": false,
+    "target": "NONE",
+    "reasons": [],
+    "novel_failure_family": false
+  },
+  "output_safety": {
+    "sanitized": true,
+    "external_urls_present": false,
+    "markdown_images_present": false,
+    "mentions_present": false,
+    "secret_scan_passed": true
+  },
+  "result_digest": "cacf220c0477e5d5602b43b12153cb8276301393231a9ecbf5b8b6bf09e0f576"
+}

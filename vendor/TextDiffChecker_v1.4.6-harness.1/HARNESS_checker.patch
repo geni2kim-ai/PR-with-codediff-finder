@@ -1,0 +1,245 @@
+--- a/checker.py
++++ b/checker.py
+@@ -16,6 +16,30 @@
+ MAX_FINDINGS_PER_KIND = 60
+ _REGEX_TIMEOUT = 1.0  # 정규식 단일 finditer 상한(초). 사용자 패턴 ReDoS 방지용.
+ 
++# Harness integration metadata. This does not change the desktop product version.
++HARNESS_API_VERSION = "1.4.6-harness.1"
++_DIFF_QUALITY_ORDER = {"PROVEN_EXACT": 0, "HEURISTIC": 1, "APPROXIMATE": 2}
++
++def _trace_event(trace, event: str, quality: str | None = None, **data) -> None:
++    """Append a machine-readable diff-path event for external evidence collection."""
++    if trace is None:
++        return
++    row = {"event": event}
++    if quality is not None:
++        row["quality"] = quality
++    row.update(data)
++    trace.append(row)
++
++def _quality_from_trace(trace: list[dict], approx: bool) -> str:
++    if approx:
++        return "APPROXIMATE"
++    worst = "PROVEN_EXACT"
++    for row in trace:
++        q = row.get("quality")
++        if q in _DIFF_QUALITY_ORDER and _DIFF_QUALITY_ORDER[q] > _DIFF_QUALITY_ORDER[worst]:
++            worst = q
++    return worst
++
+ try:
+     import regex as _regex_mod  # timeout 지원. 없으면 stdlib re로 동작(정적 필터만).
+     _HAS_REGEX = True
+@@ -250,6 +274,41 @@
+         )
+ 
+ 
++def decode_text_bytes(raw: bytes) -> tuple[str, dict]:
++    """Harness-facing byte decoder equivalent to read_text_file without filesystem I/O."""
++    size = len(raw)
++    meta: dict = {"size": size, "encoding": "", "note": ""}
++    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
++        meta["encoding"] = "utf-16"
++        meta["note"] = "UTF-16 file"
++        text = raw.decode("utf-16")
++        if _looks_binary_text(text):
++            raise BinaryFileError("binary-looking decoded text")
++        return text, meta
++    if b"\x00" in raw:
++        raise BinaryFileError("NUL byte detected")
++    if raw[:3] == b"\xef\xbb\xbf":
++        try:
++            text = raw.decode("utf-8-sig")
++            meta["encoding"] = "utf-8-sig"
++        except UnicodeDecodeError:
++            text = raw[3:].decode("latin-1")
++            meta["encoding"] = "latin-1-fallback"
++            meta["note"] = "invalid UTF-8 after BOM; lossless latin-1 fallback"
++        if _looks_binary_text(text):
++            raise BinaryFileError("binary-looking decoded text")
++        return text, meta
++    try:
++        text = raw.decode("utf-8")
++        meta["encoding"] = "utf-8"
++    except UnicodeDecodeError:
++        text, enc, note = _legacy_text_guess(raw)
++        meta["encoding"], meta["note"] = enc, note
++    if _looks_binary_text(text):
++        raise BinaryFileError("binary-looking decoded text")
++    return text, meta
++
++
+ def read_text_file(path: str | Path, size_limit: int = SIZE_LIMIT) -> tuple[str, dict]:
+     """파일을 읽어 (정규화된 텍스트, 메타정보)를 돌려준다.
+ 
+@@ -1634,7 +1693,7 @@
+ 
+ 
+ def _diff_opcodes(a: list, b: list, cancel=None,
+-                  exact: bool = False) -> tuple[list[tuple], bool]:
++                  exact: bool = False, trace: list[dict] | None = None) -> tuple[list[tuple], bool]:
+     """정밀 diff. 시간 기반 중단은 쓰지 않으므로 같은 입력은 항상 같은 결과다.
+ 
+     1. 공통 앞/뒤 자르기
+@@ -1651,6 +1710,9 @@
+     """
+     full_cap = _DIFF_FULL_D_CAP_EXACT if exact else _DIFF_FULL_D_CAP
+     band_cap = _DIFF_BAND_D_CAP_EXACT if exact else _DIFF_BAND_D_CAP
++    _trace_event(trace, "diff_start", exact_requested=bool(exact),
++                 full_myers_d_cap=full_cap, banded_myers_d_cap=band_cap,
++                 band_width=_DIFF_BAND_W, small_limit=_DIFF_SMALL_LIMIT)
+     approx = False
+     ops: list[tuple] = []
+     # tried: 이미 patience를 적용한 구간(무한 재귀 방지용 표시)
+@@ -1682,30 +1744,37 @@
+         if n == 0 and m == 0:
+             continue
+         if n == 0:
++            _trace_event(trace, "pure_insert", "PROVEN_EXACT", a_len=n, b_len=m)
+             ops.append(("insert", a0, a0, b0, b1))
+             continue
+         if m == 0:
++            _trace_event(trace, "pure_delete", "PROVEN_EXACT", a_len=n, b_len=m)
+             ops.append(("delete", a0, a1, b0, b0))
+             continue
+         if max(n, m) <= _DIFF_SMALL_LIMIT:
++            _trace_event(trace, "sequence_matcher", "HEURISTIC", a_len=n, b_len=m, autojunk=False)
+             if cancel is not None and cancel.is_set():
+                 raise Cancelled("사용자 취소")
+             for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+                     None, a[a0:a1], b[b0:b1], autojunk=False).get_opcodes():
+                 ops.append((tag, a0 + i1, a0 + i2, b0 + j1, b0 + j2))
+             continue
+-        if n == m and _ham_frac(a, a0, b, b0, n, cancel) <= _DIFF_POSITIONAL_MAX_FRAC:
+-            ops.extend(_positional_opcodes(a, b, a0, b0, n))
+-            continue
++        if n == m:
++            ham = _ham_frac(a, a0, b, b0, n, cancel)
++            if ham <= _DIFF_POSITIONAL_MAX_FRAC:
++                _trace_event(trace, "positional_low_hamming", "HEURISTIC", a_len=n, b_len=m, hamming_fraction=ham)
++                ops.extend(_positional_opcodes(a, b, a0, b0, n))
++                continue
+         done = False
+         # 1) Myers 전체 탐색: 성공하면 최적이라 그대로 채택한다.
+         try:
+             found = _myers_opcodes(a[a0:a1], b[b0:b1], cancel, full_cap)
++            _trace_event(trace, "full_myers", "PROVEN_EXACT", a_len=n, b_len=m, d_cap=full_cap)
+             for tag, i1, i2, j1, j2 in found:
+                 ops.append((tag, a0 + i1, a0 + i2, b0 + j1, b0 + j2))
+             done = True
+         except _TooComplex:
+-            pass
++            _trace_event(trace, "full_myers_exceeded", a_len=n, b_len=m, d_cap=full_cap)
+         if not done:
+             # 2) banded Myers: 밴드 안 최선이라 큰 replace가 있으면
+             # patience로 교차 검증한다. 앵커가 있으면 banded를 버리고
+@@ -1716,11 +1785,16 @@
+             try:
+                 found = _banded_myers_opcodes(a[a0:a1], b[b0:b1], cancel,
+                                               _DIFF_BAND_W, band_cap)
++                _trace_event(trace, "banded_myers", "HEURISTIC", a_len=n, b_len=m,
++                             width=_DIFF_BAND_W, d_cap=band_cap)
+                 merged_found = _merge_edits(found)
+                 large = any(tag == "replace" and max(i2 - i1, j2 - j1) >= _BANDED_LARGE_REPLACE
+                             for tag, i1, i2, j1, j2 in merged_found)
+                 if large:
+                     segs = _patience_split(a, b, a0, a1, b0, b1)
++                    anchor_count = sum(1 for x in (segs or []) if x[0] == "eq")
++                    _trace_event(trace, "patience_crosscheck", "HEURISTIC", a_len=n, b_len=m,
++                                 anchor_count=anchor_count, already_split=bool(tried))
+                     if segs and not tried:
+                         # 첫 patience 적용 전에는 앵커를 우선해 banded 비최적 가능성을 줄인다.
+                         # done=False로 두어 아래 patience 분기로 넘어간다.
+@@ -1737,12 +1811,15 @@
+                         ops.append((tag, a0 + i1, a0 + i2, b0 + j1, b0 + j2))
+                     done = True
+             except _TooComplex:
+-                pass
++                _trace_event(trace, "banded_myers_exceeded", a_len=n, b_len=m,
++                             width=_DIFF_BAND_W, d_cap=band_cap)
+         if done:
+             continue
+         if not tried:
+             segs = _patience_split(a, b, a0, a1, b0, b1)
+             if segs:
++                _trace_event(trace, "patience_split", "HEURISTIC", a_len=n, b_len=m,
++                             anchor_count=sum(1 for x in segs if x[0] == "eq"))
+                 for kind, x0, x1, y0, y1 in segs:
+                     if kind == "eq":
+                         ops.append(("equal", x0, x1, y0, y1))
+@@ -1752,8 +1829,10 @@
+         # 최후 수단: 근사 표시. 진짜 대량 변경이라 coarse하지만 정직하게 표시한다.
+         approx = True
+         if n == m:
++            _trace_event(trace, "coarse_positional", "APPROXIMATE", a_len=n, b_len=m)
+             ops.extend(_positional_opcodes(a, b, a0, b0, n))
+         else:
++            _trace_event(trace, "coarse_replace", "APPROXIMATE", a_len=n, b_len=m)
+             ops.append(("replace", a0, a1, b0, b1))
+     ops.sort(key=lambda t: (t[1], t[3]))
+     return _merge_edits(ops), approx
+@@ -1963,6 +2042,63 @@
+     return findings, stats, opcodes
+ 
+ 
++def diff_texts_with_trace(a_lines: list[str], b_lines: list[str],
++                          fname_a: str, fname_b: str, ignore_ws: bool = False,
++                          cancel=None, exact: bool = False
++                          ) -> tuple[list[dict], dict, list[tuple], dict]:
++    """Harness-facing API with algorithm provenance and conservative quality class.
++
++    Existing public APIs remain unchanged. `quality_class` describes the strongest
++    guarantee supported by the actual path, not whether the opcode transform is valid.
++    """
++    a_id, b_id = _line_ids(a_lines, b_lines, ignore_ws)
++    trace: list[dict] = []
++    if cancel is not None and cancel.is_set():
++        raise Cancelled("사용자 취소")
++    opcodes, approx = _diff_opcodes(a_id, b_id, cancel, exact, trace=trace)
++    findings: list[dict] = []
++    n_equal = n_change = 0
++    for tag, i1, i2, j1, j2 in opcodes:
++        if tag == "equal":
++            n_equal += (i2 - i1)
++            continue
++        n_change += max(i2 - i1, j2 - j1)
++        label = {"replace": "수정", "delete": "삭제", "insert": "추가"}[tag]
++        a_ref = f"{i1 + 1}~{i2}" if i2 - i1 else f"{i1 + 1}(없음)"
++        b_ref = f"{j1 + 1}~{j2}" if j2 - j1 else f"{j1 + 1}(없음)"
++        detail = [f"[A {fname_a} {a_ref}]"]
++        detail += [f"- {x}"[:300] for x in a_lines[i1:min(i2, i1 + 30)]]
++        if i2 - i1 > 30:
++            detail.append(f"... 외 {i2 - i1 - 30}행 생략")
++        detail += [f"[B {fname_b} {b_ref}]"]
++        detail += [f"+ {x}"[:300] for x in b_lines[j1:min(j2, j1 + 30)]]
++        if j2 - j1 > 30:
++            detail.append(f"... 외 {j2 - j1 - 30}행 생략")
++        if tag == "replace" and (i2 - i1) <= 6 and (j2 - j1) <= 6:
++            seg_len = sum(len(s) for s in a_lines[i1:i2] + b_lines[j1:j2])
++            if seg_len <= 20000:
++                detail.append("--- 단어 단위 차이 ([-삭제-]/[+추가+]) ---")
++                detail += _inline_block(a_lines[i1:i2], b_lines[j1:j2])
++        findings.append({"category": "차이점", "file": f"A:{a_ref} / B:{b_ref}",
++                         "line": i1 + 1, "column": 0, "token": "",
++                         "summary": f"[{label}] A {i2 - i1}행 <-> B {j2 - j1}행 "
++                                    f"(A {a_ref} / B {b_ref})",
++                         "detail": "\n".join(detail)})
++    quality = _quality_from_trace(trace, approx)
++    stats = {"equal_lines": n_equal, "changed_lines": n_change,
++             "hunks": len(findings), "a_total": len(a_lines), "b_total": len(b_lines),
++             "approx": approx, "quality_class": quality}
++    trace_meta = {
++        "api_version": HARNESS_API_VERSION,
++        "quality_class": quality,
++        "algorithm_path": [row["event"] for row in trace],
++        "events": trace,
++    }
++    if cancel is not None and cancel.is_set():
++        raise Cancelled("사용자 취소")
++    return findings, stats, opcodes, trace_meta
++
++
+ def diff_texts(a_lines: list[str], b_lines: list[str],
+                fname_a: str, fname_b: str, ignore_ws: bool = False,
+                cancel=None, exact: bool = False) -> tuple[list[dict], dict]:

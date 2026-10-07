@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:case-event:2.4",
+  "title": "Case Ledger Event v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "seq",
+    "event_type",
+    "timestamp",
+    "payload",
+    "prev_hash",
+    "event_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_type": {
+      "enum": [
+        "CASE_OPENED",
+        "SENSOR_ACCEPTED",
+        "RUNTIME_ATTESTED",
+        "SENSOR_REJECTED",
+        "REVIEW_COMPLETED",
+        "ESCALATION_REQUIRED",
+        "HUMAN_DECISION",
+        "OUTCOME_RECORDED",
+        "INCIDENT_RECORDED",
+        "RSI_EVALUATED",
+        "STANDARD_CANDIDATE_PROPOSED",
+        "CYCLE_CLOSED",
+        "REVIEW_FAILED",
+        "CYCLE_BLOCKED"
+      ]
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "prev_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "event_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

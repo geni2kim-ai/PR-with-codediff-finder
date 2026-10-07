@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:reviewer-task:2.4",
+  "title": "Reviewer Task v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "case_id",
+    "level",
+    "binding",
+    "sensor",
+    "changed_paths",
+    "trusted_refs",
+    "security_boundary",
+    "limits",
+    "output_contract",
+    "reviewer_contract",
+    "runtime_enforcement"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "level": {
+      "enum": [
+        "L1",
+        "L2",
+        "ADVERSARIAL"
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "base_sha",
+        "head_sha",
+        "workspace_ref"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        },
+        "workspace_ref": {
+          "type": "string"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "work_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "sensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_ref",
+        "evidence_digest",
+        "semantic_digest",
+        "quality_class",
+        "trusted_for_gate"
+      ],
+      "properties": {
+        "evidence_ref": {
+          "type": "string"
+        },
+        "evidence_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "semantic_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "quality_class": {
+          "enum": [
+            "PROVEN_EXACT",
+            "HEURISTIC",
+            "APPROXIMATE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "trusted_for_gate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "changed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "trusted_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "standards",
+        "spec",
+        "tests"
+      ],
+      "properties": {
+        "policy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "standards": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lower_layer_result_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16
+    },
+    "security_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo_content_untrusted",
+        "external_network_allowed",
+        "secrets_allowed",
+        "delegation_allowed",
+        "fresh_context_required",
+        "prior_review_conclusions_visible"
+      ],
+      "properties": {
+        "repo_content_untrusted": {
+          "const": true
+        },
+        "external_network_allowed": {
+          "const": false
+        },
+        "secrets_allowed": {
+          "const": false
+        },
+        "delegation_allowed": {
+          "const": false
+        },
+        "fresh_context_required": {
+          "type": "boolean"
+        },
+        "prior_review_conclusions_visible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_seconds",
+        "max_findings",
+        "max_nits",
+        "max_output_bytes",
+        "max_subagents"
+      ],
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "max_findings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "max_nits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10485760
+        },
+        "max_subagents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    },
+    "review_focus": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "output_contract": {
+      "const": "schemas/reviewer-stage-result.schema.json"
+    },
+    "reviewer_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "model",
+        "prompt_digest",
+        "skill_digest",
+        "policy_digest",
+        "standards_digest"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "family",
+            "version"
+          ],
+          "properties": {
+            "family": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "prompt_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "skill_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "policy_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "standards_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "worker_command_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "runtime_enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fresh_process_spawned",
+        "environment_secret_stripping",
+        "network_denied",
+        "filesystem_scoped_to_workspace",
+        "fresh_model_session_attested"
+      ],
+      "properties": {
+        "fresh_process_spawned": {
+          "const": true
+        },
+        "environment_secret_stripping": {
+          "type": "boolean"
+        },
+        "network_denied": {
+          "type": "boolean"
+        },
+        "filesystem_scoped_to_workspace": {
+          "type": "boolean"
+        },
+        "fresh_model_session_attested": {
+          "type": "boolean"
+        },
+        "runtime_attestation_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "lower_layer_result_digests": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "maxItems": 16
+    }
+  }
+}

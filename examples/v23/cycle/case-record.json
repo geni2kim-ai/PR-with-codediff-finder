@@ -1,0 +1,91 @@
+{
+  "schema_version": "2.2",
+  "case_id": "CASE-V23-EXAMPLE",
+  "binding": {
+    "repository": "owner/repo",
+    "pr_number": null,
+    "work_unit": "WU-V23-EX",
+    "base_sha": "4ca682fca915ed750cf67907549bbbbf8afd7c2a",
+    "head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379"
+  },
+  "sensor": {
+    "evidence_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e",
+    "semantic_digest": "c37744df674c84d58260ab3d3066477646a9781a8193155c722b12df801ea1a5",
+    "tool_version": "1.4.6-harness.1",
+    "quality_class": "HEURISTIC",
+    "score_ref": null
+  },
+  "review_trail": [
+    {
+      "review_id": "CASE-V23-EXAMPLE-L1",
+      "parent_review_id": null,
+      "level": "L1",
+      "node_id": "L1-local",
+      "model": {
+        "family": "configured-local-reviewer",
+        "version": "unconfigured"
+      },
+      "verdict": "PASS",
+      "confidence": "high",
+      "result_digest": "cacf220c0477e5d5602b43b12153cb8276301393231a9ecbf5b8b6bf09e0f576",
+      "reviewed_head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379",
+      "evidence_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e",
+      "input_digest": "525f7a32eeaaa493e41f2a1540ed4cde05ecda146c4440d98adcc6be3289ce98",
+      "prompt_digest": "cae6cc57614a74ee67888e09a03c89866f66d99e4a38f7332433b68c08fb48e2",
+      "skill_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "policy_digest": "d57ad2a4e3de2a832671127a9f49240cd151713b4fb6d4352d90e2fdbea86c9e",
+      "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "independent_context": false,
+      "requested_level": "L1",
+      "achieved_level": "L1",
+      "timestamp": null,
+      "finding_families": []
+    },
+    {
+      "review_id": "CASE-V23-EXAMPLE-L2",
+      "parent_review_id": null,
+      "level": "L2",
+      "node_id": "L2-local",
+      "model": {
+        "family": "configured-local-reviewer",
+        "version": "unconfigured"
+      },
+      "verdict": "FINDINGS",
+      "confidence": "high",
+      "result_digest": "47c7dd74407bc7d8bce0272f8d042a780dc5aa322b21d5615cc99188e03dbdb5",
+      "reviewed_head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379",
+      "evidence_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e",
+      "input_digest": "bba60167ee448622854e44938059b48c7e41a4df2d625e0661565860be121dac",
+      "prompt_digest": "cae6cc57614a74ee67888e09a03c89866f66d99e4a38f7332433b68c08fb48e2",
+      "skill_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "policy_digest": "d57ad2a4e3de2a832671127a9f49240cd151713b4fb6d4352d90e2fdbea86c9e",
+      "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "independent_context": true,
+      "requested_level": "L2",
+      "achieved_level": "L2",
+      "timestamp": null,
+      "finding_families": [
+        "MOCK-MAJOR"
+      ]
+    }
+  ],
+  "outcome": {
+    "author_response": "no_response",
+    "merged": false,
+    "merge_sha": null,
+    "post_merge_status": "unknown",
+    "incident_ref": null
+  },
+  "failure_families": [
+    "MOCK-MAJOR"
+  ],
+  "labels": [
+    "model_session_independence_unverified",
+    "runtime_isolation_unverified",
+    "shadow_only"
+  ],
+  "privacy": {
+    "raw_source_centralized": false,
+    "sanitized_fixture_created": false
+  }
+}

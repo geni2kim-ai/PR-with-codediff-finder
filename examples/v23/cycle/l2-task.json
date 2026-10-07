@@ -1,0 +1,76 @@
+{
+  "schema_version": "2.3",
+  "task_id": "CASE-V23-EXAMPLE-L2",
+  "case_id": "CASE-V23-EXAMPLE",
+  "level": "L2",
+  "binding": {
+    "repository": "owner/repo",
+    "base_sha": "4ca682fca915ed750cf67907549bbbbf8afd7c2a",
+    "head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379",
+    "workspace_ref": "D:/example/repo",
+    "pr_number": null,
+    "work_unit": "WU-V23-EX"
+  },
+  "sensor": {
+    "evidence_ref": "textdiff-evidence.json",
+    "evidence_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e",
+    "semantic_digest": "c37744df674c84d58260ab3d3066477646a9781a8193155c722b12df801ea1a5",
+    "quality_class": "HEURISTIC",
+    "trusted_for_gate": true
+  },
+  "changed_paths": [
+    "auth/session.py"
+  ],
+  "trusted_refs": {
+    "policy": [
+      "policy/protected-paths.yml",
+      "policy/escalation-policy.yml",
+      "policy/sensor-policy.yml"
+    ],
+    "standards": [],
+    "spec": null,
+    "tests": []
+  },
+  "lower_layer_result_refs": [],
+  "security_boundary": {
+    "repo_content_untrusted": true,
+    "external_network_allowed": false,
+    "secrets_allowed": false,
+    "delegation_allowed": false,
+    "fresh_context_required": true,
+    "prior_review_conclusions_visible": false
+  },
+  "runtime_enforcement": {
+    "fresh_process_spawned": true,
+    "environment_secret_stripping": true,
+    "network_denied": false,
+    "filesystem_scoped_to_workspace": false,
+    "fresh_model_session_attested": false
+  },
+  "limits": {
+    "timeout_seconds": 180,
+    "max_findings": 12,
+    "max_nits": 2,
+    "max_output_bytes": 1048576
+  },
+  "review_focus": [
+    "correctness_security",
+    "standards",
+    "spec",
+    "test_integrity",
+    "supply_chain_compatibility",
+    "risk"
+  ],
+  "output_contract": "schemas/reviewer-stage-result.schema.json",
+  "reviewer_contract": {
+    "node_id": "L2-local",
+    "model": {
+      "family": "configured-local-reviewer",
+      "version": "unconfigured"
+    },
+    "prompt_digest": "cae6cc57614a74ee67888e09a03c89866f66d99e4a38f7332433b68c08fb48e2",
+    "skill_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "policy_digest": "d57ad2a4e3de2a832671127a9f49240cd151713b4fb6d4352d90e2fdbea86c9e",
+    "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  }
+}

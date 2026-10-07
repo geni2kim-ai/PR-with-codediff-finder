@@ -1,0 +1,21 @@
+schema_version: '2.4'
+large_diff:
+  soft_files: 100
+  soft_changed_lines: 5000
+  hard_files: 250
+  hard_changed_lines: 10000
+calibration:
+  review_every_runs: 500
+  metrics:
+  - missed_blocker_major_rate
+  - precision
+  - latency_p95
+  - token_cost_p95
+  - truncated_context_rate
+  rule: Change limits only through benchmark-backed policy PR with human approval.
+review:
+  max_findings: 12
+  max_nits: 2
+subagents:
+  default_max_children: 0
+  hard_max_children: 6

@@ -1,0 +1,102 @@
+{
+  "schema_version": "2.4",
+  "task_id": "V25-FINAL-STABLE-L1",
+  "case_id": "V25-FINAL-STABLE",
+  "level": "L1",
+  "binding": {
+    "repository": "local/GitHub_PR_Review_Harness",
+    "base_sha": "37846aaade651c6540c2a9cc1a99c27684514a3b",
+    "head_sha": "864ef63404f3b9997ce123a661afdf0a8056efc8",
+    "workspace_ref": "<WORKSPACE>",
+    "pr_number": null,
+    "work_unit": "V25-FINAL"
+  },
+  "sensor": {
+    "evidence_ref": "<CASE_DIR>/textdiff-evidence.json",
+    "evidence_digest": "44f1e9d285173ac62109c2f32fc696319a21478a65ea5232bec63b87a298432b",
+    "semantic_digest": "77946950d6950745cb6a95586f480b4994399a4f382e9842c5e22c873e13b4d3",
+    "quality_class": "HEURISTIC",
+    "trusted_for_gate": true
+  },
+  "changed_paths": [
+    ".gitignore",
+    "CHANGELOG_v2.5_KO.md",
+    "DOGFOOD_V2.4_TO_V2.5_KO.md",
+    "LEONARDO_DECISION_LOG_KO.md",
+    "LOCAL_NODE_HANDOFF_KO.md",
+    "MIGRATION_v2.4_to_v2.5_KO.md",
+    "PACKAGE_VERSION",
+    "README.md",
+    "VALIDATION_COMMANDS.md",
+    "VALIDATION_REPORT_KO.md",
+    "docs/DOGFOOD_WORKFLOW.md",
+    "docs/INTEGRITY_HARDENING_V2.5.md",
+    "policy/reviewer-routing.yml",
+    "schemas/case-event.schema.json",
+    "schemas/case-record.schema.json",
+    "schemas/reviewer-stage-result.schema.json",
+    "schemas/reviewer-task.schema.json",
+    "tests/test_v25_dogfood.py",
+    "tools/calibration_report.py",
+    "tools/mock_reviewer.py",
+    "tools/run_review_cycle.py",
+    "tools/run_validation.py",
+    "tools/runtime_attestation.py",
+    "tools/validate_reviewer_task.py",
+    "tools/validate_stage_result.py"
+  ],
+  "trusted_refs": {
+    "policy": [
+      "<STABLE_V2_4>/policy/protected-paths.yml",
+      "<STABLE_V2_4>/policy/escalation-policy.yml",
+      "<STABLE_V2_4>/policy/sensor-policy.yml"
+    ],
+    "standards": [],
+    "spec": null,
+    "tests": []
+  },
+  "lower_layer_result_refs": [],
+  "lower_layer_result_digests": [],
+  "security_boundary": {
+    "repo_content_untrusted": true,
+    "external_network_allowed": false,
+    "secrets_allowed": false,
+    "delegation_allowed": false,
+    "fresh_context_required": false,
+    "prior_review_conclusions_visible": false
+  },
+  "runtime_enforcement": {
+    "fresh_process_spawned": true,
+    "environment_secret_stripping": true,
+    "network_denied": false,
+    "filesystem_scoped_to_workspace": false,
+    "fresh_model_session_attested": false
+  },
+  "limits": {
+    "timeout_seconds": 180,
+    "max_findings": 12,
+    "max_nits": 2,
+    "max_output_bytes": 1048576,
+    "max_subagents": 0
+  },
+  "review_focus": [
+    "correctness_security",
+    "standards",
+    "spec",
+    "test_integrity",
+    "supply_chain_compatibility",
+    "risk"
+  ],
+  "output_contract": "schemas/reviewer-stage-result.schema.json",
+  "reviewer_contract": {
+    "node_id": "L1-local",
+    "model": {
+      "family": "configured-local-reviewer",
+      "version": "unconfigured"
+    },
+    "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+    "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "policy_digest": "37f9e5b7a3ebf94720746c48b2d0b9fa1980d69e285e4c9d12bd795c1cd3907c",
+    "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  }
+}

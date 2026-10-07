@@ -1,0 +1,38 @@
+--- a/tests/test_checker.py
++++ b/tests/test_checker.py
+@@ -1171,3 +1171,35 @@
+ 
+ if __name__ == "__main__":
+     unittest.main()
++
++
++class HarnessTraceTest(unittest.TestCase):
++    """Harness integration: algorithm provenance must expose calibration risk."""
++
++    @staticmethod
++    def _edit_cost(ops):
++        return sum((i2 - i1) + (j2 - j1)
++                   for tag, i1, i2, j1, j2 in ops if tag != "equal")
++
++    def test_false_exact_fixture_is_marked_heuristic(self):
++        # DIFF-FALSE-EXACT: full Myers exceeds default cap, banded succeeds with
++        # a valid but non-optimal path. It must not be advertised as PROVEN_EXACT.
++        a = ["A"] * 1000 + ["B"] * 1000 + ["A"] * 1000
++        rotated = a[500:] + a[:500]
++        b = [("C" if i % 2 == 0 and i < 2600 else x)
++             for i, x in enumerate(rotated)]
++        _, s, ops, trace = checker.diff_texts_with_trace(a, b, "a", "b")
++        _, sx, opsx, tracex = checker.diff_texts_with_trace(a, b, "a", "b", exact=True)
++        self.assertFalse(s["approx"])
++        self.assertEqual(s["quality_class"], "HEURISTIC")
++        self.assertIn("full_myers_exceeded", trace["algorithm_path"])
++        self.assertIn("banded_myers", trace["algorithm_path"])
++        self.assertGreater(self._edit_cost(ops), self._edit_cost(opsx))
++        self.assertEqual(sx["quality_class"], "PROVEN_EXACT")
++        self.assertIn("full_myers", tracex["algorithm_path"])
++
++    def test_small_diff_is_conservatively_heuristic(self):
++        _, s, _, trace = checker.diff_texts_with_trace(["a"], ["b"], "a", "b")
++        self.assertEqual(s["quality_class"], "HEURISTIC")
++        self.assertEqual(trace["quality_class"], "HEURISTIC")
++        self.assertIn("sequence_matcher", trace["algorithm_path"])
