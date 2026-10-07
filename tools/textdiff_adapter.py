@@ -275,7 +275,7 @@ def main():
     if hash_mismatch:reasons.append('trusted_tool_hash_mismatch')
     if missing_pins:reasons.append('trusted_tool_pin_missing')
     tool={'name':'TextDiffChecker','product_version':'1.4.6','harness_api_version':getattr(checker,'HARNESS_API_VERSION','unknown'),
-      'package_sha256':actual_hashes['original_package_sha256'],'package_present':original_package.is_file(),'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
+      'package_sha256':actual_hashes['original_package_sha256'],'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
       'dependencies_sha256':actual_hashes['vendor_requirements_sha256'],'harness_dependencies_sha256':actual_hashes['harness_requirements_sha256'],
       'runtime_dependencies':{'python':sys.version.split()[0],'jsonschema':dep_version('jsonschema'),'PyYAML':dep_version('PyYAML'),'regex':dep_version('regex')},
       'config_sha256':sha256_file(ROOT/'policy/sensor-policy.yml'),'regex_timeout_available':regex_ok}
