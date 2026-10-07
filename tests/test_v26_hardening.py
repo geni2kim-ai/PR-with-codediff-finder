@@ -65,6 +65,10 @@ class LedgerHardeningTests(unittest.TestCase):
             with self.assertRaises(ValueError):append_event(p,'C','SENSOR_ACCEPTED',{})
             a.unlink()
             with self.assertRaises(ValueError):append_event(p,'C','SENSOR_ACCEPTED',{},hmac_key=key,key_id='k')
+            # Even if the ledger is also truncated to zero bytes, the pre-existing
+            # file is not allowed to masquerade as a brand-new history.
+            p.write_text('')
+            with self.assertRaises(ValueError):append_event(p,'C','SENSOR_ACCEPTED',{},hmac_key=key,key_id='k')
 
     def test_unicode_line_separator_payload_does_not_corrupt_ledger(self):
         with tempfile.TemporaryDirectory() as td:
