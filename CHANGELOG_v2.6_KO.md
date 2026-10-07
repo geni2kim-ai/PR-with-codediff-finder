@@ -18,6 +18,7 @@ v2.5 외부 adversarial review에서 재현된 authority/ledger/sensor/runtime �
 - worker timeout/process-tree hardening
 - random audit 외부 seed 기반 재현성 + ENFORCED disable 금지
 - worker command digest에 module source + cwd 바인딩
+- fresh-session attestation default fail-closed; launcher가 L2/Adversarial freshness를 명시적으로 assert
 - Case Bank/queue immutable write와 packet standards/test refs 보존
 - validation auto-discovery 및 v2.6 adversarial regressions
 
