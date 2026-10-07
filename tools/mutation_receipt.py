@@ -79,14 +79,48 @@ def finalize(pre_path,spec_path):
     obj['receipt_digest']=object_digest(obj,'receipt_digest')
     return obj
 
+def validate_receipt(obj):
+    errs=[]
+    if not isinstance(obj,dict):return ['mutation receipt must be an object']
+    if obj.get('schema_version')!='2.7':errs.append('mutation receipt schema mismatch')
+    if obj.get('kind')!='mutation-receipt':errs.append('mutation receipt kind mismatch')
+    if obj.get('authority_effect')!='NONE':errs.append('mutation receipt authority_effect must be NONE')
+    if not re.fullmatch(r'[0-9a-f]{64}',str(obj.get('pre_snapshot_digest',''))):errs.append('mutation receipt pre_snapshot_digest invalid')
+    items=obj.get('items')
+    if not isinstance(items,list) or not items:errs.append('mutation receipt items missing');items=[]
+    names=[];computed=[]
+    for row in items:
+        if not isinstance(row,dict) or set(row)!={'name','pre_sha256','post_sha256','equal'}:
+            errs.append('invalid mutation receipt item');continue
+        name=row.get('name');pre=str(row.get('pre_sha256',''));post=str(row.get('post_sha256',''));eq=row.get('equal')
+        if not isinstance(name,str) or not NAME.fullmatch(name):errs.append('invalid mutation receipt name')
+        else:names.append(name)
+        if not re.fullmatch(r'[0-9a-f]{64}',pre):errs.append(f'invalid pre sha256: {name}')
+        if not re.fullmatch(r'[0-9a-f]{64}',post):errs.append(f'invalid post sha256: {name}')
+        expected=(pre==post)
+        if not isinstance(eq,bool) or eq!=expected:errs.append(f'mutation receipt equality mismatch: {name}')
+        computed.append(expected)
+    if len(names)!=len(set(names)):errs.append('duplicate mutation receipt name')
+    if isinstance(obj.get('all_unchanged'),bool):
+        if obj['all_unchanged']!=all(computed):errs.append('mutation receipt all_unchanged mismatch')
+    else:errs.append('mutation receipt all_unchanged invalid')
+    if obj.get('receipt_digest')!=object_digest(obj,'receipt_digest'):errs.append('mutation receipt digest mismatch')
+    return errs
+
 def main():
     ap=argparse.ArgumentParser(description='Create privacy-safe digest-only mutation receipts')
     sub=ap.add_subparsers(dest='cmd',required=True)
     a=sub.add_parser('capture');a.add_argument('--spec',required=True);a.add_argument('--output',required=True)
     b=sub.add_parser('finalize');b.add_argument('--pre',required=True);b.add_argument('--spec',required=True);b.add_argument('--output',required=True)
+    v=sub.add_parser('validate');v.add_argument('--receipt',required=True)
     ns=ap.parse_args()
     if ns.cmd=='capture':
         out=reject_output_collision(ns.output,ns.spec);atomic_json(out,capture(ns.spec));print('CAPTURED');return
+    if ns.cmd=='validate':
+        try:obj=json.loads(Path(ns.receipt).read_text(encoding='utf-8'));errs=validate_receipt(obj)
+        except Exception as exc:errs=[f'mutation receipt unreadable: {type(exc).__name__}']
+        if errs:print('INVALID');[print('-',x) for x in errs];raise SystemExit(1)
+        print('VALID');return
     out=reject_output_collision(ns.output,ns.spec,ns.pre);obj=finalize(ns.pre,ns.spec);atomic_json(out,obj);print('UNCHANGED' if obj['all_unchanged'] else 'CHANGED')
     if not obj['all_unchanged']:raise SystemExit(2)
 
