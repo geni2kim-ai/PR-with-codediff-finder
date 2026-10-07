@@ -1,4 +1,4 @@
-schema_version: '2.6'
+schema_version: '2.7'
 textdiff:
   trusted_runtime_requires_regex_timeout: true
   accepted_quality_classes:
