@@ -62,6 +62,72 @@ def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.6'):
 
 def _mac(core,key):return hmac.new(key.encode('utf-8'),canonical_bytes(core),hashlib.sha256).hexdigest()
 
+def pending_append_path(ledger):
+    return Path(str(ledger)+'.append-transaction.json')
+
+def _events_bytes(events):
+    return b''.join((json.dumps(ev,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8') for ev in events)
+
+def _events_sha256(events):
+    return hashlib.sha256(_events_bytes(events)).hexdigest()
+
+def _atomic_json_fsync(path,obj):
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);tmp=Path(str(p)+'.tmp')
+    data=(json.dumps(obj,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode('utf-8')
+    with tmp.open('wb') as f:
+        f.write(data);f.flush();os.fsync(f.fileno())
+    os.replace(tmp,p)
+
+def _append_tx_digest(tx):
+    core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
+    return object_digest(core)
+
+def _append_tx_mac(tx,key):
+    core={k:v for k,v in tx.items() if k!='hmac_sha256'}
+    return _mac(core,key)
+
+def _validate_append_tx(tx,hmac_key=None):
+    errs=[]
+    if tx.get('schema_version')!='2.6':errs.append('append transaction schema mismatch')
+    if tx.get('transaction_digest')!=_append_tx_digest(tx):errs.append('append transaction digest mismatch')
+    mac=tx.get('hmac_sha256')
+    if mac and not hmac_key:errs.append('append transaction HMAC key unavailable')
+    if hmac_key:
+        if not mac:errs.append('append transaction HMAC missing')
+        elif not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):errs.append('append transaction HMAC mismatch')
+    ev=tx.get('event')
+    if not isinstance(ev,dict):errs.append('append transaction event missing')
+    else:
+        if ev.get('event_hash')!=object_digest(ev,'event_hash'):errs.append('append transaction event hash mismatch')
+        if ev.get('case_id')!=tx.get('case_id'):errs.append('append transaction case_id mismatch')
+        if ev.get('seq')!=int(tx.get('pre_seq',-1))+1:errs.append('append transaction seq mismatch')
+        if ev.get('prev_hash')!=tx.get('pre_event_hash'):errs.append('append transaction prev_hash mismatch')
+    return errs
+
+def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
+    try:tx=json.loads(Path(tx_path).read_text(encoding='utf-8'))
+    except Exception as exc:raise ValueError(f'append transaction unreadable: {type(exc).__name__}') from exc
+    errs=_validate_append_tx(tx,hmac_key)
+    if errs:raise ValueError('invalid append transaction: '+'; '.join(errs))
+    p=Path(ledger);events=load_events(p);errs=validate_events(events,tx['case_id'])
+    if errs:raise ValueError('invalid ledger during append recovery: '+'; '.join(errs))
+    n=int(tx['pre_seq']);ev=tx['event'];pre_events=events[:n]
+    if len(events)<n or _events_sha256(pre_events)!=tx.get('pre_ledger_sha256'):
+        raise ValueError('append transaction pre-ledger mismatch')
+    pre_hash=pre_events[-1]['event_hash'] if pre_events else ZERO
+    if pre_hash!=tx.get('pre_event_hash'):raise ValueError('append transaction pre-hash mismatch')
+    if len(events)==n:
+        with p.open('a',encoding='utf-8',newline='\n') as f:
+            f.write(json.dumps(ev,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n');f.flush();os.fsync(f.fileno())
+        events.append(ev)
+    elif len(events)==n+1 and events[-1]==ev:
+        pass
+    else:
+        raise ValueError('append transaction ledger divergence')
+    write_anchor(p,anchor,tx['case_id'],events,hmac_key,tx.get('key_id'))
+    Path(tx_path).unlink(missing_ok=True)
+    return ev
+
 def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
     core=_anchor_core(ledger,case_id,events,key_id);obj={**core,'hmac_sha256':_mac(core,hmac_key) if hmac_key else None}
     p=Path(anchor);tmp=p.with_suffix(p.suffix+'.tmp');write_json(tmp,obj);os.replace(tmp,p);return obj
@@ -89,8 +155,12 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
     if hmac_key is None:
         hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY')
         if hmac_key and key_id is None:key_id='MAESTRO_LEDGER_HMAC_KEY'
-    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p)
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
     with ledger_lock(p):
+        if tx_path.exists():
+            recovered=_recover_pending_append(p,anchor,tx_path,hmac_key)
+            if recovered.get('case_id')==case_id and recovered.get('event_type')==event_type and recovered.get('payload')==payload:
+                return recovered
         ledger_preexisting=p.exists()
         events=load_events(p);errs=validate_events(events,case_id if events else None)
         if errs:raise ValueError('invalid existing ledger: '+'; '.join(errs))
@@ -104,9 +174,12 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
         ev['event_hash']=object_digest(ev,'event_hash')
+        tx={'schema_version':'2.6','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_events_sha256(events),'key_id':key_id,'event':ev}
+        tx['transaction_digest']=_append_tx_digest(tx);tx['hmac_sha256']=_append_tx_mac(tx,hmac_key) if hmac_key else None
+        _atomic_json_fsync(tx_path,tx)
         with p.open('a',encoding='utf-8',newline='\n') as f:
             f.write(json.dumps(ev,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n');f.flush();os.fsync(f.fileno())
-        events.append(ev);write_anchor(p,anchor,case_id,events,hmac_key,key_id)
+        events.append(ev);write_anchor(p,anchor,case_id,events,hmac_key,key_id);tx_path.unlink(missing_ok=True)
         return ev
 
 def main():
