@@ -99,6 +99,13 @@ class LedgerHardeningTests(unittest.TestCase):
             events=load_events(p);self.assertEqual(len(events),1);self.assertEqual(validate_anchor(p,a,events,'C',key,True),[])
 
 
+    def test_dead_ledger_lock_is_reclaimed_after_process_interruption(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock');lock.write_text('2147483647')
+            start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
+            self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
+
+
     def test_unicode_line_separator_payload_does_not_corrupt_ledger(self):
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/'case-events.jsonl';payload={'note':'A\u2028B\u2029C\u0085D'}
