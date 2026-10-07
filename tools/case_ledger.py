@@ -91,9 +91,13 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         if hmac_key and key_id is None:key_id='MAESTRO_LEDGER_HMAC_KEY'
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p)
     with ledger_lock(p):
+        ledger_preexisting=p.exists()
         events=load_events(p);errs=validate_events(events,case_id if events else None)
         if errs:raise ValueError('invalid existing ledger: '+'; '.join(errs))
-        if events and not anchor.exists():raise ValueError(f'existing ledger anchor missing: {anchor}')
+        # A pre-existing ledger file must have an anchor even if it was truncated to
+        # zero bytes. Otherwise "truncate ledger + delete anchor" is indistinguishable
+        # from a brand-new history and silently resets seq/hash state.
+        if ledger_preexisting and not anchor.exists():raise ValueError(f'existing ledger anchor missing: {anchor}')
         if anchor.exists():
             ae=validate_anchor(p,anchor,events,case_id,hmac_key,require_hmac=bool(hmac_key))
             if ae:raise ValueError('invalid existing ledger anchor: '+'; '.join(ae))
