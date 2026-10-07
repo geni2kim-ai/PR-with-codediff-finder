@@ -4,11 +4,12 @@
   "title": "Privacy-safe mutation receipt v2.7",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version","kind","authority_effect","all_unchanged","items","receipt_digest"],
+  "required": ["schema_version","kind","authority_effect","pre_snapshot_digest","all_unchanged","items","receipt_digest"],
   "properties": {
     "schema_version": {"const":"2.7"},
     "kind": {"const":"mutation-receipt"},
     "authority_effect": {"const":"NONE"},
+    "pre_snapshot_digest": {"type":"string","pattern":"^[0-9a-f]{64}$"},
     "all_unchanged": {"type":"boolean"},
     "items": {
       "type":"array",
