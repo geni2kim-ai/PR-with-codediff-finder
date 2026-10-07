@@ -21,6 +21,7 @@ Leonardo/Davinchi calibration / regression / standards loop
 
 ## v2.7 hardening highlights
 
+- **Privacy-safe mutation receipts**: `tools/mutation_receipt.py` emits logical name + pre/post SHA-256 + equality only, without source paths/content, and fixes `authority_effect=NONE`.
 - **Latest-HEAD review is a repository default**: every review/resume refreshes the current committed HEAD; changes invalidate earlier closeout until the post-fix HEAD is reviewed again.
 - **Crash-safe ledger append recovery**: an authenticated journal binds the exact pre-append ledger bytes, hash chain and next event so a crash between event fsync and anchor replacement can recover idempotently.
 - **Dead-lock recovery**: ledger locks record owner PID and are reclaimed immediately when the owner process no longer exists.
