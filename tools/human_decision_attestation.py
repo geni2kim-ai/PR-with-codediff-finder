@@ -17,7 +17,7 @@ def create(case_id,actor_id,verdict,head_sha,key,cycle_digest,evidence_digest,ke
           'issued_at':utc(),'nonce':secrets.token_hex(16),'key_id':key_id}
     return {**core,'attestation_hmac':_mac(core,key)}
 
-def validate(obj,*,case_id,actor_id,verdict,head_sha,cycle_digest,evidence_digest,key,max_age_seconds=300,max_future_skew_seconds=5):
+def validate(obj,*,case_id,actor_id,verdict,head_sha,cycle_digest,evidence_digest,key,max_age_seconds=300,max_future_skew_seconds=5,enforce_freshness=True,now=None):
     e=[];core={k:v for k,v in obj.items() if k!='attestation_hmac'}
     if obj.get('schema_version')!='2.6':e.append('human attestation schema mismatch')
     if obj.get('case_id')!=case_id:e.append('human attestation case_id mismatch')
@@ -27,10 +27,11 @@ def validate(obj,*,case_id,actor_id,verdict,head_sha,cycle_digest,evidence_diges
     if obj.get('cycle_digest')!=cycle_digest:e.append('human attestation cycle_digest mismatch')
     if obj.get('evidence_digest')!=evidence_digest:e.append('human attestation evidence_digest mismatch')
     if not isinstance(obj.get('nonce'),str) or not re.fullmatch(r'[0-9a-f]{32}',obj.get('nonce','')):e.append('human attestation nonce invalid')
-    issued=_dt(obj.get('issued_at'));now=datetime.now(timezone.utc)
+    issued=_dt(obj.get('issued_at'))
     if issued is None:e.append('human attestation issued_at invalid')
-    else:
-        age=(now-issued).total_seconds()
+    elif enforce_freshness:
+        now_dt=now if isinstance(now,datetime) else datetime.now(timezone.utc)
+        age=(now_dt-issued).total_seconds()
         if age>float(max_age_seconds):e.append('human attestation stale')
         if age < -float(max_future_skew_seconds):e.append('human attestation issued_at too far in future')
     if not key:e.append('human attestation HMAC key unavailable')
