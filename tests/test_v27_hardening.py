@@ -41,7 +41,7 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             same=finalize_mutation_receipt(pre_path,spec)
             schema=json.loads((ROOT/'schemas/mutation-receipt.schema.json').read_text(encoding='utf-8'))
             self.assertEqual(list(Draft202012Validator(schema).iter_errors(same)),[])
-            self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE')
+            self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE');self.assertEqual(same['pre_snapshot_digest'],pre['snapshot_digest'])
             serialized=json.dumps(same)
             self.assertNotIn(str(secret),serialized);self.assertNotIn('sensitive-original',serialized);self.assertNotIn('"path"',serialized)
             secret.write_text('mutated\n',encoding='utf-8')
