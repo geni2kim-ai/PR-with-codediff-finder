@@ -37,5 +37,5 @@ def main():
     if ns.failure_family:fam=set(updated.get('failure_families',[]));fam.add(ns.failure_family);updated['failure_families']=sorted(fam)
     errs=valid(updated)
     if errs:raise SystemExit('updated case invalid: '+'; '.join(errs))
-    payload={'incident_ref':ns.incident_ref,'kind':ns.kind,'failure_family':ns.failure_family,'adversarial_reopen_required':True};tx={'schema_version':'2.6','request':request,'event_type':'INCIDENT_RECORDED','event_payload':payload,'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p)
+    payload={'incident_ref':ns.incident_ref,'kind':ns.kind,'failure_family':ns.failure_family,'adversarial_reopen_required':True};tx={'schema_version':'2.7','request':request,'event_type':'INCIDENT_RECORDED','event_payload':payload,'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p)
 if __name__=='__main__':main()
