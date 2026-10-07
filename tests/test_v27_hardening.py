@@ -21,6 +21,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         text=(ROOT/'.github/workflows/harness-validation.yml').read_text(encoding='utf-8')
         self.assertIn('hardening/v2.7',text)
         self.assertNotIn('refs/heads/hardening/v2.6',text)
+        self.assertIn('Build validated v2.7 source package',text)
+        self.assertIn('v2.7-source-package',text)
 
     def test_latest_head_review_rule_is_repository_default(self):
         text=(ROOT/'AGENTS.md').read_text(encoding='utf-8')
