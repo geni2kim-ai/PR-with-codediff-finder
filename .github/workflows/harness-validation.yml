@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: harness-validation-${{ github.workflow }}-${{ github.ref }}
@@ -42,8 +42,25 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Apply generated manifest for validation
+        run: cp MANIFEST.generated.sha256 MANIFEST.sha256
+
       - name: Verify manifest against Git blobs
         run: python tools/verify_manifest.py --git-ref HEAD
 
       - name: Run canonical full validation
         run: python tools/run_validation.py --full --test-timeout 120
+
+      - name: Commit validated manifest to hardening branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hardening/v2.6'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add MANIFEST.sha256
+          if git diff --cached --quiet; then
+            echo "MANIFEST already current"
+          else
+            git commit -m "build: refresh v2.6 manifest"
+            git push origin HEAD:hardening/v2.6
+          fi
