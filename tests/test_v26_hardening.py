@@ -382,7 +382,8 @@ class V26CodexFollowupTests(unittest.TestCase):
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
         cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['reviewers']['L1']['node_id']='L1-override';rp=r/'routing-override.yml';rp.write_text(yaml.safe_dump(cfg))
         out=cycle(r,adapter(r,base),base,'ROUTE-POLICY',routing_policy=rp);root=r/'routing'
-        cp=run([sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')])
+        cp=subprocess.run([sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertEqual(cp.returncode,0,cp.stderr)
         packet=json.loads(Path(cp.stdout.strip()).read_text());frozen=Path(packet['refs']['deterministic_policy']).parent/'policy'/'reviewer-routing.yml'
         self.assertEqual(yaml.safe_load(frozen.read_text())['reviewers']['L1']['node_id'],'L1-override')
 
