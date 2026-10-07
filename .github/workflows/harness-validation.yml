@@ -31,6 +31,17 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Generate manifest candidate
+        run: python tools/generate_manifest.py --git-ref HEAD --output MANIFEST.generated.sha256
+
+      - name: Upload manifest candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-candidate
+          path: MANIFEST.generated.sha256
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Verify manifest against Git blobs
         run: python tools/verify_manifest.py --git-ref HEAD
 
