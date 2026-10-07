@@ -211,6 +211,10 @@ Validated candidate results:
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md`.
 
+## Validated source package
+
+The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` from the exact validated `HEAD` only after canonical full validation succeeds, and uploads it as the `v2.7-source-package` artifact. The committed `MANIFEST.sha256` remains the package-integrity index.
+
 ## Deployment status
 
 **HARDENED SHADOW CANDIDATE.**
