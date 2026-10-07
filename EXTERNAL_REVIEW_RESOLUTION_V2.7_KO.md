@@ -14,6 +14,7 @@
 | 10 | privacy-sensitive 원본의 불변성 주장을 raw evidence 없이 독립 검증하기 어려움 (R9B.3.1) | logical name + pre/post SHA-256 + equality만 내보내는 mutation receipt 추가; path/content 미포함, `authority_effect=NONE` | 해결 |
 | 11 | 신규 mutation receipt의 output 경로를 원본과 같게 지정하면 receipt가 보호 대상 파일을 덮어쓸 수 있음 | output/spec/pre/artifact 경로 충돌 fail-closed + atomic receipt write | 해결 |
 | 12 | receipt CLI validator가 extra top-level field를 직접 거부하지 않아 digest 재계산 시 `path` 같은 필드가 섞일 수 있음 | semantic validator exact-field allowlist + path-bearing receipt 회귀 테스트 | 해결 |
+| 13 | push CI가 generated manifest를 작업트리에만 적용한 뒤 `git archive HEAD`를 만들면 ZIP 안에는 stale committed MANIFEST가 들어갈 수 있음 | source package 생성/업로드를 committed-manifest 검증이 선행되는 PR/manual 경로로 제한 | 해결 |
 
 ## v2.7 검수 원칙
 
