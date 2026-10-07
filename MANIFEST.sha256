@@ -1,4 +1,4 @@
-c3117f9ad2cdcb1634d199db472cd42fcca10b2a16c2f7b189532aaaa61296e0  ./.github/workflows/harness-validation.yml
+dddb87b2e0406994772fa518f67ad48399f8ad53c14b34ca4fdbb078e4a50e72  ./.github/workflows/harness-validation.yml
 599e8d09a18b6bac6f70ed12bf96f67e49c4d992ee2601bc173d92fbcb64b11d  ./.gitignore
 13296ee6661d75bae4eb5f9699aa2c88a27d966e850378b44203f44e046e5471  ./adapters/TEXTDIFF_ADAPTER_CONTRACT.md
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./adversarial_queue/critical/.gitkeep
