@@ -25,6 +25,7 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - canonical validation 성공 뒤 동일 HEAD에서 CI가 `v2.7-source-package` ZIP artifact를 생성하도록 패키징 경로 고정.
 - privacy-sensitive 원본을 재배포하지 않고 pre/post SHA-256 equality를 증명하는 digest-only mutation receipt 도구/스키마 추가 (`authority_effect=NONE`).
 - mutation receipt 출력이 원본/spec/pre-snapshot을 덮어쓰는 경로를 fail-closed로 차단하고 receipt write를 atomic replace로 처리.
+- receipt semantic validator를 추가하고 top-level/item 필드를 exact allowlist로 제한해 path/content 같은 추가 필드를 digest 재계산으로 숨기는 우회를 차단.
 
 ## 호환성
 
