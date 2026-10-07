@@ -12,14 +12,14 @@ def _dt(s):
     except Exception:return None
 
 def create(case_id,actor_id,verdict,head_sha,key,cycle_digest,evidence_digest,key_id='external-human-authority'):
-    core={'schema_version':'2.6','case_id':case_id,'actor_id':actor_id,'verdict':verdict,'head_sha':head_sha,
+    core={'schema_version':'2.7','case_id':case_id,'actor_id':actor_id,'verdict':verdict,'head_sha':head_sha,
           'cycle_digest':cycle_digest,'evidence_digest':evidence_digest,
           'issued_at':utc(),'nonce':secrets.token_hex(16),'key_id':key_id}
     return {**core,'attestation_hmac':_mac(core,key)}
 
 def validate(obj,*,case_id,actor_id,verdict,head_sha,cycle_digest,evidence_digest,key,max_age_seconds=300,max_future_skew_seconds=5,enforce_freshness=True,now=None):
     e=[];core={k:v for k,v in obj.items() if k!='attestation_hmac'}
-    if obj.get('schema_version')!='2.6':e.append('human attestation schema mismatch')
+    if obj.get('schema_version') not in {'2.6','2.7'}:e.append('human attestation schema mismatch')
     if obj.get('case_id')!=case_id:e.append('human attestation case_id mismatch')
     if obj.get('actor_id')!=actor_id:e.append('human attestation actor_id mismatch')
     if obj.get('verdict')!=verdict:e.append('human attestation verdict mismatch')
