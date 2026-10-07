@@ -39,14 +39,14 @@ def consume_nonce(obj,replay_dir):
         return f'runtime attestation replay cache unavailable: {type(exc).__name__}',None
 
 def create(workspace,key,key_id='external-launcher',case_id=None,base_sha=None,head_sha=None,*,l2_fresh_session=False,adversarial_fresh_session=False):
-    core={'schema_version':'2.6','workspace':str(Path(workspace).resolve()),'environment_secret_stripping':True,'network_denied':True,'filesystem_scoped_to_workspace':True,
+    core={'schema_version':'2.7','workspace':str(Path(workspace).resolve()),'environment_secret_stripping':True,'network_denied':True,'filesystem_scoped_to_workspace':True,
           'l2_fresh_session':bool(l2_fresh_session),'adversarial_fresh_session':bool(adversarial_fresh_session),
           'case_id':case_id,'base_sha':base_sha,'head_sha':head_sha,'issued_at':utc(),'nonce':secrets.token_hex(16),'key_id':key_id}
     return {**core,'attestation_hmac':mac(core,key)}
 
 def validate(obj,workspace,key,required_fields=None,*,case_id=None,base_sha=None,head_sha=None,max_age_seconds=300,max_future_skew_seconds=5,now=None):
     e=[];core={k:v for k,v in obj.items() if k!='attestation_hmac'}
-    if obj.get('schema_version') not in {'2.4','2.6'}:e.append('runtime attestation schema mismatch')
+    if obj.get('schema_version') not in {'2.4','2.6','2.7'}:e.append('runtime attestation schema mismatch')
     if obj.get('workspace')!=str(Path(workspace).resolve()):e.append('runtime attestation workspace mismatch')
     if not isinstance(obj.get('nonce'),str) or not re.fullmatch(r'[0-9a-f]{32}',obj.get('nonce','')):e.append('runtime attestation nonce invalid')
     required_fields=tuple(required_fields or ('environment_secret_stripping','network_denied','filesystem_scoped_to_workspace'))
@@ -75,7 +75,7 @@ def main():
     if not key:raise SystemExit(f'missing {ns.key_env}')
     if ns.cmd=='create':write_json(ns.output,create(ns.workspace,key,ns.key_id,ns.case_id,ns.base_sha,ns.head_sha,l2_fresh_session=ns.l2_fresh_session,adversarial_fresh_session=ns.adversarial_fresh_session));print(ns.output)
     else:
-        o=json.loads(Path(ns.attestation).read_text());required=V26_REQUIRED_FIELDS if o.get('schema_version')=='2.6' else None;errs=validate(o,ns.workspace,key,required_fields=required,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
+        o=json.loads(Path(ns.attestation).read_text());required=V26_REQUIRED_FIELDS if o.get('schema_version') in {'2.6','2.7'} else None;errs=validate(o,ns.workspace,key,required_fields=required,case_id=ns.case_id,base_sha=ns.base_sha,head_sha=ns.head_sha,max_age_seconds=ns.max_age_seconds,max_future_skew_seconds=ns.max_future_skew_seconds)
         if errs:print('INVALID');[print('-',x) for x in errs];raise SystemExit(1)
         print('VALID')
 if __name__=='__main__':main()
