@@ -211,9 +211,9 @@ b56be5687ff1076bc41c79858e438c9dd1ce9592f18f832bf08c094683e22f28  ./vendor/TextD
 389f42c983d8b4cea2bd2327bbd3e978513194be81c5c4a8c12a253a75b0e9b0  ./vendor/TextDiffChecker_v1.4.6-harness.1/samples/sample_a.py
 8f7c43360149b88853121ec214fda5e5bf86a447c1c450c6d78a8090e052a6dd  ./vendor/TextDiffChecker_v1.4.6-harness.1/samples/sample_b.js
 8378dc5f94dcba0958d5527d731e61e35a11d86eef78d1e7411bd82d55bf70a2  ./vendor/TextDiffChecker_v1.4.6-harness.1/samples/sample_b.py
-1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf  ./vendor/TextDiffChecker_v1.4.6-harness.1/syntax_db.json
+666605a787dd7e68fb28cc4c651d3ecacc78ae74b8e1f0f7b7e1a203d8a029fc  ./vendor/TextDiffChecker_v1.4.6-harness.1/syntax_db.json
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./vendor/TextDiffChecker_v1.4.6-harness.1/tests/__init__.py
 7db6bb78e7907ef66be6fb1079cfe109fcebc3afd27548d7573bb0ca4be59452  ./vendor/TextDiffChecker_v1.4.6-harness.1/tests/test_app.py
 85e40148b47bd6a188d36e88da559c40f15c7582fd2db05ac5f7f3c379d8f615  ./vendor/TextDiffChecker_v1.4.6-harness.1/tests/test_checker.py
-c5b44e7ecdde9678b0e75758daa0df7ec5b671b6b408034b52303db237861622  ./vendor/TextDiffChecker_v1.4.6-harness.1/TextDiffChecker.spec
+e8e5d624cf7fcb2c56f7eb0632b82c2c84509b557b570a3bc735ce34b47b1eab  ./vendor/TextDiffChecker_v1.4.6-harness.1/TextDiffChecker.spec
 ad3cc4f2f3551466980599502407e09aae45ac596fe830e87f6f1dd6baabbcb5  ./vendor/TextDiffChecker_v1.4.6-harness.1/version_info.txt
