@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:review-cycle:2.6",
+  "title": "Review Cycle v2.6 terminal authority extension",
+  "type": "object",
+  "required": ["schema_version","case_id","binding","sensor","stages","required_level","achieved_level","state","gate_conclusion","escalation_reasons","current_head_verified","cycle_digest","execution_mode","gate_effective","evidence_git_verified","evidence_recomputed_verified","worktree_clean_verified","ledger_anchor_verified"],
+  "properties": {
+    "schema_version": {"const":"2.4"},
+    "required_level": {"enum":["L1","L2","ADVERSARIAL","HUMAN"]},
+    "achieved_level": {"enum":["SENSOR","L1","L2","ADVERSARIAL","HUMAN"]},
+    "state": {"enum":["WAITING_L1","WAITING_L2","ADVERSARIAL_REQUIRED","HUMAN_REQUIRED","HUMAN_CONFIRMED","HUMAN_REJECTED","COMPLETE","BLOCKED","STALE"]},
+    "gate_conclusion": {"enum":["success","neutral","failure","action_required","cancelled"]},
+    "cycle_digest": {"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}
