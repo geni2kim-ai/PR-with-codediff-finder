@@ -78,7 +78,7 @@ def ledger_lock(path,timeout=10.0):
         try:lock.unlink()
         except FileNotFoundError:pass
 
-def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.6'):
+def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.7'):
     p=Path(ledger);last=events[-1]['event_hash'] if events else ZERO
     return {'schema_version':schema_version,'case_id':case_id,'seq':len(events),'event_hash':last,'ledger_sha256':sha256_file(p) if p.exists() else hashlib.sha256(b'').hexdigest(),'key_id':key_id}
 
@@ -123,7 +123,7 @@ def _append_tx_mac(tx,key):
 
 def _validate_append_tx(tx,hmac_key=None):
     errs=[]
-    if tx.get('schema_version')!='2.6':errs.append('append transaction schema mismatch')
+    if tx.get('schema_version') not in {'2.6','2.7'}:errs.append('append transaction schema mismatch')
     if tx.get('transaction_digest')!=_append_tx_digest(tx):errs.append('append transaction digest mismatch')
     mac=tx.get('hmac_sha256')
     if mac and not hmac_key:errs.append('append transaction HMAC key unavailable')
@@ -172,9 +172,9 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
     if not p.is_file():return ['ledger anchor missing'] if events or require_hmac else []
     try:a=json.loads(p.read_text())
     except Exception:return ['ledger anchor invalid JSON']
-    if a.get('schema_version') not in {'2.4','2.6'}:errs.append('ledger anchor schema mismatch')
+    if a.get('schema_version') not in {'2.4','2.6','2.7'}:errs.append('ledger anchor schema mismatch')
     cid=case_id or (events[0]['case_id'] if events else a.get('case_id'))
-    core=_anchor_core(ledger,cid,events,a.get('key_id'),a.get('schema_version','2.6'))
+    core=_anchor_core(ledger,cid,events,a.get('key_id'),a.get('schema_version','2.7'))
     for k,v in core.items():
         if a.get(k)!=v:errs.append(f'anchor {k} mismatch')
     mac=a.get('hmac_sha256')
@@ -209,7 +209,7 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
         ev['event_hash']=object_digest(ev,'event_hash')
-        tx={'schema_version':'2.6','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_file_sha_or_empty(p),'key_id':key_id,'event':ev}
+        tx={'schema_version':'2.7','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_file_sha_or_empty(p),'key_id':key_id,'event':ev}
         tx['transaction_digest']=_append_tx_digest(tx);tx['hmac_sha256']=_append_tx_mac(tx,hmac_key) if hmac_key else None
         _atomic_json_fsync(tx_path,tx)
         with p.open('a',encoding='utf-8',newline='\n') as f:
