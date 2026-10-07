@@ -1,14 +1,14 @@
-# GitHub / Local PR Review Harness v2.6
+# GitHub / Local PR Review Harness v2.7
 
-v2.6 is the hardening release produced from the external v2.5 adversarial review. It keeps the v2.5 stable SHADOW operating model and closes authority, ledger, sensor, output-safety, and worker-runtime bypasses found by direct reproduction.
+v2.7 is the interruption/recovery hardening release built on the reviewed v2.6 candidate. It preserves the v2.6 authority/ledger/sensor/runtime protections and closes crash-recovery, immutable-state reuse, and trusted-input/policy TOCTOU gaps found by reviewing the latest post-fix HEAD.
 
-> Package version: **2.6**  
-> Wire compatibility: reviewer/task/evidence/event JSON objects intentionally retain the established `schema_version: "2.4"` wire contracts unless a specific v2.6 runtime/policy document says otherwise.
+> Package version: **2.7**  
+> Wire compatibility: reviewer/task/evidence/event JSON objects intentionally retain the established `schema_version: "2.4"` wire contracts unless a specific v2.7 runtime/policy document says otherwise.
 
 ```text
-stable v2.5 SHADOW baseline
+reviewed v2.6 hardening baseline
         ↓
-candidate v2.6
+candidate v2.7
         ↓
 TextDiff evidence
         ↓
@@ -19,8 +19,16 @@ anchored Case Bank + outcome/incident feedback
 Leonardo/Davinchi calibration / regression / standards loop
 ```
 
-## v2.6 hardening highlights
+## v2.7 hardening highlights
 
+- **Latest-HEAD review is a repository default**: every review/resume refreshes the current committed HEAD; changes invalidate earlier closeout until the post-fix HEAD is reviewed again.
+- **Crash-safe ledger append recovery**: an authenticated journal binds the exact pre-append ledger bytes, hash chain and next event so a crash between event fsync and anchor replacement can recover idempotently.
+- **Dead-lock recovery**: ledger locks record owner PID and are reclaimed immediately when the owner process no longer exists.
+- **HUMAN recovery transaction authentication**: recovery state is bound by canonical digest, HUMAN authority-key HMAC, source cycle/evidence/HEAD and recomputed transaction ID.
+- **Historical HUMAN proof remains verifiable**: freshness is an acceptance-time rule; an already accepted ledger-bound HUMAN decision does not expire merely because time passed.
+- **Immutable case-bank collision checks**: reuse of an existing case ID requires the current case, binding and evidence digest to match the stored immutable snapshot.
+- **Trusted-input freeze**: standards/spec/tests are copied into `trusted-inputs/` before reviewer execution.
+- **Effective-policy freeze**: routing/escalation/protected-path/sensor decisions, reviewer provenance, evidence recomputation and evidence validation use the same `effective-policy/` snapshot.
 - **Canonical ledger anchor**: `case-events.anchor.json`; post-cycle tools use the same anchor and validate it before mutation.
 - **No HMAC downgrade**: an HMAC-backed ledger cannot be appended without the key, and deleting the anchor cannot silently restart history.
 - **Real HUMAN floor in the cycle**: human-floor paths, high/critical security surface, hard reversibility and other deterministic floors cannot stop at Adversarial.
@@ -58,7 +66,7 @@ The harness may raise authority but may not lower a deterministic HUMAN floor. A
 
 ## Recommended operating pattern
 
-Keep the prior stable reviewer frozen while reviewing a candidate release. After v2.6 is independently accepted, it can become the next stable SHADOW baseline.
+Keep the prior stable reviewer frozen while reviewing a candidate release. After v2.7 is independently accepted, it can become the next stable SHADOW baseline.
 
 ```text
 actual code change
@@ -151,7 +159,7 @@ python tools/record_human_decision.py \
 
 ENFORCED still requires a trusted external launcher that actually applies network/filesystem/secret isolation. The attestation helper authenticates the statement; it does **not** create the OS sandbox.
 
-The v2.6 attestation binds workspace, case/base/head, sandbox assertions, freshness nonce/timestamp, plus external claims that the L2 and Adversarial sessions are fresh. These fresh-session claims are **fail-closed by default**: the launcher must explicitly assert them.
+The v2.7 attestation binds workspace, case/base/head, sandbox assertions, freshness nonce/timestamp, plus external claims that the L2 and Adversarial sessions are fresh. These fresh-session claims are **fail-closed by default**: the launcher must explicitly assert them.
 
 ```bash
 python tools/runtime_attestation.py create \
