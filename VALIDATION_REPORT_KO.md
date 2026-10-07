@@ -8,8 +8,8 @@
 - `tests.test_v23_orchestration`: **15 PASS** (method-isolated)
 - `tests.test_v24_hardening`: **20 PASS**
 - `tests.test_v25_dogfood`: **10 PASS**
-- `tests.test_v26_hardening`: **20 PASS** (method-isolated)
-- Harness 합계: **88 PASS / 39 isolated groups**
+- `tests.test_v26_hardening`: **32 PASS** (method-isolated)
+- Harness 합계: **100 PASS / 51 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**, GUI class **1 skip**
@@ -66,7 +66,7 @@ python tools/run_validation.py --full --test-timeout 120
 
 결과:
 - return code: **0**
-- `harness isolated tests: 88 PASS (groups=39, sequential)`
+- `harness isolated tests: 100 PASS (groups=51, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -81,7 +81,17 @@ python tools/run_validation.py --full --test-timeout 120
 - 최신 GitHub 파일 `tools/case_ledger.py` SHA-256: `8064dfdf923958452f85f50e4f3c3891f2c5a4d152ffd2b263da6cdca75b5958`.
 - 동일 바이트의 파일을 별도 Python probe로 실행하여 `PASS_BLOCKED: existing ledger anchor missing` 재현 확인.
 
-위의 **88 PASS / vendor 144 PASS** canonical full-run은 이 delta 이전 candidate에서 수행된 결과다. 최신 delta는 targeted execution으로 검증했으며, 현재 환경에서는 GitHub DNS가 차단되어 최신 branch 전체를 다시 clone해 full suite를 재실행하지 못했다. 따라서 merge/승격 전 최신 HEAD에서 canonical full-run을 한 번 더 수행해야 한다.
+이후 fresh-session attestation 기본값도 fail-closed로 조정하고 회귀를 추가했다. 최신 PR HEAD에서 GitHub Actions **Harness Full Validation #69**로 canonical full-run을 다시 수행했다.
+
+최신 결과:
+- MANIFEST Git-blob verification: **PASS (222 entries)**
+- Harness: **100 PASS / 51 isolated groups**
+- vendored TextDiffChecker: **144 PASS / 1 GUI skip**
+- DIFF-FALSE-EXACT fixture: **PASS**
+- `ALL VALIDATIONS PASS (FULL)`
+- workflow conclusion: **success**
+
+따라서 이전의 “latest HEAD full-run 필요” 제한은 해소되었다.
 
 ## NOT_RUN
 - 실제 GitHub Check Run API + required ruleset/branch protection E2E
@@ -93,4 +103,4 @@ python tools/run_validation.py --full --test-timeout 120
 - production incident connector
 
 ## 판정
-**HARDENED SHADOW CANDIDATE.** pre-delta canonical full-run과 post-delta targeted regression은 PASS다. 최신 HEAD 전체 full-run과 외부 인프라 전제가 남아 있으므로 ENFORCED production 승격이나 merge를 스스로 승인하지 않는다.
+**HARDENED SHADOW CANDIDATE.** 최신 HEAD canonical full-run은 PASS했다. 다만 외부 인프라 전제가 남아 있으므로 ENFORCED production 승격이나 merge를 스스로 승인하지 않는다.
