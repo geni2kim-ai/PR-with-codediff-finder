@@ -290,7 +290,7 @@ def main():
       'package_sha256':actual_hashes['original_package_sha256'],'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
       'dependencies_sha256':actual_hashes['vendor_requirements_sha256'],'harness_dependencies_sha256':actual_hashes['harness_requirements_sha256'],
       'runtime_dependencies':{'python':sys.version.split()[0],'jsonschema':dep_version('jsonschema'),'PyYAML':dep_version('PyYAML'),'regex':dep_version('regex')},
-      'config_sha256':sha256_file(ROOT/'policy/sensor-policy.yml'),'regex_timeout_available':regex_ok}
+      'config_sha256':sha256_file(ns.sensor_policy),'regex_timeout_available':regex_ok}
     ev={'schema_version':'2.4','tool':tool,'binding':{'repository':ns.repository,'work_unit':ns.work_unit,'base_ref_sha':base_tip,'base_sha':base,'head_sha':head,'comparison_mode':'merge-base'},
         'summary':{'files_changed':len(files),'a_lines':sum(f['lines']['a'] for f in files),'b_lines':sum(f['lines']['b'] for f in files),'hunk_count':sum(f['diff']['hunk_count'] for f in files),'changed_lines':sum(f['diff']['changed_lines'] for f in files),'quality_class':q,'protected_candidates':protected,'weakening_signals':all_weak,'nontext_sensitive_paths':sorted({f['path'] for f in files if f['symlink'] or f['submodule'] or f['binary']})},
         'files':files,'performance':{'elapsed_ms':round((time.perf_counter()-t0)*1000,3),'peak_memory_mb':None,'timed_out':False,'cancelled':False},'invariants':invariants,
