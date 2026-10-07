@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, importlib.metadata, importlib.util, json, re, subprocess, sys, time
+import argparse, hashlib, importlib.metadata, importlib.util, json, re, subprocess, sys, time
 from pathlib import Path, PurePosixPath
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -31,6 +31,24 @@ def run_git(repo:Path,*args:str,check=True)->bytes:
 
 def resolve_commit(repo:Path, ref:str)->str:
     return run_git(repo,'rev-parse','--verify',f'{ref}^{{commit}}').decode().strip()
+
+
+def canonical_source_sha256(path:Path)->str:
+    """Hash committed source bytes when running from a Git checkout.
+
+    This avoids platform checkout EOL conversion changing trusted-tool identity.
+    Source archives without .git intentionally fall back to exact packaged bytes.
+    """
+    p=Path(path).resolve()
+    try:
+        rel=p.relative_to(ROOT.resolve()).as_posix()
+        inside=run_git(ROOT,'rev-parse','--is-inside-work-tree',check=False).decode('utf-8','replace').strip()
+        if inside=='true':
+            data=run_git(ROOT,'show',f'HEAD:{rel}')
+            return hashlib.sha256(data).hexdigest()
+    except Exception:
+        pass
+    return sha256_file(p)
 
 
 def merge_base(repo:Path, base_ref:str, head_ref:str)->str:
@@ -244,7 +262,7 @@ def main():
             had_error=True;coverage_gap=True;apply_ok=False;row['status']='ERROR';row['skip_reason']=type(exc).__name__
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
-    actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip') if (ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip').is_file() else sensor_cfg.get('trusted_tool',{}).get('original_package_sha256'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
+    actual_hashes={'checker_sha256':canonical_source_sha256(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip') if (ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip').is_file() else sensor_cfg.get('trusted_tool',{}).get('original_package_sha256'),'vendor_requirements_sha256':canonical_source_sha256(tdroot/'requirements.txt'),'harness_requirements_sha256':canonical_source_sha256(ROOT/'requirements.txt')}
     expected=sensor_cfg.get('trusted_tool',{});required_pins=tuple(actual_hashes)
     hash_mismatch=[k for k in required_pins if not isinstance(expected.get(k),str) or not re.fullmatch(r'[0-9a-fA-F]{64}',expected.get(k,'') or '') or expected.get(k).lower()!=actual_hashes[k].lower()]
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
