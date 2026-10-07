@@ -22,6 +22,7 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - 저장소 기본 작업 지침에 **Latest-HEAD review rule** 추가.
 - v2.7 policy/runtime/human/ledger integrity records의 현재 schema marker를 2.7로 갱신하고 v2.6 읽기 호환 유지.
 - v2.7 release invariant 테스트 추가.
+- privacy-sensitive 원본을 재배포하지 않고 pre/post SHA-256 equality를 증명하는 digest-only mutation receipt 도구/스키마 추가 (`authority_effect=NONE`).
 
 ## 호환성
 
