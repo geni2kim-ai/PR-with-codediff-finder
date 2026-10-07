@@ -71,6 +71,19 @@ def _events_bytes(events):
 def _events_sha256(events):
     return hashlib.sha256(_events_bytes(events)).hexdigest()
 
+def _file_sha_or_empty(path):
+    p=Path(path)
+    return sha256_file(p) if p.exists() else hashlib.sha256(b'').hexdigest()
+
+def _pre_ledger_sha256_from_current(ledger,event,pre_seq,current_len):
+    p=Path(ledger);raw=p.read_bytes() if p.exists() else b''
+    if current_len==pre_seq:return hashlib.sha256(raw).hexdigest()
+    if current_len==pre_seq+1:
+        tail=_events_bytes([event])
+        if not raw.endswith(tail):raise ValueError('append transaction raw ledger tail mismatch')
+        return hashlib.sha256(raw[:-len(tail)]).hexdigest()
+    raise ValueError('append transaction ledger length mismatch')
+
 def _atomic_json_fsync(path,obj):
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);tmp=Path(str(p)+'.tmp')
     data=(json.dumps(obj,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode('utf-8')
@@ -112,7 +125,7 @@ def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
     p=Path(ledger);events=load_events(p);errs=validate_events(events,tx['case_id'])
     if errs:raise ValueError('invalid ledger during append recovery: '+'; '.join(errs))
     n=int(tx['pre_seq']);ev=tx['event'];pre_events=events[:n]
-    if len(events)<n or _events_sha256(pre_events)!=tx.get('pre_ledger_sha256'):
+    if len(events)<n or _pre_ledger_sha256_from_current(p,ev,n,len(events))!=tx.get('pre_ledger_sha256'):
         raise ValueError('append transaction pre-ledger mismatch')
     pre_hash=pre_events[-1]['event_hash'] if pre_events else ZERO
     if pre_hash!=tx.get('pre_event_hash'):raise ValueError('append transaction pre-hash mismatch')
@@ -174,7 +187,7 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
         ev['event_hash']=object_digest(ev,'event_hash')
-        tx={'schema_version':'2.6','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_events_sha256(events),'key_id':key_id,'event':ev}
+        tx={'schema_version':'2.6','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_file_sha_or_empty(p),'key_id':key_id,'event':ev}
         tx['transaction_digest']=_append_tx_digest(tx);tx['hmac_sha256']=_append_tx_mac(tx,hmac_key) if hmac_key else None
         _atomic_json_fsync(tx_path,tx)
         with p.open('a',encoding='utf-8',newline='\n') as f:
