@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
 sys.path.insert(0,str(TOOLS))
 from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
+import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
@@ -79,6 +80,24 @@ class LedgerHardeningTests(unittest.TestCase):
             # file is not allowed to masquerade as a brand-new history.
             p.write_text('')
             with self.assertRaises(ValueError):append_event(p,'C','SENSOR_ACCEPTED',{},hmac_key=key,key_id='k')
+
+    def test_interrupted_ledger_append_recovers_from_authenticated_journal(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';a=default_anchor_path(p);key='ledger-key';txp=case_ledger.pending_append_path(p)
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            self.assertTrue(txp.is_file());self.assertEqual(len(load_events(p)),1);self.assertFalse(a.exists())
+            original_tx=json.loads(txp.read_text());tampered=copy.deepcopy(original_tx);tampered['event']['payload']['v']=2;txp.write_text(json.dumps(tampered))
+            with self.assertRaisesRegex(ValueError,'append transaction digest mismatch'):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+            txp.write_text(json.dumps(original_tx))
+            recovered=case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+            self.assertEqual(recovered['seq'],1);self.assertFalse(txp.exists())
+            events=load_events(p);self.assertEqual(len(events),1);self.assertEqual(validate_anchor(p,a,events,'C',key,True),[])
+
 
     def test_unicode_line_separator_payload_does_not_corrupt_ledger(self):
         with tempfile.TemporaryDirectory() as td:
