@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:review-case-record:2.4",
+  "title": "Review Backdata Case Record v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "binding",
+    "sensor",
+    "review_trail",
+    "outcome",
+    "failure_families",
+    "privacy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "base_sha",
+        "head_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "work_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        }
+      }
+    },
+    "sensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_digest",
+        "semantic_digest",
+        "tool_version",
+        "quality_class"
+      ],
+      "properties": {
+        "evidence_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "tool_version": {
+          "type": "string"
+        },
+        "quality_class": {
+          "enum": [
+            "PROVEN_EXACT",
+            "DETERMINISTIC",
+            "HEURISTIC",
+            "APPROXIMATE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "score_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "semantic_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    },
+    "review_trail": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "review_id",
+          "level",
+          "node_id",
+          "verdict",
+          "confidence",
+          "result_digest",
+          "reviewed_head_sha",
+          "evidence_digest",
+          "input_digest",
+          "prompt_digest",
+          "skill_digest",
+          "policy_digest",
+          "standards_digest",
+          "independent_context",
+          "requested_level",
+          "achieved_level",
+          "finding_families"
+        ],
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent_review_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "ADVERSARIAL",
+              "HUMAN"
+            ]
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "family",
+                  "version"
+                ],
+                "properties": {
+                  "family": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "enum": [
+              "PASS",
+              "FINDINGS",
+              "BLOCKED",
+              "CONFIRMED",
+              "REJECTED"
+            ]
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "not_applicable"
+            ]
+          },
+          "result_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "reviewed_head_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{7,64}$"
+          },
+          "evidence_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "input_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "prompt_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "skill_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "policy_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "standards_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "independent_context": {
+            "type": "boolean"
+          },
+          "requested_level": {
+            "enum": [
+              "L1",
+              "L2",
+              "ADVERSARIAL",
+              "HUMAN"
+            ]
+          },
+          "achieved_level": {
+            "enum": [
+              "L1",
+              "L2",
+              "ADVERSARIAL",
+              "HUMAN"
+            ]
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finding_families": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "worker_command_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "author_response",
+        "merged",
+        "post_merge_status"
+      ],
+      "properties": {
+        "author_response": {
+          "enum": [
+            "fixed",
+            "rejected",
+            "accepted_risk",
+            "no_response",
+            "not_applicable"
+          ]
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "merge_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "post_merge_status": {
+          "enum": [
+            "clean",
+            "incident",
+            "regression",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "incident_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "failure_families": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_source_centralized",
+        "sanitized_fixture_created"
+      ],
+      "properties": {
+        "raw_source_centralized": {
+          "type": "boolean"
+        },
+        "sanitized_fixture_created": {
+          "type": "boolean"
+        },
+        "retention_note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

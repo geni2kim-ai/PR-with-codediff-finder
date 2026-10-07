@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:rsi-evaluation:2.4",
+  "title": "RSI Evaluation v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "sensor_result_digest",
+    "evaluation_sources",
+    "scores",
+    "overall_score",
+    "failure_tags",
+    "family_occurrences",
+    "promotion",
+    "derived_by"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "sensor_result_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "evaluation_sources": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "invariant",
+          "oracle",
+          "L1",
+          "L2",
+          "ADVERSARIAL",
+          "HUMAN",
+          "AUTHOR_OUTCOME",
+          "POST_MERGE"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctness",
+        "coverage",
+        "stability",
+        "performance",
+        "calibration",
+        "safety"
+      ],
+      "properties": {
+        "correctness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "performance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "calibration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "safety": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "failure_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "reproduction": {
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reproduced": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "promotion": {
+      "type": "object",
+      "required": [
+        "case_bank",
+        "adversarial_required",
+        "improvement_candidate"
+      ],
+      "properties": {
+        "case_bank": {
+          "type": "boolean"
+        },
+        "adversarial_required": {
+          "type": "boolean"
+        },
+        "improvement_candidate": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "family_occurrences": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "derived_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluator_version",
+        "policy_digest"
+      ],
+      "properties": {
+        "evaluator_version": {
+          "type": "string"
+        },
+        "policy_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        }
+      }
+    }
+  }
+}

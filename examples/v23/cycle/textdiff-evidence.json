@@ -1,0 +1,108 @@
+{
+  "schema_version": "2.2",
+  "tool": {
+    "name": "TextDiffChecker",
+    "product_version": "1.4.6",
+    "harness_api_version": "1.4.6-harness.1",
+    "package_sha256": "8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9",
+    "checker_sha256": "62d6065855c8616a8c0273fdf75f24b186bad28a13d72794aff71b10f3ddcb06",
+    "syntax_db_sha256": "1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf",
+    "dependencies_sha256": "7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124",
+    "config_sha256": "95d6985feb4cf9fc6a2fe49e321caa545c6fc8197e5a13549c06730f43721573",
+    "regex_timeout_available": true
+  },
+  "binding": {
+    "repository": "owner/repo",
+    "work_unit": "WU-V23-EX",
+    "base_sha": "4ca682fca915ed750cf67907549bbbbf8afd7c2a",
+    "head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379"
+  },
+  "summary": {
+    "files_changed": 1,
+    "a_lines": 2,
+    "b_lines": 2,
+    "hunk_count": 1,
+    "changed_lines": 1,
+    "quality_class": "HEURISTIC",
+    "protected_candidates": [
+      "auth/session.py"
+    ],
+    "weakening_signals": []
+  },
+  "files": [
+    {
+      "path": "auth/session.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "15c5897fb0c2ad88a95c7c68d5597cdd3be1af45",
+      "head_blob_sha": "99957d484df5b7d69deeec92123a3f766960d21e",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 2,
+        "b": 2
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    }
+  ],
+  "performance": {
+    "elapsed_ms": 24.945,
+    "peak_memory_mb": null,
+    "timed_out": false,
+    "cancelled": false
+  },
+  "invariants": [
+    {
+      "id": "git-head-binding",
+      "status": "passed",
+      "evidence": "4ca682fca915..9b064ef663d5"
+    },
+    {
+      "id": "apply-opcodes-reconstruct-target",
+      "status": "passed",
+      "evidence": "all analyzed file transforms reconstruct target"
+    },
+    {
+      "id": "regex-timeout-runtime",
+      "status": "passed",
+      "evidence": "regex timeout engine available"
+    },
+    {
+      "id": "repeat-determinism",
+      "status": "unknown",
+      "evidence": "not rerun by default adapter"
+    }
+  ],
+  "trust": {
+    "runtime_safety": "PASS",
+    "trusted_for_gate": true,
+    "reasons": []
+  },
+  "semantic_digest": "c37744df674c84d58260ab3d3066477646a9781a8193155c722b12df801ea1a5",
+  "output_digest": "1d7fac18a0ab1fba428c173f2c7d57cc9daef7e86dc970bdc230d74883604e9e"
+}

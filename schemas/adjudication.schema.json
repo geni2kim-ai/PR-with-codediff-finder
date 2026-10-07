@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:adjudication:2.4",
+  "title": "Adjudication v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "authority_level",
+    "final_verdict",
+    "wrong_layers",
+    "failure_family_class",
+    "standard_gap",
+    "regression_fixture_recommendation",
+    "evidence_refs",
+    "confidence",
+    "adjudication_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "authority_level": {
+      "enum": [
+        "ADVERSARIAL",
+        "HUMAN"
+      ]
+    },
+    "final_verdict": {
+      "enum": [
+        "PASS",
+        "FINDINGS",
+        "BLOCKED"
+      ]
+    },
+    "wrong_layers": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "SENSOR",
+          "L1",
+          "L2",
+          "ADVERSARIAL",
+          "STANDARD",
+          "TEST"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "failure_family_class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "standard_gap": {
+      "type": "boolean"
+    },
+    "standard_gap_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "regression_fixture_recommendation": {
+      "type": "boolean"
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "adjudication_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

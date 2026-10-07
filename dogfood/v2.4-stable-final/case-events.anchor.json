@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.4",
+  "case_id": "V25-FINAL-STABLE",
+  "seq": 6,
+  "event_hash": "b597a62a40610f21377d9b5e8df50df58c2a3d4f7c3b2e5efd1a7984bf88eec3",
+  "ledger_sha256": "39a98c48de7168a655241bbe2a2f1093860c8e43de1f5ba308201d42864714bb",
+  "key_id": null,
+  "hmac_sha256": null
+}

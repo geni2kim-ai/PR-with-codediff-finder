@@ -1,0 +1,58 @@
+{
+  "schema_version": "2.4",
+  "case_id": "V26-DOGFOOD-STABLE-V25",
+  "binding": {
+    "repository": "geni2kim-ai/PR-with-codediff-finder",
+    "base_sha": "ec873c0d10e00a8c4cb1a5614ee1d54bb7762268",
+    "head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+    "pr_number": null,
+    "work_unit": null
+  },
+  "sensor": {
+    "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+    "quality_class": "HEURISTIC",
+    "trusted_for_gate": true
+  },
+  "stages": [
+    {
+      "level": "L1",
+      "result_ref": "l1-review.json",
+      "result_digest": "159b0505a31e2d49f4ce2352ed747555aaa6cbe8ffa8aa114f1d9e241dc60255",
+      "verdict": "PASS",
+      "confidence": "high"
+    },
+    {
+      "level": "L2",
+      "result_ref": "l2-review.json",
+      "result_digest": "2bbd0b23554c9550400dc34fbf994dff7a9b038e632dfb05a87283fa7a672a43",
+      "verdict": "PASS",
+      "confidence": "high"
+    },
+    {
+      "level": "ADVERSARIAL",
+      "result_ref": "adversarial-review.json",
+      "result_digest": "6c498ea0462101a5952476ef2f79756ce05c0b5f49709316a31807b646d5a2ba",
+      "verdict": "PASS",
+      "confidence": "high"
+    }
+  ],
+  "required_level": "HUMAN",
+  "achieved_level": "ADVERSARIAL",
+  "state": "HUMAN_REQUIRED",
+  "gate_conclusion": "action_required",
+  "escalation_reasons": [
+    "ADVERSARIAL:adversarial_protected_path",
+    "ADVERSARIAL:governance_change",
+    "ADVERSARIAL:protected_path_adversarial_floor",
+    "HUMAN:governance_change",
+    "L2:test_integrity_finding"
+  ],
+  "current_head_verified": true,
+  "execution_mode": "SHADOW",
+  "gate_effective": false,
+  "evidence_git_verified": true,
+  "evidence_recomputed_verified": true,
+  "worktree_clean_verified": true,
+  "ledger_anchor_verified": true,
+  "cycle_digest": "f1d2ac5104f01e3ad407e747275bf918873e40151c3c9fbb2013627f9bf77220"
+}

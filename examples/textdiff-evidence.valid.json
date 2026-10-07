@@ -1,0 +1,128 @@
+{
+  "schema_version": "2.4",
+  "tool": {
+    "name": "TextDiffChecker",
+    "product_version": "1.4.6",
+    "harness_api_version": "1.4.6-harness.2",
+    "package_sha256": "8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9",
+    "checker_sha256": "b3c82ea46e2d440e2fa2cc2196d57b735192563dea782b048f7fe3be26ffae24",
+    "syntax_db_sha256": "1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf",
+    "dependencies_sha256": "7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124",
+    "harness_dependencies_sha256": "a07baf4812dec8ccaa2cbc8fbd8b955a3f28abee022255f0820ca7b0e134d596",
+    "runtime_dependencies": {
+      "python": "3.13.5",
+      "jsonschema": "4.26.0",
+      "PyYAML": "6.0.3",
+      "regex": "2026.5.9"
+    },
+    "config_sha256": "e224744a360306e3ec9007e7f98f862c70d57db93fb47e5c27f67a3f5ce7e59b",
+    "regex_timeout_available": true
+  },
+  "binding": {
+    "repository": "owner/example",
+    "work_unit": "WU-V24-EXAMPLE",
+    "base_ref_sha": "09cb4fbed2f69b7129ec44770ba9838208cef70e",
+    "base_sha": "09cb4fbed2f69b7129ec44770ba9838208cef70e",
+    "head_sha": "a89d41619cac11b8195f76b93b3598b99eca9edf",
+    "comparison_mode": "merge-base"
+  },
+  "summary": {
+    "files_changed": 1,
+    "a_lines": 1,
+    "b_lines": 1,
+    "hunk_count": 1,
+    "changed_lines": 1,
+    "quality_class": "DETERMINISTIC",
+    "protected_candidates": [
+      "requirements.txt"
+    ],
+    "weakening_signals": [],
+    "nontext_sensitive_paths": []
+  },
+  "files": [
+    {
+      "path": "requirements.txt",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "9915ffa9d615bae4bc2f65d1327c55c43934ee36",
+      "head_blob_sha": "2b6c737841cbedeebf63f73fc7fb0e2561362876",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": null,
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1,
+        "b": 1
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "DETERMINISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    }
+  ],
+  "performance": {
+    "elapsed_ms": 29.873,
+    "peak_memory_mb": null,
+    "timed_out": false,
+    "cancelled": false
+  },
+  "invariants": [
+    {
+      "id": "git-merge-base-head-binding",
+      "status": "passed",
+      "evidence": "09cb4fbed2f6...a89d41619cac (base tip 09cb4fbed2f6)"
+    },
+    {
+      "id": "apply-opcodes-reconstruct-target",
+      "status": "passed",
+      "evidence": "all analyzed file transforms reconstruct target"
+    },
+    {
+      "id": "regex-timeout-runtime",
+      "status": "passed",
+      "evidence": "regex timeout engine available"
+    },
+    {
+      "id": "trusted-tool-hash",
+      "status": "passed",
+      "evidence": "pinned tool/dependency hashes match"
+    },
+    {
+      "id": "nontext-coverage",
+      "status": "passed",
+      "evidence": "no sensitive non-text change"
+    },
+    {
+      "id": "repeat-determinism",
+      "status": "unknown",
+      "evidence": "not rerun by default adapter"
+    }
+  ],
+  "trust": {
+    "runtime_safety": "PASS",
+    "trusted_for_gate": true,
+    "reasons": []
+  },
+  "semantic_digest": "2ab301ddcca33714d638e5f1f1d67256242a4554e0390bb8ca507ab3da971943",
+  "output_digest": "e770b94f4649f892d008c247abfe91ebf7c8b705c7d44963a558a6c571ca4b03"
+}

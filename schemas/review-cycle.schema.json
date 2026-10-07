@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:review-cycle:2.4",
+  "title": "Review Cycle v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "binding",
+    "sensor",
+    "stages",
+    "required_level",
+    "achieved_level",
+    "state",
+    "gate_conclusion",
+    "escalation_reasons",
+    "current_head_verified",
+    "cycle_digest",
+    "execution_mode",
+    "gate_effective",
+    "evidence_git_verified",
+    "evidence_recomputed_verified",
+    "worktree_clean_verified",
+    "ledger_anchor_verified"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "base_sha",
+        "head_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        },
+        "pr_number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "work_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "sensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_digest",
+        "quality_class",
+        "trusted_for_gate"
+      ],
+      "properties": {
+        "evidence_digest": {
+          "type": "string"
+        },
+        "quality_class": {
+          "type": "string"
+        },
+        "trusted_for_gate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "level",
+          "result_ref",
+          "result_digest",
+          "verdict",
+          "confidence"
+        ],
+        "properties": {
+          "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "ADVERSARIAL",
+              "HUMAN"
+            ]
+          },
+          "result_ref": {
+            "type": "string"
+          },
+          "result_digest": {
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "PASS",
+              "FINDINGS",
+              "BLOCKED",
+              "CONFIRMED",
+              "REJECTED"
+            ]
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "not_applicable"
+            ]
+          }
+        }
+      }
+    },
+    "required_level": {
+      "enum": [
+        "L1",
+        "L2",
+        "ADVERSARIAL",
+        "HUMAN"
+      ]
+    },
+    "achieved_level": {
+      "enum": [
+        "SENSOR",
+        "L1",
+        "L2",
+        "ADVERSARIAL",
+        "HUMAN"
+      ]
+    },
+    "state": {
+      "enum": [
+        "WAITING_L1",
+        "WAITING_L2",
+        "ADVERSARIAL_REQUIRED",
+        "HUMAN_REQUIRED",
+        "COMPLETE",
+        "BLOCKED",
+        "STALE",
+        "HUMAN_CONFIRMED",
+        "HUMAN_REJECTED"
+      ]
+    },
+    "gate_conclusion": {
+      "enum": [
+        "success",
+        "neutral",
+        "failure",
+        "action_required",
+        "cancelled"
+      ]
+    },
+    "escalation_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "current_head_verified": {
+      "type": "boolean"
+    },
+    "cycle_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "execution_mode": {
+      "enum": [
+        "SHADOW",
+        "ENFORCED"
+      ]
+    },
+    "gate_effective": {
+      "type": "boolean"
+    },
+    "evidence_git_verified": {
+      "type": "boolean"
+    },
+    "worktree_clean_verified": {
+      "type": "boolean"
+    },
+    "ledger_anchor_verified": {
+      "type": "boolean"
+    },
+    "evidence_recomputed_verified": {
+      "type": "boolean"
+    }
+  }
+}

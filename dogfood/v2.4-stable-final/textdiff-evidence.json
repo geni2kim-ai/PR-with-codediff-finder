@@ -1,0 +1,1068 @@
+{
+  "schema_version": "2.4",
+  "tool": {
+    "name": "TextDiffChecker",
+    "product_version": "1.4.6",
+    "harness_api_version": "1.4.6-harness.1",
+    "package_sha256": "8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9",
+    "checker_sha256": "46380220db542507888178a62eea55d864aa3477ef339a4818144c9b243da790",
+    "syntax_db_sha256": "1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf",
+    "dependencies_sha256": "7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124",
+    "harness_dependencies_sha256": "a07baf4812dec8ccaa2cbc8fbd8b955a3f28abee022255f0820ca7b0e134d596",
+    "runtime_dependencies": {
+      "python": "3.13.5",
+      "jsonschema": "4.26.0",
+      "PyYAML": "6.0.3",
+      "regex": "2026.5.9"
+    },
+    "config_sha256": "1450e4342c24abf0b585f891b0d8280a964dfcbf1be607d301ef08d5ffced748",
+    "regex_timeout_available": true
+  },
+  "binding": {
+    "repository": "local/GitHub_PR_Review_Harness",
+    "work_unit": "V25-FINAL",
+    "base_ref_sha": "37846aaade651c6540c2a9cc1a99c27684514a3b",
+    "base_sha": "37846aaade651c6540c2a9cc1a99c27684514a3b",
+    "head_sha": "864ef63404f3b9997ce123a661afdf0a8056efc8",
+    "comparison_mode": "merge-base"
+  },
+  "summary": {
+    "files_changed": 25,
+    "a_lines": 2231,
+    "b_lines": 2528,
+    "hunk_count": 117,
+    "changed_lines": 1006,
+    "quality_class": "HEURISTIC",
+    "protected_candidates": [
+      "policy/reviewer-routing.yml",
+      "schemas/case-event.schema.json",
+      "schemas/case-record.schema.json",
+      "schemas/reviewer-stage-result.schema.json",
+      "schemas/reviewer-task.schema.json"
+    ],
+    "weakening_signals": [],
+    "nontext_sensitive_paths": []
+  },
+  "files": [
+    {
+      "path": ".gitignore",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "a160f494b397adda8d5741d811f8444558aa261a",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": null,
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 3
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "291f7ccedbfd587b105c1e7333519efeb1a7e274f086dbfb12fe5276fe0dd811"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "CHANGELOG_v2.5_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "301dbeababa98c38332430de3e32c9f62574039b",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 44
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 44,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "225b7aa5baf08c48df6b2bccb7b83d1370f49adddfcb20e3d1fafd6fd55ad6cf"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "DOGFOOD_V2.4_TO_V2.5_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "079f72b4e9574affd0109d232237b9efcfbfd87c",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 61
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 61,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "4d62067975c2874e9dfd22e4f129cce8b53bfb6181546cf3cdbdf00af6f3d95b"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "LEONARDO_DECISION_LOG_KO.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "7e46ff8b783eb7340336d79d644a08786c954ea5",
+      "head_blob_sha": "89e8b9daf2871a34b5aa6144e69854b8c0acd775",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 61,
+        "b": 35
+      },
+      "diff": {
+        "hunk_count": 13,
+        "changed_lines": 49,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "f31a825469e0739e09d142c337e29ee8de583c28879675d14bc2ad1e5923f134"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "LOCAL_NODE_HANDOFF_KO.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "848de06993c250f8a20115fcb35fe593ce77e529",
+      "head_blob_sha": "4b2aedbdb9d2e8be2951708ff509fe1edbf912af",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 64,
+        "b": 35
+      },
+      "diff": {
+        "hunk_count": 6,
+        "changed_lines": 76,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "51b6d39720c5631912e799f648db0a5dccb27f2d6dd53fd930660ab68d0a3b56"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "MIGRATION_v2.4_to_v2.5_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "20f4802a1300575339eb6145e8abe07f08d5157b",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 21
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 21,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "cd4804082910d047be6434d465ea3dcbf3ba61a9940bea8002cfff91b539fd59"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "PACKAGE_VERSION",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6b4950e3de2f6c99801a4f5e2ffa01669f358572",
+      "head_blob_sha": "95e3ba8192053fb4a18be631cb8d273638ac768b",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": null,
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1,
+        "b": 1
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "README.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6629f2cb7c9ae2367ebcd06f86347918b9094ebd",
+      "head_blob_sha": "479b601c15b32bf0e239c81673269bbe6fb85be1",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 103,
+        "b": 126
+      },
+      "diff": {
+        "hunk_count": 18,
+        "changed_lines": 106,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "0f7d36cc04053c1de048f372e1599e72356014022a036421c7d9765bde157a68"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "VALIDATION_COMMANDS.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "7a14562dd2838ba36cc8d68144d1343e5711969b",
+      "head_blob_sha": "220c8b8312e1a47b8372851a101602ea950e79ea",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 37,
+        "b": 37
+      },
+      "diff": {
+        "hunk_count": 8,
+        "changed_lines": 38,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "f9f6c28a9deca0ad8800a33e72580e1e7cbbc4d8a4d7b7f8cecc4621a425cae1"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "VALIDATION_REPORT_KO.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "67e72632c32ef2be387b3b9eae4c8115cff8b6ec",
+      "head_blob_sha": "f34772074da541df1d3168cc9a0e848762294ca5",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 176,
+        "b": 56
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 201,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "c111c0a50fd6d3c44d35d1a2c511423269a24142b0ee7019dbf9fd414bc77ec6"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "docs/DOGFOOD_WORKFLOW.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "1acecadd3efd5fce5c84f77c737faf5a7a887de6",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 22
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 22,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "4e229702616e95f674a4ad598116af404b86cdb2d4942f0f4635dd4596e449fe"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "docs/INTEGRITY_HARDENING_V2.5.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "6247929b93e0a23bf2a36c51dbec47ed513dcfc7",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 30
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 30,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5764a40e440974d08db3f56f079822c70a7148435eb97c045e6a959c95bc75d3"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "policy/reviewer-routing.yml",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "0594a1f1012f7c48f7caf445446455639969360c",
+      "head_blob_sha": "ad1c8579bc4974efbb53d763109d354d77356663",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "yaml",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 48,
+        "b": 50
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 2,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "a97c86b41b30aa55eecc055cf5d85cc0f888925e8ff882a685d384f661260855"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/case-event.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "d8e78fdf6f258343b22a112d67f11111fc87b7b7",
+      "head_blob_sha": "944e82a5866ee5473025b8a8c791876727c18f62",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 61,
+        "b": 62
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5d3e791d99cb15a257f04c2191d4543b8d321d0f2d5351e7318c4e71ddf285dc"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/case-record.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "66bb0a899bc25385ea2647a4234f9fc52e679a89",
+      "head_blob_sha": "8a74e40216a3ad34848f44954089c9a90ad1f0f1",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 328,
+        "b": 332
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 4,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "0657ce0203fd1441d4faaeaaa65dea41881f90a37666cde60ffdfc185aab336a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/reviewer-stage-result.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "ec27a61a75adf5afa8c9123a17a5196ab937e7d6",
+      "head_blob_sha": "68c72a2b9e583b47236552e42ca249cb481c742e",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 351,
+        "b": 355
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 4,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "0657ce0203fd1441d4faaeaaa65dea41881f90a37666cde60ffdfc185aab336a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/reviewer-task.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "d095fae70edfef2496242bec4204c17725b63fcf",
+      "head_blob_sha": "01e78af8f4f13135c4aa406c8da081aab0229b6c",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 330,
+        "b": 341
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 11,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "6e3b888e1174e67f5d05bd407807bcc0e1047010e9a9973a6f7f7ff5179ddfa1"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v25_dogfood.py",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "72ee41ac32a55b36315e6c85e0577d2cf6829822",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 98
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 98,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "1db1e931ed6a02d9c67c31b31807ebfaa2f4532face4da7fc7c87518c06ff6c0"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/calibration_report.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "d22fc1815d462d7fb41b0fc91570f43c827579c1",
+      "head_blob_sha": "825301efe33c0c54de1f82a030c600bb8d2a07ec",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 42,
+        "b": 42
+      },
+      "diff": {
+        "hunk_count": 5,
+        "changed_lines": 6,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "fbecfb2b99bb4b5bc3d8920860314aeffa9c4be7bc3f4ee16c2a39de99fddd1b"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/mock_reviewer.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "9e34f8298e2acf056903248d4d1e9a9300fa45ec",
+      "head_blob_sha": "f3023aa57c4953bf1571b0908f48fb6be8da68f8",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 39,
+        "b": 41
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "722abc1755af8a73cb8e316b4a4ad590f1ad7f4cb2d17acfad4e4aa0bd09f756"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/run_review_cycle.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "0da645eebaebad9c778a1c9b7a66ee7213486748",
+      "head_blob_sha": "702833597c3846f03343620d1cec26dc7e56ce1f",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 366,
+        "b": 403
+      },
+      "diff": {
+        "hunk_count": 22,
+        "changed_lines": 57,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "06f23c4bed9e19f174221eda0e9db8506af62b42828545911b84ef8eb4541e18"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/run_validation.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "71203566ef13e0d32fbb05fbc737e52380c113e5",
+      "head_blob_sha": "6931ff07af7accdbac719e7ef496a4d47f8d68ca",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 89,
+        "b": 147
+      },
+      "diff": {
+        "hunk_count": 7,
+        "changed_lines": 107,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ab9e584a55ac2e08d304c92637f95dffb1c7109a06fc8f57e40ff00fdf9cfee2"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/runtime_attestation.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "c546acbe7ba66218a94775df8755432f3255ec21",
+      "head_blob_sha": "733b01321f367284f83e483e99d9fdba46b484ca",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 34,
+        "b": 78
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 53,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "e932c467b28b0632b46c7e7b8292a4fabb3ed99907e26a11d6df5bb6866af447"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/validate_reviewer_task.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "39556329c37ce55a4793bf8320cad5258c2bd6cd",
+      "head_blob_sha": "aec51a497afa250e3f62c9b2d4d0bfce0acda811",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 57,
+        "b": 64
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 7,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "509568ee36df258bfc2bf09c6cc07cff82b338b6dc8ec9f7fd8663eb49639848"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/validate_stage_result.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "52d177463642e316b6d3c649eec33632cdcf4c55",
+      "head_blob_sha": "979511b33ba8e108d022d7bb4284b34464c23387",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 44,
+        "b": 44
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    }
+  ],
+  "performance": {
+    "elapsed_ms": 323.07,
+    "peak_memory_mb": null,
+    "timed_out": false,
+    "cancelled": false
+  },
+  "invariants": [
+    {
+      "id": "git-merge-base-head-binding",
+      "status": "passed",
+      "evidence": "37846aaade65...864ef63404f3 (base tip 37846aaade65)"
+    },
+    {
+      "id": "apply-opcodes-reconstruct-target",
+      "status": "passed",
+      "evidence": "all analyzed file transforms reconstruct target"
+    },
+    {
+      "id": "regex-timeout-runtime",
+      "status": "passed",
+      "evidence": "regex timeout engine available"
+    },
+    {
+      "id": "trusted-tool-hash",
+      "status": "passed",
+      "evidence": "pinned tool/dependency hashes match"
+    },
+    {
+      "id": "nontext-coverage",
+      "status": "passed",
+      "evidence": "no sensitive non-text change"
+    },
+    {
+      "id": "repeat-determinism",
+      "status": "unknown",
+      "evidence": "not rerun by default adapter"
+    }
+  ],
+  "trust": {
+    "runtime_safety": "PASS",
+    "trusted_for_gate": true,
+    "reasons": []
+  },
+  "semantic_digest": "77946950d6950745cb6a95586f480b4994399a4f382e9842c5e22c873e13b4d3",
+  "output_digest": "44f1e9d285173ac62109c2f32fc696319a21478a65ea5232bec63b87a298432b"
+}

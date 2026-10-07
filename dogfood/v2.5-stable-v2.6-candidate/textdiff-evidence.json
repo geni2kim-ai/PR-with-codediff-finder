@@ -1,0 +1,2060 @@
+{
+  "schema_version": "2.4",
+  "tool": {
+    "name": "TextDiffChecker",
+    "product_version": "1.4.6",
+    "harness_api_version": "1.4.6-harness.1",
+    "package_sha256": "8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9",
+    "checker_sha256": "46380220db542507888178a62eea55d864aa3477ef339a4818144c9b243da790",
+    "syntax_db_sha256": "1672a0bf71531e076a04f493dfa117b8df53bc07ee29268ba30abd27e35bddcf",
+    "dependencies_sha256": "7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124",
+    "harness_dependencies_sha256": "a07baf4812dec8ccaa2cbc8fbd8b955a3f28abee022255f0820ca7b0e134d596",
+    "runtime_dependencies": {
+      "python": "3.13.5",
+      "jsonschema": "4.26.0",
+      "PyYAML": "6.0.3",
+      "regex": "2026.5.9"
+    },
+    "config_sha256": "1450e4342c24abf0b585f891b0d8280a964dfcbf1be607d301ef08d5ffced748",
+    "regex_timeout_available": true
+  },
+  "binding": {
+    "repository": "geni2kim-ai/PR-with-codediff-finder",
+    "work_unit": null,
+    "base_ref_sha": "ec873c0d10e00a8c4cb1a5614ee1d54bb7762268",
+    "base_sha": "ec873c0d10e00a8c4cb1a5614ee1d54bb7762268",
+    "head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+    "comparison_mode": "merge-base"
+  },
+  "summary": {
+    "files_changed": 50,
+    "a_lines": 9934,
+    "b_lines": 9490,
+    "hunk_count": 243,
+    "changed_lines": 2293,
+    "quality_class": "HEURISTIC",
+    "protected_candidates": [
+      "policy/escalation-policy.yml",
+      "policy/protected-paths.yml",
+      "policy/reviewer-routing.yml",
+      "policy/sensor-policy.yml",
+      "profiles/harness/reviewer-worker-core.md",
+      "schemas/case-record.schema.json",
+      "schemas/review-cycle.schema.json",
+      "schemas/review-result.schema.json",
+      "schemas/reviewer-task.schema.json",
+      "schemas/textdiff-evidence.schema.json"
+    ],
+    "weakening_signals": [
+      {
+        "kind": "test_skip_added",
+        "path": "tests/test_v26_hardening.py",
+        "evidence": "test skip/xfail added"
+      }
+    ],
+    "nontext_sensitive_paths": []
+  },
+  "files": [
+    {
+      "path": "CHANGELOG_v2.6_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "5e1688b1d1dd8437346aebdd68e1d989e50053f8",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 25
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 25,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "811f26b0869cb22a76285ceef920f21097175955c975cbb893b2975a1d0ab467"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "77ac65db57d443d90f89675a255f0c38a912ce5a",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 32
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 32,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "7fdf20b9921420de434310e6fdc0dc7bd86d346de5550d11d451a9662b620e8d"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "MIGRATION_v2.5_to_v2.6_KO.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "f9895d2085bd504349c0fd698aa750eb2ad44f21",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 18
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 18,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "7d96b5b8724f43f159510a32a77ca8c2f3f4c497a82585bf1ebe7f394933b79f"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "PACKAGE_VERSION",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "95e3ba8192053fb4a18be631cb8d273638ac768b",
+      "head_blob_sha": "5154b3f68e9afc8b2e239deba25eed650425e3ce",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": null,
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1,
+        "b": 1
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "README.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "f7941cfc7c65f97b2df0e4d3e8166f4b4d69837a",
+      "head_blob_sha": "44c2787c99e03e0215dcf909db14c9256193e9f9",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 172,
+        "b": 181
+      },
+      "diff": {
+        "hunk_count": 18,
+        "changed_lines": 206,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "106f48fba37a5a1e8f1ef2ed884f5fb0f7f922a7297978046518f9d0f8b9cbc3"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "VALIDATION_COMMANDS.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "220c8b8312e1a47b8372851a101602ea950e79ea",
+      "head_blob_sha": "71be514d35fe07131aeb0d836574f7032e87583c",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 37,
+        "b": 67
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 54,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "2347cf4b7b6b40fe323b6b5fa8d392db6fefc52207fd1d6f7bbe52d2fc1f5845"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "VALIDATION_REPORT_KO.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "ed4bf08302836e6668de5848a8e1063db49dd58c",
+      "head_blob_sha": "e51ad4f6d3a5b2452ca5acfee585a30c45475119",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 56,
+        "b": 84
+      },
+      "diff": {
+        "hunk_count": 12,
+        "changed_lines": 70,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "e4699bf507ecebcaba17c0dc7578cbbbfe1ba57517e43a351a05d5110b7dd5f5"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "docs/INTEGRITY_HARDENING_V2.6.md",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "862bfb79c0b33a251dd7192f69298b76ad94aa98",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 30
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 30,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5764a40e440974d08db3f56f079822c70a7148435eb97c045e6a959c95bc75d3"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "dogfood/v2.4-stable-final/README.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "ae817b99d8dbdfce1ed17af0d060b35f376c366c",
+      "head_blob_sha": "896890543a832b7986fcce8bd30b4b6d5274420f",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 9,
+        "b": 9
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 7,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "70a302b089e694ba920cde13bc681a27df1d247c43b1921a47e3037e8a732581"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "dogfood/v2.4-stable-final/evidence.json",
+      "old_path": null,
+      "change_type": "DELETED",
+      "base_blob_sha": "a994d50797ec3ae7afa6ad27f9c494d08384d14f",
+      "head_blob_sha": null,
+      "mode_before": "100644",
+      "mode_after": null,
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": null,
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1068,
+        "b": 0
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1068,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_delete"
+        ],
+        "trace_digest": "cdacd9e24c201761e0eb10cc07dd6d57edbfce1a75aa037d3b1a1a415a8956da"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "examples/case-record.valid.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "ec176d05f7bfd7e177e5b86d0bdb35cb5aa8db44",
+      "head_blob_sha": "2a6eab74b76738d5e1fc452e509ffbae168ae2fc",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 90,
+        "b": 90
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 6,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "67574e194a1453c615d5bdc6a77f907294a7cce7ca2b1839f4c65eff5befe4b1"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "examples/rsi-evaluation.valid.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6d6745cff447417f414a3769a209f3d4b447e3bd",
+      "head_blob_sha": "0d7e0616ca0b050811d606073084c8fec42b288f",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 37,
+        "b": 37
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "examples/textdiff-evidence.valid.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "2521cee6ee1702f0e0b06e028619447b8cba47f6",
+      "head_blob_sha": "cdf17cf48abf6d7d401324ebd3db1c89b1803352",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 128,
+        "b": 128
+      },
+      "diff": {
+        "hunk_count": 6,
+        "changed_lines": 7,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ca2eee9d74fca0e4b291aa2cc64ad197d81145077a3b07e4573af060bda80ede"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "policy/escalation-policy.yml",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "85f6026a41d83490dc267ead5bfc8a170f881377",
+      "head_blob_sha": "6a187b7c2f81f037868192df388040787bff71e7",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "yaml",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 38,
+        "b": 38
+      },
+      "diff": {
+        "hunk_count": 4,
+        "changed_lines": 5,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "a67f90b2f4ce212ae8cdad5eae9357c7053f69047611a16473da185e36d47a26"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "policy/protected-paths.yml",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "9abc44dd8d390fc6cb9f6c11d0224e779d6362bb",
+      "head_blob_sha": "3e93a0a30951f98c6ca3417bd7ed072f728afec7",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "yaml",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 62,
+        "b": 89
+      },
+      "diff": {
+        "hunk_count": 4,
+        "changed_lines": 28,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "d8b4b24f78842c5184a288935a0f69352853fe74c2b558a3516813af3338960c"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "policy/reviewer-routing.yml",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "ad1c8579bc4974efbb53d763109d354d77356663",
+      "head_blob_sha": "928386d7c29fc63d8b4e7f542a1ce09f5b475e4c",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "yaml",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 50,
+        "b": 52
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "4188e9200d0779f723af4c64f9be9cb74543ad79bde2a85013274bad3e0f5403"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "policy/sensor-policy.yml",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6f79fd4ec7e5b9f0947cb4cf086ab26c7f4c3640",
+      "head_blob_sha": "99d3e5b59ec072b13da1aecbad2f01ecc705ed74",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "yaml",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 43,
+        "b": 44
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "2050a1d0f130fe093efeba15b7f18343a5a5cb5d56717159f371968e2e829452"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "profiles/harness/reviewer-worker-core.md",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "f0c1493e6973939789e254a6232edc30ed7a59f8",
+      "head_blob_sha": "58e0217b48ad50c641f4feb271de6c1c1c43db63",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "markdown",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 27,
+        "b": 28
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 4,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "1ee91beb33555ac6da5a25a17696d4c3d0d7e8fbe3125ceec16f07ef740634d8"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/case-record.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "8a74e40216a3ad34848f44954089c9a90ad1f0f1",
+      "head_blob_sha": "4dbd9e2b55d50a4f6dcf5e32cce79a4020fc63b4",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 332,
+        "b": 333
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5d3e791d99cb15a257f04c2191d4543b8d321d0f2d5351e7318c4e71ddf285dc"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/review-cycle.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "7164465a0f8e2b960661017cc617a314e8ad28e0",
+      "head_blob_sha": "eafcc9ce08ba9003ef7433175f336c9cfc85de6d",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 202,
+        "b": 208
+      },
+      "diff": {
+        "hunk_count": 4,
+        "changed_lines": 10,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "f4fc282b204473bece8ec066308434ff9295660e8436e5f0f77658e6906526e0"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/review-result.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "da50eac99f031138c920ed2f81ffa9090cc6d2d0",
+      "head_blob_sha": "45986de80a44bd3e09b63d406c69c3973b4320e2",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1028,
+        "b": 1029
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5d3e791d99cb15a257f04c2191d4543b8d321d0f2d5351e7318c4e71ddf285dc"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/reviewer-task.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "01e78af8f4f13135c4aa406c8da081aab0229b6c",
+      "head_blob_sha": "89b0ca34eb77ac54d5f85a4f1b5aa685fc697d4f",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 341,
+        "b": 342
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "5d3e791d99cb15a257f04c2191d4543b8d321d0f2d5351e7318c4e71ddf285dc"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "schemas/textdiff-evidence.schema.json",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "f4ad848dba0b2c61d8dc055e30f5f0fa779a906d",
+      "head_blob_sha": "7464d580f751aa014c654f20f2078ee60634ac10",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "json",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 536,
+        "b": 538
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 2,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "32c608b83a01eb06ee1add1b28e7e4cc144b0d6cfab5d1bbbc4ae766cc147e72"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v22_integration.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "bf6fb5acf9f14aefc632a07b3a1d3ee0fe9c0534",
+      "head_blob_sha": "7008ea6db5581a3aa8ab1474ad1f863694df5fb7",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 82,
+        "b": 82
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 2,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "0038983222dfdd61144117072e7435bd9517cc9e219b0ae1439657dde13e4948"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v23_orchestration.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "a9eaffe0a22fe4f230d53a74e264d0c39194d8fb",
+      "head_blob_sha": "ea3d4ba2d4e48ec946af2a741a46c688618b76ed",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 80,
+        "b": 80
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "33a7e3b9f6e46fb03cb75aeec08f2b25cd5094c60490345c5d2d5c36ac40c90b"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v24_hardening.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "9a3e42813f13549c9804d47620c9235f1d1cf29f",
+      "head_blob_sha": "d8bb2b30ccf000df5281ad80935ef2d1aabc7ac0",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 102,
+        "b": 102
+      },
+      "diff": {
+        "hunk_count": 5,
+        "changed_lines": 5,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "669a2b4df252bfd14fd556828190097f4fbfb7b14b89f45c6a23c3714306af90"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v25_dogfood.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "72ee41ac32a55b36315e6c85e0577d2cf6829822",
+      "head_blob_sha": "e1991d4de51f6ddde64bac932ad7e9d7b2abd92c",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 98,
+        "b": 98
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "f4558f661ff5093c0a6156114dbfc26fa2ca8a0dc8a6d0076209dbf10efff9d3"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tests/test_v26_hardening.py",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "c18aec11bbae048c1734aee27d760a7cbaf56708",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 202
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 202,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "209ff38ae3611adaadfbac3d99d9239cd9e5c88ace07aa3e939094886d5e6e85"
+      },
+      "weakening_signals": [
+        {
+          "kind": "test_skip_added",
+          "path": "tests/test_v26_hardening.py",
+          "evidence": "test skip/xfail added"
+        }
+      ]
+    },
+    {
+      "path": "tools/calibration_report.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "825301efe33c0c54de1f82a030c600bb8d2a07ec",
+      "head_blob_sha": "2f0f04f4aa32be8f67269489f595d0a28fdcb51d",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 42,
+        "b": 44
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 5,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "7c4b16d201daa8a30acab7bc6224172a0740f3e034ff31add104367985a01054"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/case_ledger.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "3fe7614bd1b1a525ce7bd53934101c1d2b0f39e9",
+      "head_blob_sha": "c353d693c00aae6f08889493c1103c1d77cb6dd5",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 110,
+        "b": 119
+      },
+      "diff": {
+        "hunk_count": 11,
+        "changed_lines": 19,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "1be4f6989081b9cb0357f36bc6d7b567b4e44fd1f641901366dd9b5685fc8f5f"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/evaluate_sensor_case.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "9726b9ddfaf198da64704be3364dc3de63c92363",
+      "head_blob_sha": "af0fd2de450b46ab68afa8f8e0e8088fc01024c0",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 58,
+        "b": 58
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 1,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee55ca822dde9a0e9b78d7249db34ba596520505244f629a001ee59a1e17a41a"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/human_decision_attestation.py",
+      "old_path": null,
+      "change_type": "ADDED",
+      "base_blob_sha": null,
+      "head_blob_sha": "5bbb8cf43b237204be235aa0fbb6c47cb30bef02",
+      "mode_before": null,
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": null,
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 0,
+        "b": 45
+      },
+      "diff": {
+        "hunk_count": 1,
+        "changed_lines": 45,
+        "approx": false,
+        "quality_class": "PROVEN_EXACT",
+        "algorithm_path": [
+          "diff_start",
+          "pure_insert"
+        ],
+        "trace_digest": "e07dd2f8bf964a289cbe611ce442d0114d7e78ca11148f59870e2462a595a0ed"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/ingest_incident.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "7dba6640a276b064e9d62bebfddf531d73dd0460",
+      "head_blob_sha": "409c2ba11a7a755a36922480b70f6af3688ecdd4",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 21,
+        "b": 20
+      },
+      "diff": {
+        "hunk_count": 5,
+        "changed_lines": 12,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "190aa50e0447176df1e7655da7ae048f5a45ca9e8d35216fd0cca429feeedc26"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/ingest_outcome.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "7b4dab66805d03e180772b7f8bd95e176c1ccb1b",
+      "head_blob_sha": "bf8dc9b8005d0560debcb2657c72a1f6307c80d2",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 23,
+        "b": 22
+      },
+      "diff": {
+        "hunk_count": 6,
+        "changed_lines": 9,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "41dbdde6071e0dffd55262af2c9655561171b206c894c347f8caaf95caf2d667"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/policy_engine.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "b1466919d765d0b905ba1ba4447efddf87099efb",
+      "head_blob_sha": "3c216f1339994ecf57d6669908791171d4ed8c56",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 172,
+        "b": 189
+      },
+      "diff": {
+        "hunk_count": 11,
+        "changed_lines": 45,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "82a3c5f24d76dc082139cef878fdb529ce74fa52b201c06bfa857073ae6f44f9"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/record_human_decision.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "97464cf02f99de97109e9fff9190ff174273f57b",
+      "head_blob_sha": "38cad1f52aef90983ef30c61769b717e82a7f753",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 21,
+        "b": 46
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 39,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "2f6a1e5a4acfcc673ee557847c315e0e54cf1dec95d5035ed7d76a574b7c22bc"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/render_github_check.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "d2c7a21d7d1d415e14346f450662501f7685c445",
+      "head_blob_sha": "2d70974dcd27455831f37c16584ec0249687f342",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 21,
+        "b": 23
+      },
+      "diff": {
+        "hunk_count": 6,
+        "changed_lines": 17,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "c5e6bd7351214d35e3e58f7092fa33a01220b1d1db68795773743b4c2b746d4f"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/route_case.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "e111f77aa364c544a729bec988616a83538c1e6f",
+      "head_blob_sha": "f03b0dfdbe2da9d040a84fd381d24f75e6fd1a5d",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 51,
+        "b": 68
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 32,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "9b4c9e072da1f983f2935625e569ccb91feab02cc882096396a6f88746cfea71"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/run_review_cycle.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "702833597c3846f03343620d1cec26dc7e56ce1f",
+      "head_blob_sha": "b298660c0fee0d4b55380e2e5e4153ddf9d06cd1",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 403,
+        "b": 459
+      },
+      "diff": {
+        "hunk_count": 35,
+        "changed_lines": 113,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "4462c8d90b2361bb323db53cd6ad37e9f529c6fca0555041bb2baaa2686753c5"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/run_validation.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6931ff07af7accdbac719e7ef496a4d47f8d68ca",
+      "head_blob_sha": "9296e4423cbba316c4e1c1122d2541c5dffa0682",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 147,
+        "b": 149
+      },
+      "diff": {
+        "hunk_count": 9,
+        "changed_lines": 31,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "e32a660b32a7b002cc861a56e42d21b074f4c857aa8a9456b5f0975f1d982f31"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/runtime_attestation.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "733b01321f367284f83e483e99d9fdba46b484ca",
+      "head_blob_sha": "c514b84677cf415bc8f427096f8650ccb6c94f49",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 78,
+        "b": 79
+      },
+      "diff": {
+        "hunk_count": 4,
+        "changed_lines": 6,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ba4d6560345314cc178f7ca166c89c54fc94c421e01b9f6f85bb2fd3631be255"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/sanitize_review_text.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "c7053cffa65b651ce663de917521caf957491b70",
+      "head_blob_sha": "281a9ab10ed7b761408e7ca39a6ac9484b62e493",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 54,
+        "b": 46
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 36,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "301cd9b8f159fbdd00cbac01bb21612440b9c04b598cc64fcc4258895bd7a40c"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/textdiff_adapter.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "f7f1dde859d3a43ea94b99d1eeaf6151390dc098",
+      "head_blob_sha": "195de78f9b3f61d6bc855dafd468d52a63daaad9",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 252,
+        "b": 278
+      },
+      "diff": {
+        "hunk_count": 10,
+        "changed_lines": 35,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "4cc8c12681bf136dd88de1d9defe1be8edeace681837c93ee6be39f1894678f1"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/validate_case_bundle.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "bc7b1adcd60032d5bedde3dd6bd1b3d8cad2bb17",
+      "head_blob_sha": "35352e3ea146c9702a2c121ccee52853d774fc36",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 38,
+        "b": 38
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 2,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "04eba0f9ab70ea35f72351ee706d8bf54c3b733c0268652540daae2aff12edc1"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/validate_review_cycle.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "13f79192c384bf432e9f3e2d541e58513b509f80",
+      "head_blob_sha": "cc7524f269ad3c0b5bc2925f74cdc67a9cbf6553",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 30,
+        "b": 36
+      },
+      "diff": {
+        "hunk_count": 4,
+        "changed_lines": 17,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "1a4c4a21896ae177e2df16272a71bd869eba67792a5f35ee308cddd3da58e755"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "tools/validate_textdiff_evidence.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "586038be5e18626c6167b2bee0a4595563239da7",
+      "head_blob_sha": "0c30211794f4c8d1783d1a23ee23e19f59024dab",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": false,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 93,
+        "b": 103
+      },
+      "diff": {
+        "hunk_count": 5,
+        "changed_lines": 17,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "8efee56ad77185170f9654239d140f12a2eaa09a85f677bda9dcf5ec0d771a10"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "vendor/TextDiffChecker_v1.4.6-harness.1/HARNESS_checker.patch",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "2d08820829fa10f247ab949fc822e633ae931bee",
+      "head_blob_sha": "f3225b00b8231cf72d4c7169e292d61e894fe8c4",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": true,
+      "language": null,
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 245,
+        "b": 245
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 4,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "8c443b8a0047772ba41a88fcd8eb82293d5691115c428c22dd822e212613201f"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "vendor/TextDiffChecker_v1.4.6-harness.1/HARNESS_tests.patch",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "2c70e7c5d173f3b158cea98d1c3f5c1f656642eb",
+      "head_blob_sha": "ab2159f19e705abe6116796528d49293a568fc3a",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": true,
+      "language": null,
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 38,
+        "b": 38
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "d160c9cf4aadf38ce67026b8793d0d0dc38e03f89ec2f6040c6129c923caa192"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "vendor/TextDiffChecker_v1.4.6-harness.1/checker.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "b065ba3764992f61d1f81746b10b16ade9f8f706",
+      "head_blob_sha": "08a1ac6c7739d11fa713118924fe91b37cb31128",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": true,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 2213,
+        "b": 2213
+      },
+      "diff": {
+        "hunk_count": 3,
+        "changed_lines": 4,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "ee307cf7465e3752df6343284d70412a19b411e584fed6788667341eee5c75b7"
+      },
+      "weakening_signals": []
+    },
+    {
+      "path": "vendor/TextDiffChecker_v1.4.6-harness.1/tests/test_checker.py",
+      "old_path": null,
+      "change_type": "MODIFIED",
+      "base_blob_sha": "6954d61f48ffbcbb0c4c7e7ae89cb6c1191dd0aa",
+      "head_blob_sha": "fd983b093e1428f9e7495cbfd6c1997edfa5dc7b",
+      "mode_before": "100644",
+      "mode_after": "100644",
+      "symlink": false,
+      "submodule": false,
+      "binary": false,
+      "generated": false,
+      "vendor": true,
+      "language": "python",
+      "encoding": {
+        "base": "utf-8",
+        "head": "utf-8",
+        "confidence": "HIGH",
+        "lossless_fallback_used": false
+      },
+      "status": "ANALYZED",
+      "skip_reason": null,
+      "lines": {
+        "a": 1205,
+        "b": 1205
+      },
+      "diff": {
+        "hunk_count": 2,
+        "changed_lines": 3,
+        "approx": false,
+        "quality_class": "HEURISTIC",
+        "algorithm_path": [
+          "diff_start",
+          "sequence_matcher"
+        ],
+        "trace_digest": "d160c9cf4aadf38ce67026b8793d0d0dc38e03f89ec2f6040c6129c923caa192"
+      },
+      "weakening_signals": []
+    }
+  ],
+  "performance": {
+    "elapsed_ms": 541.989,
+    "peak_memory_mb": null,
+    "timed_out": false,
+    "cancelled": false
+  },
+  "invariants": [
+    {
+      "id": "git-merge-base-head-binding",
+      "status": "passed",
+      "evidence": "ec873c0d10e0...331f4eda5f18 (base tip ec873c0d10e0)"
+    },
+    {
+      "id": "apply-opcodes-reconstruct-target",
+      "status": "passed",
+      "evidence": "all analyzed file transforms reconstruct target"
+    },
+    {
+      "id": "regex-timeout-runtime",
+      "status": "passed",
+      "evidence": "regex timeout engine available"
+    },
+    {
+      "id": "trusted-tool-hash",
+      "status": "passed",
+      "evidence": "pinned tool/dependency hashes match"
+    },
+    {
+      "id": "nontext-coverage",
+      "status": "passed",
+      "evidence": "no sensitive non-text change"
+    },
+    {
+      "id": "repeat-determinism",
+      "status": "unknown",
+      "evidence": "not rerun by default adapter"
+    }
+  ],
+  "trust": {
+    "runtime_safety": "PASS",
+    "trusted_for_gate": true,
+    "reasons": []
+  },
+  "semantic_digest": "41bceebed0c52bc223ffe9468216d0972cf5f81be5524b34eda6afcbfe7ae6aa",
+  "output_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b"
+}

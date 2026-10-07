@@ -1,0 +1,32 @@
+{
+  "schema_version": "2.3",
+  "candidate_id": "STD-CASE-V23-EXAMPLE",
+  "source_case_id": "CASE-V23-EXAMPLE",
+  "status": "PROPOSED",
+  "rule": {
+    "title": "Boundary validation rule",
+    "text": "Require explicit validation for security-boundary behavior changes.",
+    "rationale": "The existing review standard does not explicitly require this boundary check.",
+    "good_example_ref": null,
+    "bad_example_ref": null,
+    "expires_on": null
+  },
+  "detection": {
+    "method": "Static signal plus regression fixture and independent review.",
+    "machine_enforceable": true
+  },
+  "severity": "major",
+  "evidence_refs": [
+    "cycle/textdiff-evidence.json",
+    "cycle/l1-review.json",
+    "cycle/l2-review.json"
+  ],
+  "approval": {
+    "required": [
+      "HUMAN",
+      "CODEOWNER"
+    ],
+    "approved": false
+  },
+  "candidate_digest": "1fd7dbb20ef5115fd17b3b65587e9c05c482ee1008803c86be6f0b7c54927b29"
+}

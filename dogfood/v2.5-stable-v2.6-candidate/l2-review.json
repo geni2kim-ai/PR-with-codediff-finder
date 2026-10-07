@@ -1,0 +1,48 @@
+{
+  "schema_version": "2.4",
+  "task_id": "V26-DOGFOOD-STABLE-V25-L2",
+  "case_id": "V26-DOGFOOD-STABLE-V25",
+  "level": "L2",
+  "binding": {
+    "repository": "geni2kim-ai/PR-with-codediff-finder",
+    "reviewed_head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af"
+  },
+  "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+  "reviewer": {
+    "node_id": "L2-local",
+    "model": {
+      "family": "configured-local-reviewer",
+      "version": "unconfigured"
+    },
+    "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+    "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "policy_digest": "5e4543f8d43e1bdb15bd9348ffa4be3026ff53ea8109dc26562e8fb8cf5ea16d",
+    "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "worker_command_digest": "9cdb1de1853f7caeeb2eac171c55dd2b70687cba912caeeeabfc38379ff9bd92",
+    "independent_context": true
+  },
+  "verdict": "PASS",
+  "confidence": "high",
+  "findings": [],
+  "risk_signal": {
+    "reversibility": "EASY",
+    "blast_radius": "LOCAL",
+    "data_sensitivity": "NONE",
+    "security_surface": "LOW",
+    "availability_criticality": "LOW"
+  },
+  "escalation": {
+    "requested": false,
+    "target": "NONE",
+    "reasons": [],
+    "novel_failure_family": false
+  },
+  "output_safety": {
+    "sanitized": true,
+    "external_urls_present": false,
+    "markdown_images_present": false,
+    "mentions_present": false,
+    "secret_scan_passed": true
+  },
+  "result_digest": "2bbd0b23554c9550400dc34fbf994dff7a9b038e632dfb05a87283fa7a672a43"
+}

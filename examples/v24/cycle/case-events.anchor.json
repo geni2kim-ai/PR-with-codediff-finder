@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.4",
+  "case_id": "CASE-V24-EXAMPLE",
+  "seq": 5,
+  "event_hash": "70218e9b3c9e80aac25eecd13ac869b0cf098faea80001ac2da443ee18377c06",
+  "ledger_sha256": "357a706bdb35ac45716c385c49f9dd9625e26ddc428a6757c4996b10e74db1f3",
+  "key_id": null,
+  "hmac_sha256": null
+}

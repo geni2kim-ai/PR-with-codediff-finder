@@ -1,0 +1,10 @@
+{
+  "name": "[SHADOW] Maestro Review Gate",
+  "head_sha": "9b064ef663d5cb0d94112f0cc89b720d0cff5379",
+  "status": "completed",
+  "conclusion": "neutral",
+  "output": {
+    "title": "Review neutral: ADVERSARIAL_REQUIRED",
+    "summary": "state=ADVERSARIAL_REQUIRED | required=ADVERSARIAL | achieved=L2 | reasons=ADVERSARIAL_policy, L1_L2_DISAGREEMENT | predicted_conclusion=action_required | non-blocking preview"
+  }
+}

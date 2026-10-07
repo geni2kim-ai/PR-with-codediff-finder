@@ -1,0 +1,1029 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:review-result:2.4",
+  "title": "Hierarchical PR Review Result v2.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "analysis_status",
+    "review_state",
+    "axes",
+    "deterministic_checks",
+    "spec_ref",
+    "sensor_context",
+    "risk",
+    "authority",
+    "findings",
+    "output_safety",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.4"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "pr_number",
+        "base_sha",
+        "reviewed_head_sha",
+        "current_head_sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pr_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{7,64}$"
+        },
+        "reviewed_head_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{7,64}$"
+        },
+        "current_head_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{7,64}$"
+        }
+      }
+    },
+    "analysis_status": {
+      "enum": [
+        "PASS",
+        "FINDINGS",
+        "BLOCKED",
+        "STALE",
+        "ABANDONED"
+      ]
+    },
+    "review_state": {
+      "enum": [
+        "UNREVIEWED",
+        "L1_REVIEWED",
+        "L2_REVIEWED",
+        "ADV_REQUIRED",
+        "ADV_REVIEWED",
+        "HUMAN_REQUIRED",
+        "HUMAN_CONFIRMED",
+        "BLOCKED",
+        "STALE",
+        "ABANDONED"
+      ]
+    },
+    "axes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "correctness_security",
+        "standards",
+        "spec",
+        "test_integrity",
+        "supply_chain_compatibility",
+        "risk"
+      ],
+      "properties": {
+        "correctness_security": {
+          "$ref": "#/$defs/normalAxis"
+        },
+        "standards": {
+          "$ref": "#/$defs/normalAxis"
+        },
+        "spec": {
+          "$ref": "#/$defs/specAxis"
+        },
+        "test_integrity": {
+          "$ref": "#/$defs/normalAxis"
+        },
+        "supply_chain_compatibility": {
+          "$ref": "#/$defs/normalAxis"
+        },
+        "risk": {
+          "$ref": "#/$defs/riskAxis"
+        }
+      }
+    },
+    "deterministic_checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "spec_ref": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/specRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "risk": {
+      "$ref": "#/$defs/risk"
+    },
+    "authority": {
+      "$ref": "#/$defs/authority"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      },
+      "maxItems": 100
+    },
+    "output_safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sanitized",
+        "external_urls_present",
+        "markdown_images_present",
+        "mentions_present",
+        "secret_scan_passed"
+      ],
+      "properties": {
+        "sanitized": {
+          "type": "boolean"
+        },
+        "external_urls_present": {
+          "type": "boolean"
+        },
+        "markdown_images_present": {
+          "type": "boolean"
+        },
+        "mentions_present": {
+          "type": "boolean"
+        },
+        "secret_scan_passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_counts",
+        "human_message"
+      ],
+      "properties": {
+        "finding_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "blocker",
+            "major",
+            "minor",
+            "nit"
+          ],
+          "properties": {
+            "blocker": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "major": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minor": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "human_message": {
+          "type": "string"
+        }
+      }
+    },
+    "sensor_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_digest",
+        "quality_class",
+        "trusted_for_gate",
+        "low_confidence_encoding_paths"
+      ],
+      "properties": {
+        "evidence_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "quality_class": {
+          "enum": [
+            "PROVEN_EXACT",
+            "DETERMINISTIC",
+            "HEURISTIC",
+            "APPROXIMATE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "trusted_for_gate": {
+          "type": "boolean"
+        },
+        "low_confidence_encoding_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "failed_invariants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "normalAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FINDINGS",
+            "BLOCKED",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "specAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FINDINGS",
+            "BLOCKED",
+            "NO_SPEC",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "riskAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "ELEVATED",
+            "BLOCKED",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "status"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown",
+            "not_required"
+          ]
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "specRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "locator",
+        "source_sha256",
+        "trust_status",
+        "modified_after_pr_open",
+        "modified_by_pr_author",
+        "post_open_change_explained"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "issue",
+            "file",
+            "external_tracker",
+            "other"
+          ]
+        },
+        "locator": {
+          "type": "string"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "resolved_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modified_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr_opened_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modified_after_pr_open": {
+          "type": "boolean"
+        },
+        "modified_by_pr_author": {
+          "type": "boolean"
+        },
+        "post_open_change_explained": {
+          "type": "boolean"
+        },
+        "trust_status": {
+          "enum": [
+            "TRUSTED",
+            "WARNING",
+            "UNTRUSTED"
+          ]
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_assessment",
+        "harness"
+      ],
+      "properties": {
+        "model_assessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reversibility",
+            "blast_radius",
+            "data_sensitivity",
+            "security_surface",
+            "availability_criticality"
+          ],
+          "properties": {
+            "reversibility": {
+              "enum": [
+                "EASY",
+                "MODERATE",
+                "HARD"
+              ]
+            },
+            "blast_radius": {
+              "enum": [
+                "LOCAL",
+                "SERVICE",
+                "MULTI_SERVICE",
+                "EXTERNAL"
+              ]
+            },
+            "data_sensitivity": {
+              "enum": [
+                "NONE",
+                "INTERNAL",
+                "PII",
+                "SECRET"
+              ]
+            },
+            "security_surface": {
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            },
+            "availability_criticality": {
+              "enum": [
+                "LOW",
+                "MEDIUM",
+                "HIGH",
+                "CRITICAL"
+              ]
+            }
+          }
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governance_path_hits",
+            "human_floor_path_hits",
+            "adversarial_floor_path_hits",
+            "supply_chain_path_hits",
+            "governance_change",
+            "matrix_human_review_required",
+            "floor_human_review_required",
+            "human_review_required",
+            "floor_reasons"
+          ],
+          "properties": {
+            "governance_path_hits": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "human_floor_path_hits": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "adversarial_floor_path_hits": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "supply_chain_path_hits": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "governance_change": {
+              "type": "boolean"
+            },
+            "matrix_human_review_required": {
+              "type": "boolean"
+            },
+            "floor_human_review_required": {
+              "type": "boolean"
+            },
+            "human_review_required": {
+              "type": "boolean"
+            },
+            "floor_reasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_level",
+        "achieved_level",
+        "final_authority",
+        "escalation_required",
+        "escalation_reasons",
+        "trail"
+      ],
+      "properties": {
+        "required_level": {
+          "enum": [
+            "L1",
+            "L2",
+            "ADVERSARIAL",
+            "HUMAN"
+          ]
+        },
+        "achieved_level": {
+          "enum": [
+            "SENSOR",
+            "L1",
+            "L2",
+            "ADVERSARIAL",
+            "HUMAN"
+          ]
+        },
+        "final_authority": {
+          "type": "boolean"
+        },
+        "escalation_required": {
+          "type": "boolean"
+        },
+        "escalation_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "trail": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trailEntry"
+          }
+        }
+      }
+    },
+    "trailEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "verdict",
+        "confidence",
+        "reviewer_ref",
+        "result_digest"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "L1",
+            "L2",
+            "ADVERSARIAL",
+            "HUMAN"
+          ]
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "FINDINGS",
+            "BLOCKED",
+            "CONFIRMED",
+            "REJECTED"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "not_applicable"
+          ]
+        },
+        "reviewer_ref": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "axis",
+        "severity",
+        "confidence",
+        "certainty",
+        "path",
+        "claim",
+        "evidence",
+        "impact",
+        "recommendation",
+        "preexisting",
+        "activated_or_worsened"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "axis": {
+          "enum": [
+            "correctness_security",
+            "standards",
+            "spec",
+            "test_integrity",
+            "supply_chain_compatibility",
+            "risk"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "blocker",
+            "major",
+            "minor",
+            "nit"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "certainty": {
+          "enum": [
+            "confirmed",
+            "judgment"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "hunk": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "claim": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "impact": {
+          "type": "string"
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "preexisting": {
+          "type": "boolean"
+        },
+        "activated_or_worsened": {
+          "type": "boolean"
+        },
+        "duplicate_of": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failure_family": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "analysis_status": {
+            "const": "PASS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "blocker",
+                      "major"
+                    ]
+                  }
+                },
+                "required": [
+                  "severity"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "model_assessment": {
+                "properties": {
+                  "reversibility": {
+                    "const": "HARD"
+                  }
+                },
+                "required": [
+                  "reversibility"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "model_assessment": {
+                "properties": {
+                  "data_sensitivity": {
+                    "enum": [
+                      "PII",
+                      "SECRET"
+                    ]
+                  }
+                },
+                "required": [
+                  "data_sensitivity"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "model_assessment": {
+                "properties": {
+                  "security_surface": {
+                    "enum": [
+                      "HIGH",
+                      "CRITICAL"
+                    ]
+                  }
+                },
+                "required": [
+                  "security_surface"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "model_assessment": {
+                "properties": {
+                  "availability_criticality": {
+                    "const": "CRITICAL"
+                  }
+                },
+                "required": [
+                  "availability_criticality"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "governance_change": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "governance_change"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          },
+          "authority": {
+            "properties": {
+              "required_level": {
+                "const": "HUMAN"
+              }
+            },
+            "required": [
+              "required_level"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_floor_path_hits": {
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "human_floor_path_hits"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "risk": {
+            "properties": {
+              "harness": {
+                "properties": {
+                  "human_review_required": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "human_review_required"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
