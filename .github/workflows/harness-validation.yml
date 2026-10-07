@@ -69,3 +69,14 @@ jobs:
 
       - name: Run canonical full validation
         run: python tools/run_validation.py --full --test-timeout 120
+
+      - name: Build validated v2.7 source package
+        run: git archive --format=zip --prefix=PR-with-codediff-finder-v2.7/ -o PR-with-codediff-finder-v2.7.zip HEAD
+
+      - name: Upload validated v2.7 source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2.7-source-package
+          path: PR-with-codediff-finder-v2.7.zip
+          if-no-files-found: error
+          retention-days: 7
