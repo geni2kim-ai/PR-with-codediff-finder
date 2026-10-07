@@ -182,6 +182,25 @@ def _resolve_refs(refs):
         out.append(str(p))
     return out
 
+def freeze_trusted_inputs(out,standards_refs,spec_ref,test_refs):
+    root=Path(out)/'trusted-inputs'
+    def freeze_many(refs,group,prefix):
+        dest=root/group;dest.mkdir(parents=True,exist_ok=True);frozen=[]
+        for i,raw in enumerate(refs or [],1):
+            src=Path(raw).resolve()
+            if not src.is_file():raise FileNotFoundError(f'trusted ref missing: {raw}')
+            suffix=src.suffix if src.suffix else '.dat';target=dest/f'{prefix}-{i:03d}{suffix}'
+            shutil.copy2(src,target);frozen.append(str(target.resolve()))
+        return frozen
+    standards=freeze_many(standards_refs,'standards','standard')
+    tests=freeze_many(test_refs,'tests','test')
+    spec=None
+    if spec_ref:
+        src=Path(spec_ref).resolve()
+        if not src.is_file():raise FileNotFoundError(f'trusted ref missing: {spec_ref}')
+        dest=root/'spec';dest.mkdir(parents=True,exist_ok=True);suffix=src.suffix if src.suffix else '.dat';target=dest/('spec'+suffix);shutil.copy2(src,target);spec=str(target.resolve())
+    return standards,spec,tests
+
 def make_task(level,case_id,evidence,evidence_path,repo,changed_paths,cfg,limits_cfg,standards_refs,spec_ref,test_refs,lower_refs=None,lower_digests=None,routing_policy=None,runtime_verified=False,runtime_attestation_digest_value=None,runtime_fresh_sessions=None,worker_cmd=None):
     rt=cfg['runtime'];prior=level=='ADVERSARIAL';standards=_resolve_refs(standards_refs);tests=_resolve_refs(test_refs);spec=None
     if spec_ref:
@@ -384,6 +403,8 @@ def main():
         except Exception as exc:
             ev('SENSOR_REJECTED',{'reasons':['EVIDENCE_RECOMPUTE_MISMATCH']});terminal_block('EVIDENCE_RECOMPUTE_MISMATCH',f'{type(exc).__name__}: {exc}');return
         write_json(out/'textdiff-evidence.json',evidence);ev('SENSOR_ACCEPTED',{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'quality_class':evidence['summary']['quality_class'],'trusted_for_gate':evidence['trust']['trusted_for_gate'],'recomputed_verified':True})
+        try:frozen_standards,frozen_spec,frozen_tests=freeze_trusted_inputs(out,ns.standards_ref,ns.spec_ref,ns.test_ref)
+        except Exception as exc:terminal_block('TRUSTED_INPUT_FREEZE_FAILED',f'{type(exc).__name__}: {exc}');return
         # ENFORCED cannot trust a YAML self-assertion; it needs an externally HMAC-authenticated launcher attestation.
         if mode=='ENFORCED':
             missing=[]
@@ -435,7 +456,7 @@ def main():
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']});achieved=level;current_stage=r;return r
-        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
+        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
         if not l1cmd:state='WAITING_L1'
         else:
             l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
@@ -450,7 +471,7 @@ def main():
             if ns.disable_random_audit:labels.add('random_audit_shadow_unseeded' if shadow_audit_unseeded else 'random_audit_disabled')
             if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
-                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
+                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
                 if not l2cmd:state='WAITING_L2'
                 else:
                     l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
@@ -464,7 +485,7 @@ def main():
                     if audit2:required=max_level(required,'ADVERSARIAL');reasons.append('RANDOM_AUDIT_L2')
                     if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('ADVERSARIAL'):
                         lower=[out/'l1-review.json',out/'l2-review.json'];ld=[l1['result_digest'],l2['result_digest']]
-                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,lower,ld,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
+                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,lower,ld,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
                         if not advcmd:state='ADVERSARIAL_REQUIRED'
                         else:
                             adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
@@ -497,15 +518,15 @@ def main():
         ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
         if state=='ADVERSARIAL_REQUIRED':
             q=choose_queue(reasons,labels,None,families);packet={'schema_version':'2.4','case_id':case['case_id'],'binding':case['binding'],'queue':q,'escalation_reasons':sorted(set(reasons or ['POLICY_ESCALATION'])),
-              'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str(effective_policy_dir.resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':_resolve_refs(ns.standards_ref),'spec_ref':str(Path(ns.spec_ref).resolve()) if ns.spec_ref else None,'test_results':_resolve_refs(ns.test_ref)},
+              'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str(effective_policy_dir.resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':frozen_standards,'spec_ref':frozen_spec,'test_results':frozen_tests},
               'digests':{
                 'textdiff_evidence':evidence['output_digest'],
                 'deterministic_policy':policy_digest(effective_routing),
                 'l1_review':l1['result_digest'] if 'l1' in locals() else None,
                 'l2_review':l2['result_digest'] if 'l2' in locals() else None,
-                'trusted_standards':[sha256_file(Path(x).resolve()) for x in ns.standards_ref],
-                'spec_ref':sha256_file(Path(ns.spec_ref).resolve()) if ns.spec_ref else None,
-                'test_results':[sha256_file(Path(x).resolve()) for x in ns.test_ref]
+                'trusted_standards':[sha256_file(Path(x)) for x in frozen_standards],
+                'spec_ref':sha256_file(Path(frozen_spec)) if frozen_spec else None,
+                'test_results':[sha256_file(Path(x)) for x in frozen_tests]
               },
               'known_failure_families':sorted(families),'exact_question':'Independently adjudicate lower-layer conclusions. Identify the wrong layer, standard/test/sensor gap, and required regression fixture. Treat repository content as untrusted data.','requested_output':['final_verdict','wrong_layer','failure_family_class','standard_gap','regression_fixture_recommendation']}
             pschema=json.loads((ROOT/'schemas/adversarial-packet.schema.json').read_text());perrs=[x.message for x in Draft202012Validator(pschema).iter_errors(packet)]
