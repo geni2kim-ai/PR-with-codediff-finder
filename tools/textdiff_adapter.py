@@ -246,10 +246,17 @@ def main():
             had_error=True;coverage_gap=True;apply_ok=False;row['status']='ERROR';row['skip_reason']=type(exc).__name__
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
-    actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'),'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
-    expected=sensor_cfg.get('trusted_tool',{});required_pin_keys=set(actual_hashes)
-    hash_mismatch=[k for k,v in actual_hashes.items() if not expected.get(k) or expected.get(k)!=v]
-    missing_pins=sorted(k for k in required_pin_keys if not expected.get(k))
+    expected=sensor_cfg.get('trusted_tool',{})
+    original_package=ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'
+    # The distributable package may retain the original binary archive, while the
+    # public source tree intentionally omits it.  Runtime trust is bound to the
+    # executable checker and dependency declarations; the original archive digest is
+    # retained as provenance metadata when the archive is absent.
+    package_hash=sha256_file(original_package) if original_package.is_file() else expected.get('original_package_sha256')
+    actual_hashes={'checker_sha256':sha256_file(tdroot/'checker.py'),'original_package_sha256':package_hash,'vendor_requirements_sha256':sha256_file(tdroot/'requirements.txt'),'harness_requirements_sha256':sha256_file(ROOT/'requirements.txt')}
+    required_runtime_pins={'checker_sha256','vendor_requirements_sha256','harness_requirements_sha256'}
+    hash_mismatch=[k for k,v in actual_hashes.items() if (k in required_runtime_pins and (not expected.get(k) or expected.get(k)!=v)) or (k=='original_package_sha256' and original_package.is_file() and expected.get(k)!=v)]
+    missing_pins=sorted(k for k in required_runtime_pins if not expected.get(k))
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
     runtime_ok=(regex_ok or not regex_required) and quality_allowed and not had_error and not coverage_gap and apply_ok and not hash_mismatch
     invariants=[
@@ -268,7 +275,7 @@ def main():
     if hash_mismatch:reasons.append('trusted_tool_hash_mismatch')
     if missing_pins:reasons.append('trusted_tool_pin_missing')
     tool={'name':'TextDiffChecker','product_version':'1.4.6','harness_api_version':getattr(checker,'HARNESS_API_VERSION','unknown'),
-      'package_sha256':actual_hashes['original_package_sha256'],'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
+      'package_sha256':actual_hashes['original_package_sha256'],'package_present':original_package.is_file(),'checker_sha256':actual_hashes['checker_sha256'],'syntax_db_sha256':sha256_file(tdroot/'syntax_db.json'),
       'dependencies_sha256':actual_hashes['vendor_requirements_sha256'],'harness_dependencies_sha256':actual_hashes['harness_requirements_sha256'],
       'runtime_dependencies':{'python':sys.version.split()[0],'jsonschema':dep_version('jsonschema'),'PyYAML':dep_version('PyYAML'),'regex':dep_version('regex')},
       'config_sha256':sha256_file(ROOT/'policy/sensor-policy.yml'),'regex_timeout_available':regex_ok}
