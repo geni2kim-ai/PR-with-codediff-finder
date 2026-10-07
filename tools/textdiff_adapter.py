@@ -216,7 +216,7 @@ def main():
     for _,old,new in entries:
         if old:all_paths.append(old)
         all_paths.append(new)
-    self_review=is_self_protected_repository(ns.repository,repo,cfg);hits=classify_paths(all_paths,cfg,include_self_protection=self_review);protected=sorted(set(sum(hits.values(),[])))
+    self_review=is_self_protected_repository(ns.repository,repo,cfg,base_ref=base);hits=classify_paths(all_paths,cfg,include_self_protection=self_review);protected=sorted(set(sum(hits.values(),[])))
     files=[];all_weak=[];apply_ok=True;had_error=False;coverage_gap=False;nontext_sensitive=False
     for status,old,path in entries:
         code=status[0] if status else '?';ctype={'A':'ADDED','D':'DELETED','M':'MODIFIED','R':'RENAMED','C':'COPIED','T':'TYPE_CHANGED','U':'UNMERGED'}.get(code,'UNKNOWN')
@@ -262,9 +262,19 @@ def main():
             had_error=True;coverage_gap=True;apply_ok=False;row['status']='ERROR';row['skip_reason']=type(exc).__name__
         files.append(row)
     analyzed=[f for f in files if f['status']=='ANALYZED'];qualities=[f['diff']['quality_class'] for f in analyzed];q='NOT_APPLICABLE' if not qualities else max(qualities,key=lambda x:QUALITY_ORDER[x])
-    actual_hashes={'checker_sha256':canonical_source_sha256(tdroot/'checker.py'),'original_package_sha256':sha256_file(ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip') if (ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip').is_file() else sensor_cfg.get('trusted_tool',{}).get('original_package_sha256'),'vendor_requirements_sha256':canonical_source_sha256(tdroot/'requirements.txt'),'harness_requirements_sha256':canonical_source_sha256(ROOT/'requirements.txt')}
-    expected=sensor_cfg.get('trusted_tool',{});required_pins=tuple(actual_hashes)
+    original_path=ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'
+    actual_hashes={'checker_sha256':canonical_source_sha256(tdroot/'checker.py'),'original_package_sha256':sha256_file(original_path) if original_path.is_file() else None,'vendor_requirements_sha256':canonical_source_sha256(tdroot/'requirements.txt'),'harness_requirements_sha256':canonical_source_sha256(ROOT/'requirements.txt')}
+    expected=sensor_cfg.get('trusted_tool',{});original_required=bool(expected.get('original_package_required',False))
+    required_pins=('checker_sha256','vendor_requirements_sha256','harness_requirements_sha256')
     hash_mismatch=[k for k in required_pins if not isinstance(expected.get(k),str) or not re.fullmatch(r'[0-9a-fA-F]{64}',expected.get(k,'') or '') or expected.get(k).lower()!=actual_hashes[k].lower()]
+    expected_original=expected.get('original_package_sha256')
+    original_bad=(original_required and actual_hashes['original_package_sha256'] is None) or (
+        actual_hashes['original_package_sha256'] is not None and (
+            not isinstance(expected_original,str) or not re.fullmatch(r'[0-9a-fA-F]{64}',expected_original or '') or
+            expected_original.lower()!=actual_hashes['original_package_sha256'].lower()
+        )
+    )
+    if original_bad:hash_mismatch.append('original_package_sha256')
     regex_ok=bool(getattr(checker,'_HAS_REGEX',False));tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=q in set(tdcfg.get('accepted_quality_classes',[]))
     runtime_ok=(regex_ok or not regex_required) and quality_allowed and not had_error and not coverage_gap and apply_ok and not hash_mismatch
     invariants=[
@@ -272,6 +282,7 @@ def main():
       {'id':'apply-opcodes-reconstruct-target','status':'passed' if apply_ok else 'failed','evidence':'all analyzed file transforms reconstruct target' if apply_ok else 'at least one file failed reconstruction'},
       {'id':'regex-timeout-runtime','status':'passed' if regex_ok else 'failed','evidence':'regex timeout engine available' if regex_ok else 'stdlib re fallback detected'},
       {'id':'trusted-tool-hash','status':'passed' if not hash_mismatch else 'failed','evidence':'pinned tool/dependency hashes match' if not hash_mismatch else 'mismatch: '+','.join(hash_mismatch)},
+      {'id':'original-package-provenance','status':('failed' if original_bad else ('passed' if actual_hashes['original_package_sha256'] else 'not_required')),'evidence':('original package missing/mismatched' if original_bad else ('original package present and pinned' if actual_hashes['original_package_sha256'] else 'public-source profile does not require original package archive'))},
       {'id':'git-path-identity','status':'passed','evidence':'Git lookup uses raw paths; policy normalization is separate'},
       {'id':'nontext-coverage','status':'failed' if nontext_sensitive else 'passed','evidence':'symlink/submodule/binary requires higher review' if nontext_sensitive else 'no sensitive non-text change'},
       {'id':'repeat-determinism','status':'unknown','evidence':'not rerun by default adapter'}]
