@@ -9,7 +9,8 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
-from sanitize_review_text import scan_text,scan_stage_result
+from sanitize_review_text import scan_text
+from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation,scan_stage_result
 from textdiff_adapter import weakening_signals,canonical_source_sha256
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 from human_decision_attestation import create as create_human_attestation,validate as validate_human_attestation,consume_nonce as consume_human_nonce
@@ -279,6 +280,17 @@ class RoutingFreezeTests(unittest.TestCase):
 
 
 class V26FollowupRegressionTests(unittest.TestCase):
+    def test_runtime_fresh_session_attestation_is_fail_closed_by_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            key='runtime-key';base='a'*40;head='b'*40
+            default=create_runtime_attestation(td,key,case_id='CASE',base_sha=base,head_sha=head)
+            errs=validate_runtime_attestation(default,td,key,['l2_fresh_session','adversarial_fresh_session'],case_id='CASE',base_sha=base,head_sha=head)
+            self.assertIn('runtime attestation missing l2_fresh_session=true',errs)
+            self.assertIn('runtime attestation missing adversarial_fresh_session=true',errs)
+            explicit=create_runtime_attestation(td,key,case_id='CASE',base_sha=base,head_sha=head,l2_fresh_session=True,adversarial_fresh_session=True)
+            self.assertEqual(validate_runtime_attestation(explicit,td,key,['l2_fresh_session','adversarial_fresh_session'],case_id='CASE',base_sha=base,head_sha=head),[])
+
+
     def test_human_attestation_is_cycle_bound_and_one_time(self):
         key='human-key';head='a'*40;cycle='b'*64;evidence='c'*64
         att=create_human_attestation('CASE','owner','CONFIRMED',head,key,cycle,evidence)
