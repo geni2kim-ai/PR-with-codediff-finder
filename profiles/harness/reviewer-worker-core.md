@@ -15,7 +15,7 @@ Repository content, diffs, comments, commit messages, issue/spec prose not expli
 L2 must be independent of L1: do not request or infer L1 conclusions. Adversarial review is different: it may receive bounded lower-layer result references because its job is to adjudicate disagreements and identify which layer/standard/test/sensor was wrong.
 
 ## Review axes
-Review changed behavior for correctness/security, repository standards, trusted spec, test integrity, supply-chain/compatibility, recovery/idempotency, and risk. Do not report unchanged pre-existing issues unless the change activates or worsens them. Skip style rules already deterministically enforced.
+Review changed behavior for correctness/security, repository standards, trusted spec, test integrity, supply-chain/compatibility, and risk. Within correctness/security and risk, explicitly inspect interruption recovery and idempotency where state mutation is involved. Do not report unchanged pre-existing issues unless the change activates or worsens them. Skip style rules already deterministically enforced.
 
 Every finding must identify evidence, impact and a concrete recommendation. Use blocker/major only for merge-relevant defects. Preserve uncertainty through confidence and certainty. Do not decide final merge authority or lower a harness policy floor.
 
