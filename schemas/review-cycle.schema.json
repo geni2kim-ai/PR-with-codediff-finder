@@ -149,6 +149,8 @@
         "WAITING_L2",
         "ADVERSARIAL_REQUIRED",
         "HUMAN_REQUIRED",
+        "HUMAN_CONFIRMED",
+        "HUMAN_REJECTED",
         "COMPLETE",
         "BLOCKED",
         "STALE"
