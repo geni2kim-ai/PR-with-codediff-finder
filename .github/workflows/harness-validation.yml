@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - hardening/v2.6
+      - hardening/v2.7
   workflow_dispatch:
 
 permissions:
@@ -50,7 +50,7 @@ jobs:
           retention-days: 1
 
       - name: Require committed manifest on PR/manual validation
-        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.6'
+        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
         shell: bash
         run: |
           if ! cmp -s MANIFEST.sha256 MANIFEST.generated.sha256; then
@@ -61,7 +61,7 @@ jobs:
           python tools/verify_manifest.py --git-ref HEAD
 
       - name: Apply generated manifest for hardening-branch push validation
-        if: github.event_name == 'push' && github.ref == 'refs/heads/hardening/v2.6'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/hardening/v2.7'
         run: cp MANIFEST.generated.sha256 MANIFEST.sha256
 
       - name: Verify manifest against Git blobs
