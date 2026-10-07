@@ -71,9 +71,11 @@ jobs:
         run: python tools/run_validation.py --full --test-timeout 120
 
       - name: Build validated v2.7 source package
+        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
         run: git archive --format=zip --prefix=PR-with-codediff-finder-v2.7/ -o PR-with-codediff-finder-v2.7.zip HEAD
 
       - name: Upload validated v2.7 source package
+        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
         uses: actions/upload-artifact@v4
         with:
           name: v2.7-source-package
