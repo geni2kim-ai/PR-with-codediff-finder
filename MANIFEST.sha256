@@ -1,4 +1,4 @@
-c677ce805465473ed5f92825414c8f64e65d4ff1a250c9cec2e92561bf7362cd  ./.github/workflows/harness-validation.yml
+e94d6d648f3f249ae3162f70a74e06c2a1c6f62665a7bc9b4c7a7492d3055403  ./.github/workflows/harness-validation.yml
 599e8d09a18b6bac6f70ed12bf96f67e49c4d992ee2601bc173d92fbcb64b11d  ./.gitignore
 49d9d583f9bc4760313b995acbdb641443be5453b2d5b18196d5f2e7bbbcd200  ./CHANGELOG_v2.4_KO.md
 af2626a5b0c27dea843212635d6f84b563bcf364f784439493aa87c70327c548  ./CHANGELOG_v2.5_KO.md
@@ -159,7 +159,7 @@ e83b63544166822df0deaeacc727616f6982bb446c9827acdb9b07f830fae07f  ./schemas/stan
 5b752d4cb93849ba9a470c639cc0c2df197205a24c49fc8fd6288bb06a01d4b6  ./tests/test_v23_orchestration.py
 f88245024caa27b8ac058d097cd9df3da7d562c3c5d514c457d9d9c1d889d244  ./tests/test_v24_hardening.py
 81e4586a3096312707ca31c639a5b7575b7bbf8ba2a44905ff4fad67b0d35d29  ./tests/test_v25_dogfood.py
-ee3e07775beb8858c758bbc1f06e19501186843f0932054d608bbf6767b408b0  ./tests/test_v26_hardening.py
+8dd7515f708b2fe7a5a2ffbc853f83e4ab744fc3030a07ef228ad3a5e7015adb  ./tests/test_v26_hardening.py
 fbaf0574e2ea5e2a7ee2a5641f3bb1bf3d41e299d180051de0bf8da668284346  ./tools/calibration_report.py
 8064dfdf923958452f85f50e4f3c3891f2c5a4d152ffd2b263da6cdca75b5958  ./tools/case_ledger.py
 6e10c393e17207e387caf0ac607f6e054c00788ea7b027a0adfe303008075ba5  ./tools/common.py
