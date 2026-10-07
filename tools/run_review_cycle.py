@@ -73,46 +73,78 @@ SECRET_ENV_NAME=re.compile(r'(?i)(?:secret|token|password|passwd|credential|priv
 
 def sensitive_env_names(names):return sorted({str(x) for x in names if SECRET_ENV_NAME.search(str(x))})
 
-def _module_source_files(module,cwd_path):
-    """Resolve a local `python -m package.module` without importing package code."""
+def _module_source_files(module,cwd_path,interpreter,pythonpath=None):
+    """Resolve python -m provenance through cwd/PYTHONPATH/installed paths without importing target code."""
     parts=[p for p in str(module).split('.') if p]
-    if not parts:return [],True
-    cur=Path(cwd_path).resolve();out=[]
-    for part in parts[:-1]:
-        pkg=cur/part
-        if not pkg.is_dir():return out,True
-        init=pkg/'__init__.py'
-        if init.is_file():out.append(init.resolve())
-        cur=pkg
-    last=parts[-1]
-    mod=cur/(last+'.py');pkg=cur/last;init=pkg/'__init__.py'
-    if mod.is_file():out.append(mod.resolve());return out,False
-    if init.is_file():out.append(init.resolve());return out,False
-    return out,True
+    if not parts or not interpreter:return [],True
+    script=r'''import importlib.machinery,json,os,sys,sysconfig
+module=sys.argv[1];cwd=os.path.abspath(sys.argv[2]);pythonpath=sys.argv[3]
+roots=[cwd]
+if pythonpath:
+    for item in pythonpath.split(os.pathsep):
+        if not item:item=cwd
+        elif not os.path.isabs(item):item=os.path.abspath(os.path.join(cwd,item))
+        roots.append(os.path.abspath(item))
+paths=sysconfig.get_paths()
+for key in ('purelib','platlib'):
+    p=paths.get(key)
+    if p:roots.append(os.path.abspath(p))
+seen=set();search=[]
+for p in roots:
+    if p not in seen and os.path.isdir(p):seen.add(p);search.append(p)
+sources=[];current=search;parts=module.split('.')
+for i,part in enumerate(parts):
+    fullname='.'.join(parts[:i+1]);spec=importlib.machinery.PathFinder.find_spec(fullname,current)
+    if spec is None:
+        print(json.dumps({'sources':sources,'unresolved':True}));raise SystemExit(0)
+    origin=getattr(spec,'origin',None)
+    if origin and origin not in {'built-in','frozen'}:sources.append(os.path.abspath(origin))
+    if i < len(parts)-1:
+        locs=getattr(spec,'submodule_search_locations',None)
+        if not locs:
+            print(json.dumps({'sources':sources,'unresolved':True}));raise SystemExit(0)
+        current=[os.path.abspath(x) for x in locs]
+print(json.dumps({'sources':sources,'unresolved':False}))
+'''
+    try:
+        cp=subprocess.run([str(interpreter),'-S','-c',script,str(module),str(Path(cwd_path).resolve()),str(pythonpath or '')],cwd=str(Path(cwd_path).resolve()),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+        if cp.returncode:return [],True
+        data=json.loads(cp.stdout);out=[];unresolved=bool(data.get('unresolved'))
+        for raw in data.get('sources',[]):
+            p=Path(raw)
+            if p.is_file():out.append(p.resolve())
+            else:unresolved=True
+        dedup=[];seen=set()
+        for p in out:
+            s=str(p)
+            if s not in seen:seen.add(s);dedup.append(p)
+        return dedup,unresolved
+    except Exception:return [],True
 
 
-def worker_command_digest(cmd,cwd=None):
+def worker_command_digest(cmd,cwd=None,pythonpath=None):
     if not cmd:return ZERO
-    cwd_path=Path(cwd or os.getcwd()).resolve();tokens=[]
+    cwd_path=Path(cwd or os.getcwd()).resolve();tokens=[];interpreter=None
     for i,arg in enumerate(cmd):
         resolved=None
         if i==0:
             found=shutil.which(arg)
-            if found:resolved=Path(found).resolve()
+            if found:resolved=Path(found).resolve();interpreter=resolved
         if resolved is None:
             try:
                 p=Path(arg)
                 if not p.is_absolute():p=cwd_path/p
                 if p.is_file():resolved=p.resolve()
             except Exception:pass
-        if resolved is not None and resolved.is_file():tokens.append({'index':i,'kind':'file','name':resolved.name,'sha256':sha256_file(resolved)})
+        if resolved is not None and resolved.is_file():
+            if i==0:interpreter=resolved
+            tokens.append({'index':i,'kind':'file','name':resolved.name,'sha256':sha256_file(resolved)})
         else:tokens.append({'index':i,'kind':'literal','value':arg})
     module_provenance=[]
     if len(cmd)>=3 and cmd[1]=='-m':
-        module=cmd[2];paths,unresolved=_module_source_files(module,cwd_path)
-        for mp in paths:
-            module_provenance.append({'path':mp.relative_to(cwd_path).as_posix() if _inside(mp,cwd_path) else mp.name,'sha256':sha256_file(mp)})
-        if unresolved:module_provenance.append({'module':module,'unresolved':True})
+        module=cmd[2];paths,unresolved=_module_source_files(module,cwd_path,interpreter,pythonpath)
+        for mp in paths:module_provenance.append({'path':str(mp),'sha256':sha256_file(mp)})
+        if unresolved:module_provenance.append({'module':module,'unresolved':True,'pythonpath':str(pythonpath or '')})
     return object_digest({'argv':tokens,'cwd':str(cwd_path),'module_provenance':module_provenance})
 
 def safe_env(allow,task=None):
@@ -140,7 +172,7 @@ def make_contract(level,cfg,standards_refs,routing_policy=None,worker_cmd=None,w
         if not sp.is_file():raise FileNotFoundError(f'reviewer skill missing: {skill}')
         skill_digest=sha256_file(sp)
     return {'node_id':r['node_id'],'model':r['model'],'prompt_digest':sha256_file(prompt),'skill_digest':skill_digest,
-            'policy_digest':policy_digest(routing_policy),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd,worker_cwd)}
+            'policy_digest':policy_digest(routing_policy),'standards_digest':refs_digest(standards_refs),'worker_command_digest':worker_command_digest(worker_cmd,worker_cwd,os.environ.get('PYTHONPATH') if 'PYTHONPATH' in set(cfg.get('runtime',{}).get('environment_allowlist',[])) else None)}
 
 def _resolve_refs(refs):
     out=[]
@@ -274,7 +306,14 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--repo',required=True);ap.add_argument('--evidence',required=True);ap.add_argument('--expected-base',required=True);ap.add_argument('--case-id',required=True);ap.add_argument('--output-dir',required=True);ap.add_argument('--retry',action='store_true');ap.add_argument('--l1-cmd-json');ap.add_argument('--l2-cmd-json');ap.add_argument('--adversarial-cmd-json');ap.add_argument('--routing-policy',default=str(ROOT/'policy/reviewer-routing.yml'));ap.add_argument('--runtime-attestation');ap.add_argument('--standards-ref',action='append',default=[]);ap.add_argument('--spec-ref');ap.add_argument('--test-ref',action='append',default=[]);ap.add_argument('--disable-random-audit',action='store_true');ns=ap.parse_args()
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',ns.case_id):raise SystemExit('unsafe case_id')
     out=choose_out_dir(ns.output_dir,ns.retry);repo=Path(ns.repo).resolve();ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
-    cfg=load_yaml(ns.routing_policy);mode=str(cfg.get('mode','shadow')).upper();limits_cfg=load_yaml(ROOT/'policy/limits.yml');esc_cfg=load_yaml(ROOT/'policy/escalation-policy.yml');sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');protected=load_yaml(ROOT/'policy/protected-paths.yml')
+    routing_source=Path(ns.routing_policy).resolve()
+    if not routing_source.is_file():raise SystemExit(f'routing policy missing: {routing_source}')
+    effective_routing=out/'reviewer-routing.effective.yml';shutil.copy2(routing_source,effective_routing)
+    effective_policy_dir=out/'effective-policy';effective_policy_dir.mkdir(parents=True,exist_ok=True)
+    for p in sorted((ROOT/'policy').glob('*.yml')):
+        if p.name!='reviewer-routing.yml':shutil.copy2(p,effective_policy_dir/p.name)
+    shutil.copy2(effective_routing,effective_policy_dir/'reviewer-routing.yml')
+    cfg=load_yaml(effective_routing);mode=str(cfg.get('mode','shadow')).upper();limits_cfg=load_yaml(ROOT/'policy/limits.yml');esc_cfg=load_yaml(ROOT/'policy/escalation-policy.yml');sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');protected=load_yaml(ROOT/'policy/protected-paths.yml')
     subcfg=limits_cfg.get('subagents',{});default_children=int(subcfg.get('default_max_children',0));hard_children=int(subcfg.get('hard_max_children',default_children))
     if default_children<0 or hard_children<0 or default_children>hard_children:raise SystemExit('invalid subagent limits: default_max_children must be between 0 and hard_max_children')
     if mode not in {'SHADOW','ENFORCED'}:raise SystemExit('routing policy mode must be shadow or enforced')
@@ -396,7 +435,7 @@ def main():
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']});achieved=level;current_stage=r;return r
-        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
+        frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
         if not l1cmd:state='WAITING_L1'
         else:
             l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
@@ -411,7 +450,7 @@ def main():
             if ns.disable_random_audit:labels.add('random_audit_shadow_unseeded' if shadow_audit_unseeded else 'random_audit_disabled')
             if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
-                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
+                l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
                 if not l2cmd:state='WAITING_L2'
                 else:
                     l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
@@ -425,7 +464,7 @@ def main():
                     if audit2:required=max_level(required,'ADVERSARIAL');reasons.append('RANDOM_AUDIT_L2')
                     if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('ADVERSARIAL'):
                         lower=[out/'l1-review.json',out/'l2-review.json'];ld=[l1['result_digest'],l2['result_digest']]
-                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,lower,ld,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
+                        atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,lower,ld,routing_policy=effective_routing,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
                         if not advcmd:state='ADVERSARIAL_REQUIRED'
                         else:
                             adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
@@ -458,10 +497,10 @@ def main():
         ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
         if state=='ADVERSARIAL_REQUIRED':
             q=choose_queue(reasons,labels,None,families);packet={'schema_version':'2.4','case_id':case['case_id'],'binding':case['binding'],'queue':q,'escalation_reasons':sorted(set(reasons or ['POLICY_ESCALATION'])),
-              'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str((ROOT/'policy').resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':_resolve_refs(ns.standards_ref),'spec_ref':str(Path(ns.spec_ref).resolve()) if ns.spec_ref else None,'test_results':_resolve_refs(ns.test_ref)},
+              'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str(effective_policy_dir.resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':_resolve_refs(ns.standards_ref),'spec_ref':str(Path(ns.spec_ref).resolve()) if ns.spec_ref else None,'test_results':_resolve_refs(ns.test_ref)},
               'digests':{
                 'textdiff_evidence':evidence['output_digest'],
-                'deterministic_policy':policy_digest(ns.routing_policy),
+                'deterministic_policy':policy_digest(effective_routing),
                 'l1_review':l1['result_digest'] if 'l1' in locals() else None,
                 'l2_review':l2['result_digest'] if 'l2' in locals() else None,
                 'trusted_standards':[sha256_file(Path(x).resolve()) for x in ns.standards_ref],
