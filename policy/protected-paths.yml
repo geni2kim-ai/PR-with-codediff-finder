@@ -1,4 +1,4 @@
-schema_version: '2.6'
+schema_version: '2.7'
 self_protection_repository_names:
 - geni2kim-ai/PR-with-codediff-finder
 
