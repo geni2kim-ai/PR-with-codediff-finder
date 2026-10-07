@@ -38,6 +38,7 @@ raw_data:
   persist_hunks: false
   persist_trace_events: false
 trusted_tool:
+  original_package_required: false
   checker_sha256: b3c82ea46e2d440e2fa2cc2196d57b735192563dea782b048f7fe3be26ffae24
   original_package_sha256: 8f305c8bb4a0e192d9cac0bc8dc79f04fde5772adabda81158bc6b29cd4872a9
   vendor_requirements_sha256: 7d01298d0a27f2b176fa2b42c43b3c4d4fb327a493c5e5e0b216de6f553ae124
