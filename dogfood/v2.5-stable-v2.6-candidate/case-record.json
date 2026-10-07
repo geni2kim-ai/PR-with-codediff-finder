@@ -1,0 +1,115 @@
+{
+  "schema_version": "2.4",
+  "case_id": "V26-DOGFOOD-STABLE-V25",
+  "binding": {
+    "repository": "geni2kim-ai/PR-with-codediff-finder",
+    "pr_number": null,
+    "work_unit": null,
+    "base_sha": "ec873c0d10e00a8c4cb1a5614ee1d54bb7762268",
+    "head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af"
+  },
+  "sensor": {
+    "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+    "semantic_digest": "41bceebed0c52bc223ffe9468216d0972cf5f81be5524b34eda6afcbfe7ae6aa",
+    "tool_version": "1.4.6-harness.1",
+    "quality_class": "HEURISTIC",
+    "score_ref": null
+  },
+  "review_trail": [
+    {
+      "review_id": "V26-DOGFOOD-STABLE-V25-L1",
+      "parent_review_id": null,
+      "level": "L1",
+      "node_id": "L1-local",
+      "model": {
+        "family": "configured-local-reviewer",
+        "version": "unconfigured"
+      },
+      "verdict": "PASS",
+      "confidence": "high",
+      "result_digest": "159b0505a31e2d49f4ce2352ed747555aaa6cbe8ffa8aa114f1d9e241dc60255",
+      "reviewed_head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+      "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+      "input_digest": "68a0f68fc28935d9cdb3ee1d40108545014450d7fc284a293fa2fffed78c5aaa",
+      "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+      "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "policy_digest": "5e4543f8d43e1bdb15bd9348ffa4be3026ff53ea8109dc26562e8fb8cf5ea16d",
+      "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "worker_command_digest": "9cdb1de1853f7caeeb2eac171c55dd2b70687cba912caeeeabfc38379ff9bd92",
+      "independent_context": false,
+      "requested_level": "L1",
+      "achieved_level": "L1",
+      "timestamp": null,
+      "finding_families": []
+    },
+    {
+      "review_id": "V26-DOGFOOD-STABLE-V25-L2",
+      "parent_review_id": null,
+      "level": "L2",
+      "node_id": "L2-local",
+      "model": {
+        "family": "configured-local-reviewer",
+        "version": "unconfigured"
+      },
+      "verdict": "PASS",
+      "confidence": "high",
+      "result_digest": "2bbd0b23554c9550400dc34fbf994dff7a9b038e632dfb05a87283fa7a672a43",
+      "reviewed_head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+      "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+      "input_digest": "bbc915aaae00ee774b3241f9db876e8e84876250493039e06f4a07681752814c",
+      "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+      "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "policy_digest": "5e4543f8d43e1bdb15bd9348ffa4be3026ff53ea8109dc26562e8fb8cf5ea16d",
+      "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "worker_command_digest": "9cdb1de1853f7caeeb2eac171c55dd2b70687cba912caeeeabfc38379ff9bd92",
+      "independent_context": true,
+      "requested_level": "L2",
+      "achieved_level": "L2",
+      "timestamp": null,
+      "finding_families": []
+    },
+    {
+      "review_id": "V26-DOGFOOD-STABLE-V25-ADVERSARIAL",
+      "parent_review_id": null,
+      "level": "ADVERSARIAL",
+      "node_id": "adversarial-external",
+      "model": {
+        "family": "configured-independent-reviewer",
+        "version": "unconfigured"
+      },
+      "verdict": "PASS",
+      "confidence": "high",
+      "result_digest": "6c498ea0462101a5952476ef2f79756ce05c0b5f49709316a31807b646d5a2ba",
+      "reviewed_head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+      "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+      "input_digest": "cff583eabd010a712fb14d4152fba06ac30bf65c52b298237af97e766740b155",
+      "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+      "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "policy_digest": "5e4543f8d43e1bdb15bd9348ffa4be3026ff53ea8109dc26562e8fb8cf5ea16d",
+      "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "worker_command_digest": "9cdb1de1853f7caeeb2eac171c55dd2b70687cba912caeeeabfc38379ff9bd92",
+      "independent_context": true,
+      "requested_level": "ADVERSARIAL",
+      "achieved_level": "ADVERSARIAL",
+      "timestamp": null,
+      "finding_families": []
+    }
+  ],
+  "outcome": {
+    "author_response": "no_response",
+    "merged": false,
+    "merge_sha": null,
+    "post_merge_status": "unknown",
+    "incident_ref": null
+  },
+  "failure_families": [],
+  "labels": [
+    "governance",
+    "model_session_independence_unverified",
+    "shadow_only"
+  ],
+  "privacy": {
+    "raw_source_centralized": false,
+    "sanitized_fixture_created": false
+  }
+}

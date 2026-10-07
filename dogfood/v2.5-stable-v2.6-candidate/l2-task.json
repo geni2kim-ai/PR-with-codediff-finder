@@ -1,0 +1,129 @@
+{
+  "schema_version": "2.4",
+  "task_id": "V26-DOGFOOD-STABLE-V25-L2",
+  "case_id": "V26-DOGFOOD-STABLE-V25",
+  "level": "L2",
+  "binding": {
+    "repository": "geni2kim-ai/PR-with-codediff-finder",
+    "base_sha": "ec873c0d10e00a8c4cb1a5614ee1d54bb7762268",
+    "head_sha": "331f4eda5f18e3ab8aeb611770de1f5b87f663af",
+    "workspace_ref": "/mnt/data/v26_dogfood_repo",
+    "pr_number": null,
+    "work_unit": null
+  },
+  "sensor": {
+    "evidence_ref": "/mnt/data/v26_dogfood_output/cycle/textdiff-evidence.json",
+    "evidence_digest": "f9ed077ad44990c74c3f5d15a40b3eff97ff2dcfbd0167e990763bb45e089a4b",
+    "semantic_digest": "41bceebed0c52bc223ffe9468216d0972cf5f81be5524b34eda6afcbfe7ae6aa",
+    "quality_class": "HEURISTIC",
+    "trusted_for_gate": true
+  },
+  "changed_paths": [
+    "CHANGELOG_v2.6_KO.md",
+    "EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md",
+    "MIGRATION_v2.5_to_v2.6_KO.md",
+    "PACKAGE_VERSION",
+    "README.md",
+    "VALIDATION_COMMANDS.md",
+    "VALIDATION_REPORT_KO.md",
+    "docs/INTEGRITY_HARDENING_V2.6.md",
+    "dogfood/v2.4-stable-final/README.md",
+    "dogfood/v2.4-stable-final/evidence.json",
+    "examples/case-record.valid.json",
+    "examples/rsi-evaluation.valid.json",
+    "examples/textdiff-evidence.valid.json",
+    "policy/escalation-policy.yml",
+    "policy/protected-paths.yml",
+    "policy/reviewer-routing.yml",
+    "policy/sensor-policy.yml",
+    "profiles/harness/reviewer-worker-core.md",
+    "schemas/case-record.schema.json",
+    "schemas/review-cycle.schema.json",
+    "schemas/review-result.schema.json",
+    "schemas/reviewer-task.schema.json",
+    "schemas/textdiff-evidence.schema.json",
+    "tests/test_v22_integration.py",
+    "tests/test_v23_orchestration.py",
+    "tests/test_v24_hardening.py",
+    "tests/test_v25_dogfood.py",
+    "tests/test_v26_hardening.py",
+    "tools/calibration_report.py",
+    "tools/case_ledger.py",
+    "tools/evaluate_sensor_case.py",
+    "tools/human_decision_attestation.py",
+    "tools/ingest_incident.py",
+    "tools/ingest_outcome.py",
+    "tools/policy_engine.py",
+    "tools/record_human_decision.py",
+    "tools/render_github_check.py",
+    "tools/route_case.py",
+    "tools/run_review_cycle.py",
+    "tools/run_validation.py",
+    "tools/runtime_attestation.py",
+    "tools/sanitize_review_text.py",
+    "tools/textdiff_adapter.py",
+    "tools/validate_case_bundle.py",
+    "tools/validate_review_cycle.py",
+    "tools/validate_textdiff_evidence.py",
+    "vendor/TextDiffChecker_v1.4.6-harness.1/HARNESS_checker.patch",
+    "vendor/TextDiffChecker_v1.4.6-harness.1/HARNESS_tests.patch",
+    "vendor/TextDiffChecker_v1.4.6-harness.1/checker.py",
+    "vendor/TextDiffChecker_v1.4.6-harness.1/tests/test_checker.py"
+  ],
+  "trusted_refs": {
+    "policy": [
+      "/mnt/data/v26_work/GitHub_PR_Review_Harness_v2.5/policy/protected-paths.yml",
+      "/mnt/data/v26_work/GitHub_PR_Review_Harness_v2.5/policy/escalation-policy.yml",
+      "/mnt/data/v26_work/GitHub_PR_Review_Harness_v2.5/policy/sensor-policy.yml"
+    ],
+    "standards": [],
+    "spec": null,
+    "tests": []
+  },
+  "lower_layer_result_refs": [],
+  "lower_layer_result_digests": [],
+  "security_boundary": {
+    "repo_content_untrusted": true,
+    "external_network_allowed": false,
+    "secrets_allowed": false,
+    "delegation_allowed": false,
+    "fresh_context_required": true,
+    "prior_review_conclusions_visible": false
+  },
+  "runtime_enforcement": {
+    "fresh_process_spawned": true,
+    "environment_secret_stripping": true,
+    "network_denied": false,
+    "filesystem_scoped_to_workspace": false,
+    "fresh_model_session_attested": false,
+    "runtime_attestation_digest": null
+  },
+  "limits": {
+    "timeout_seconds": 180,
+    "max_findings": 12,
+    "max_nits": 2,
+    "max_output_bytes": 1048576,
+    "max_subagents": 0
+  },
+  "review_focus": [
+    "correctness_security",
+    "standards",
+    "spec",
+    "test_integrity",
+    "supply_chain_compatibility",
+    "risk"
+  ],
+  "output_contract": "schemas/reviewer-stage-result.schema.json",
+  "reviewer_contract": {
+    "node_id": "L2-local",
+    "model": {
+      "family": "configured-local-reviewer",
+      "version": "unconfigured"
+    },
+    "prompt_digest": "ae9a577caeed234d245ce9537565a548106b28e542ea106ac6c084e621958de7",
+    "skill_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "policy_digest": "5e4543f8d43e1bdb15bd9348ffa4be3026ff53ea8109dc26562e8fb8cf5ea16d",
+    "standards_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "worker_command_digest": "9cdb1de1853f7caeeb2eac171c55dd2b70687cba912caeeeabfc38379ff9bd92"
+  }
+}

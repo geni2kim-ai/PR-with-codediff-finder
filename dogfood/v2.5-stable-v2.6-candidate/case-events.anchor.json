@@ -1,0 +1,9 @@
+{
+  "schema_version": "2.4",
+  "case_id": "V26-DOGFOOD-STABLE-V25",
+  "seq": 6,
+  "event_hash": "b8aad32b1ac53e9ceff1a6db883bf1d4891c9229c4512860cb36161afaab59e3",
+  "ledger_sha256": "c8ec1156ddd8b270b1ee9ac8de391e0037f19eabee01cb3d5ebbf3d275124522",
+  "key_id": null,
+  "hmac_sha256": null
+}
