@@ -46,6 +46,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertTrue(same['all_unchanged']);self.assertEqual(same['authority_effect'],'NONE');self.assertEqual(same['pre_snapshot_digest'],pre['snapshot_digest']);self.assertEqual(validate_receipt(same),[])
             tampered=json.loads(json.dumps(same));tampered['items'][0]['post_sha256']='0'*64
             self.assertTrue(validate_receipt(tampered))
+            leaked=json.loads(json.dumps(same));leaked['path']=str(secret);leaked['receipt_digest']='';leaked['receipt_digest']=__import__('common').object_digest(leaked,'receipt_digest')
+            self.assertIn('mutation receipt fields mismatch',validate_receipt(leaked))
             serialized=json.dumps(same)
             self.assertNotIn(str(secret),serialized);self.assertNotIn('sensitive-original',serialized);self.assertNotIn('"path"',serialized)
             secret.write_text('mutated\n',encoding='utf-8')
