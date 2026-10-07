@@ -82,6 +82,8 @@ def finalize(pre_path,spec_path):
 def validate_receipt(obj):
     errs=[]
     if not isinstance(obj,dict):return ['mutation receipt must be an object']
+    allowed={'schema_version','kind','authority_effect','pre_snapshot_digest','all_unchanged','items','receipt_digest'}
+    if set(obj)!=allowed:errs.append('mutation receipt fields mismatch')
     if obj.get('schema_version')!='2.7':errs.append('mutation receipt schema mismatch')
     if obj.get('kind')!='mutation-receipt':errs.append('mutation receipt kind mismatch')
     if obj.get('authority_effect')!='NONE':errs.append('mutation receipt authority_effect must be NONE')
