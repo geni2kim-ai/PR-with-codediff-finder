@@ -9,8 +9,8 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
-from sanitize_review_text import scan_text
-from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation,scan_stage_result
+from sanitize_review_text import scan_text,scan_stage_result
+from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation
 from textdiff_adapter import weakening_signals,canonical_source_sha256
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 from human_decision_attestation import create as create_human_attestation,validate as validate_human_attestation,consume_nonce as consume_human_nonce
