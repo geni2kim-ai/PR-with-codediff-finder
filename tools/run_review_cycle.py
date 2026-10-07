@@ -279,8 +279,14 @@ def main():
     if default_children<0 or hard_children<0 or default_children>hard_children:raise SystemExit('invalid subagent limits: default_max_children must be between 0 and hard_max_children')
     if mode not in {'SHADOW','ENFORCED'}:raise SystemExit('routing policy mode must be shadow or enforced')
     ra_cfg=esc_cfg.get('random_audit',{})
+    shadow_audit_unseeded=False
     if mode=='ENFORCED' and ns.disable_random_audit:raise SystemExit('--disable-random-audit is forbidden in ENFORCED mode')
-    if bool(ra_cfg.get('enabled')) and not ns.disable_random_audit and not audit_key:raise SystemExit('random audit enabled but MAESTRO_AUDIT_SEED is unavailable')
+    if bool(ra_cfg.get('enabled')) and not ns.disable_random_audit and not audit_key:
+        if mode=='ENFORCED':raise SystemExit('random audit enabled but MAESTRO_AUDIT_SEED is unavailable')
+        # SHADOW remains usable without external audit authority. The audit is skipped
+        # and explicitly labeled; ENFORCED still requires an external seed.
+        shadow_audit_unseeded=True
+        ns.disable_random_audit=True
     binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None;runtime_fresh_sessions={}
     def ev(type_,payload):return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None)
     def terminal_block(kind,msg,stage='HARNESS',required='L1',achieved='SENSOR',stage_rows=None,labels=None,families=None,reasons=None,current_stage=None):
@@ -402,7 +408,7 @@ def main():
             if l1['escalation']['requested']:reasons.append('L1_REQUEST_'+_req)
             ra=esc_cfg.get('random_audit',{});audit_eligible=(required=='L1');audit=bool(ra.get('enabled')) and not ns.disable_random_audit and audit_eligible and audit_sample(float(ra.get('l1_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L1')
             labels.add('random_audit_l1_selected' if audit else ('random_audit_l1_not_selected' if audit_eligible and bool(ra.get('enabled')) and not ns.disable_random_audit else 'random_audit_l1_not_eligible'))
-            if ns.disable_random_audit:labels.add('random_audit_disabled')
+            if ns.disable_random_audit:labels.add('random_audit_shadow_unseeded' if shadow_audit_unseeded else 'random_audit_disabled')
             if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
                 l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,ns.standards_ref,ns.spec_ref,ns.test_ref,routing_policy=ns.routing_policy,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)

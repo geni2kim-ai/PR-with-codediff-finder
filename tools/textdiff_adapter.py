@@ -34,22 +34,15 @@ def resolve_commit(repo:Path, ref:str)->str:
 
 
 def canonical_source_sha256(path:Path)->str:
-    """Hash committed source bytes when running from a Git checkout.
+    """Hash the bytes that will actually be executed/read, with only EOL canonicalization.
 
-    This avoids platform checkout EOL conversion changing trusted-tool identity.
-    Source archives without .git intentionally fall back to exact packaged bytes.
+    This preserves Windows/Unix checkout portability while still detecting uncommitted
+    or locally replaced tool code. It intentionally does not substitute HEAD bytes for
+    the working-tree file being imported.
     """
-    p=Path(path).resolve()
-    try:
-        rel=p.relative_to(ROOT.resolve()).as_posix()
-        inside=run_git(ROOT,'rev-parse','--is-inside-work-tree',check=False).decode('utf-8','replace').strip()
-        if inside=='true':
-            data=run_git(ROOT,'show',f'HEAD:{rel}')
-            return hashlib.sha256(data).hexdigest()
-    except Exception:
-        pass
-    return sha256_file(p)
-
+    data=Path(path).resolve().read_bytes()
+    data=data.replace(b'\r\n',b'\n').replace(b'\r',b'\n')
+    return hashlib.sha256(data).hexdigest()
 
 def merge_base(repo:Path, base_ref:str, head_ref:str)->str:
     return run_git(repo,'merge-base',base_ref,head_ref).decode().strip()

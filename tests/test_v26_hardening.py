@@ -9,10 +9,10 @@ from common import object_digest,sha256_file
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
-from sanitize_review_text import scan_text
-from textdiff_adapter import weakening_signals
+from sanitize_review_text import scan_text,scan_stage_result
+from textdiff_adapter import weakening_signals,canonical_source_sha256
 from validate_textdiff_evidence import semantic_errors as evidence_errors
-from human_decision_attestation import create as create_human_attestation
+from human_decision_attestation import create as create_human_attestation,validate as validate_human_attestation,consume_nonce as consume_human_nonce
 
 
 def run(cmd,**kw):
@@ -51,7 +51,7 @@ class LedgerHardeningTests(unittest.TestCase):
         cyc=json.loads((out/'review-cycle.json').read_text());self.assertEqual(cyc['state'],'HUMAN_REQUIRED')
         self.assertEqual(default_anchor_path(out/'case-events.jsonl'),out/'case-events.anchor.json')
         self.assertTrue((out/'case-events.anchor.json').is_file());self.assertFalse((out/'case-events.jsonl.anchor.json').exists())
-        key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-ANCHOR','owner','CONFIRMED',cyc['binding']['head_sha'],key)))
+        key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-ANCHOR','owner','CONFIRMED',cyc['binding']['head_sha'],key,cyc['cycle_digest'],cyc['sensor']['evidence_digest'])))
         cp=run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','HUMAN-1','--node-id','owner','--verdict','CONFIRMED'],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
         self.assertIn('review-cycle.json',cp.stdout)
         self.assertFalse((out/'case-events.jsonl.anchor.json').exists())
@@ -168,7 +168,7 @@ class HumanAndGateTests(unittest.TestCase):
 
     def test_human_confirmation_updates_cycle_and_render_verifies_ledger(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
-        c0=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',c0['binding']['head_sha'],key)))
+        c0=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',c0['binding']['head_sha'],key,c0['cycle_digest'],c0['sensor']['evidence_digest'])))
         run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
         c=json.loads((out/'review-cycle.json').read_text());self.assertEqual(c['state'],'HUMAN_CONFIRMED');self.assertEqual(c['achieved_level'],'HUMAN')
         dest=out/'check.json';run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(dest)],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key});j=json.loads(dest.read_text());self.assertEqual(j['conclusion'],'neutral');self.assertIn('predicted_conclusion=success',j['output']['summary'])
@@ -189,12 +189,12 @@ class HumanAndGateTests(unittest.TestCase):
     def test_human_transaction_recovers_after_ledger_commit_before_file_replace(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
         original_case=json.loads((out/'case-record.json').read_text());original_cycle=json.loads((out/'review-cycle.json').read_text())
-        key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',original_cycle['binding']['head_sha'],key)))
+        key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',original_cycle['binding']['head_sha'],key,original_cycle['cycle_digest'],original_cycle['sensor']['evidence_digest'])))
         args=[sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','RECOVER-1','--node-id','owner','--verdict','CONFIRMED']
         env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key};run(args,env=env)
         final_case=json.loads((out/'case-record.json').read_text());final_cycle=json.loads((out/'review-cycle.json').read_text());events=load_events(out/'case-events.jsonl');count=len(events)
         human=next(x['payload'] for x in events if x['event_type']=='HUMAN_DECISION' and x['payload'].get('review_id')=='RECOVER-1');close=next(x['payload'] for x in events if x['event_type']=='CYCLE_CLOSED' and x['payload'].get('human_review_id')=='RECOVER-1')
-        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest']},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
+        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest'],'source_cycle_digest':original_cycle['cycle_digest'],'evidence_digest':original_cycle['sensor']['evidence_digest'],'transaction_id':__import__('hashlib').sha256(b'recovery-test-tx').hexdigest()},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
         (out/'case-record.json').write_text(json.dumps(original_case));(out/'review-cycle.json').write_text(json.dumps(original_cycle));(out/'human-decision-transaction.json').write_text(json.dumps(tx));(out/'human-decision-attestation.json').unlink(missing_ok=True)
         run(args,env=env)
         self.assertEqual(len(load_events(out/'case-events.jsonl')),count);self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'HUMAN_CONFIRMED');self.assertFalse((out/'human-decision-transaction.json').exists());self.assertTrue((out/'human-decision-attestation.json').is_file())
@@ -202,7 +202,7 @@ class HumanAndGateTests(unittest.TestCase):
     def test_human_decision_rejects_head_drift(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
         (r/'new.txt').write_text('x\n');commit(r,'new-head')
-        oldc=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',oldc['binding']['head_sha'],key)))
+        oldc=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',oldc['binding']['head_sha'],key,oldc['cycle_digest'],oldc['sensor']['evidence_digest'])))
         cp=subprocess.run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
         self.assertNotEqual(cp.returncode,0);self.assertIn('HEAD',cp.stderr+cp.stdout)
 
@@ -273,6 +273,39 @@ class RoutingFreezeTests(unittest.TestCase):
         self.assertEqual(packet['digests']['trusted_standards'][0],sha256_file(frozen_std));self.assertEqual(packet['digests']['spec_ref'],sha256_file(frozen_spec));self.assertEqual(packet['digests']['test_results'][0],sha256_file(frozen_test))
         std.write_text('MUTATED\n');spec.unlink();test.unlink();self.assertEqual(frozen_std.read_text(),'STANDARD-V1\n');self.assertEqual(frozen_spec.read_text(),'SPEC-V1\n')
         queue.unlink();cp2=run(args);self.assertEqual(Path(cp2.stdout.strip()),queue);self.assertTrue(queue.is_file())
+
+
+
+class V26FollowupRegressionTests(unittest.TestCase):
+    def test_human_attestation_is_cycle_bound_and_one_time(self):
+        key='human-key';head='a'*40;cycle='b'*64;evidence='c'*64
+        att=create_human_attestation('CASE','owner','CONFIRMED',head,key,cycle,evidence)
+        self.assertEqual(validate_human_attestation(att,case_id='CASE',actor_id='owner',verdict='CONFIRMED',head_sha=head,cycle_digest=cycle,evidence_digest=evidence,key=key),[])
+        self.assertIn('human attestation cycle_digest mismatch',validate_human_attestation(att,case_id='CASE',actor_id='owner',verdict='CONFIRMED',head_sha=head,cycle_digest='d'*64,evidence_digest=evidence,key=key))
+        with tempfile.TemporaryDirectory() as td:
+            err,_=consume_human_nonce(att,td,'tx-1');self.assertIsNone(err)
+            err,_=consume_human_nonce(att,td,'tx-1');self.assertIsNone(err)
+            err,_=consume_human_nonce(att,td,'tx-2');self.assertEqual(err,'human attestation replay detected')
+
+    def test_source_ref_repository_paths_are_not_external_hosts(self):
+        result={'findings':[{'claim':'x','evidence':'x','impact':'x','recommendation':'x','source_ref':'src/a.py:1','failure_family':'PATH-CHECK'}],'escalation':{'reasons':[]}}
+        self.assertFalse(scan_stage_result(result)['external_urls_present'])
+        result['findings'][0]['source_ref']='evil.me'
+        self.assertTrue(scan_stage_result(result)['external_urls_present'])
+
+    def test_canonical_source_hash_uses_actual_worktree_bytes_but_normalizes_eol(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'checker.py';p.write_bytes(b'print(1)\\r\\n')
+            d1=canonical_source_sha256(p)
+            p.write_bytes(b'print(1)\\n');self.assertEqual(d1,canonical_source_sha256(p))
+            p.write_bytes(b'print(2)\\n');self.assertNotEqual(d1,canonical_source_sha256(p))
+
+    def test_shadow_cycle_runs_without_external_audit_seed(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'src').mkdir();(r/'src/a.py').write_text('x=1\\n');base=commit(r,'base');(r/'src/a.py').write_text('x=2\\n');commit(r,'head');ev=adapter(r,base)
+        out=r/'out';env={k:v for k,v in os.environ.items() if k!='MAESTRO_AUDIT_SEED'}
+        cp=subprocess.run([sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','SHADOW-NO-SEED','--output-dir',str(out),'--l1-cmd-json',cmdjson()],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env=env)
+        self.assertEqual(cp.returncode,0,cp.stderr)
+        case=json.loads((out/'case-record.json').read_text());self.assertIn('random_audit_shadow_unseeded',case.get('labels',[]))
 
 
 if __name__=='__main__':unittest.main()

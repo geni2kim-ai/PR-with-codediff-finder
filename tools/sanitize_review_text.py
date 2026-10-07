@@ -24,6 +24,33 @@ SECRET_PATTERNS=[
  re.compile(r'(?i)(?:[A-Za-z0-9_]*(?:password|passwd|api[_-]?key|secret|token)[A-Za-z0-9_]*)\s*["\']?\s*[:=]\s*["\']?[^\s"\']{8,}')]
 
 def normalized(s:str)->str:return ZERO_WIDTH.sub('',s)
+REPO_REF=re.compile(r'(?i)^(?:\.?\.?/)?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:py|js|jsx|ts|tsx|java|kt|kts|cs|go|rs|c|h|cpp|cc|hpp|sql|json|ya?ml|toml|md|sh|ps1)(?::\d+|#L\d+)?
+def scan_text(s:str,*,bare_host=False):
+    t=normalized(s);url=bool(SCHEME_URL.search(t) or PROTO_URL.search(t) or WWW_URL.search(t) or MD_DANGEROUS_LINK.search(t))
+    if bare_host:url=url or bool(BARE_HOST.search(t))
+    return {'external_urls_present':url,'markdown_images_present':bool(MD_IMAGE.search(t) or HTML_IMAGE.search(t)),'mentions_present':bool(MENTION.search(t)),'secret_scan_passed':not any(rx.search(t) for rx in SECRET_PATTERNS)}
+def merge_flags(flags):
+    return {'sanitized':True,'external_urls_present':any(f['external_urls_present'] for f in flags),'markdown_images_present':any(f['markdown_images_present'] for f in flags),'mentions_present':any(f['mentions_present'] for f in flags),'secret_scan_passed':all(f['secret_scan_passed'] for f in flags)}
+def stage_strings(o):
+    for f in o.get('findings',[]):
+        for k in ('claim','evidence','impact','recommendation','source_ref','failure_family'):
+            v=f.get(k)
+            if isinstance(v,str):yield k,v
+    for v in o.get('escalation',{}).get('reasons',[]):
+        if isinstance(v,str):yield 'escalation_reason',v
+def scan_stage_result(o):
+    vals=list(stage_strings(o));flags=[scan_text(v,bare_host=(k in {'source_ref','failure_family'} and not (k=='source_ref' and looks_repo_ref(v)))) for k,v in vals]
+    return merge_flags(flags or [scan_text('')])
+def sanitize(s):
+    s=normalized(s);s=MD_IMAGE.sub('[image removed]',s);s=HTML_IMAGE.sub('[image removed]',s);s=MD_DANGEROUS_LINK.sub('[external link removed]',s);s=SCHEME_URL.sub('[external link removed]',s);s=PROTO_URL.sub('[external link removed]',s);s=WWW_URL.sub('[external link removed]',s);s=MENTION.sub('[mention removed]',s)
+    for rx in SECRET_PATTERNS:s=rx.sub('[secret removed]',s)
+    return s
+if __name__=='__main__': print(sanitize(sys.stdin.read()),end='')
+)
+def looks_repo_ref(s:str)->bool:
+    t=normalized(s).strip()
+    return bool(REPO_REF.fullmatch(t))
+
 def scan_text(s:str,*,bare_host=False):
     t=normalized(s);url=bool(SCHEME_URL.search(t) or PROTO_URL.search(t) or WWW_URL.search(t) or MD_DANGEROUS_LINK.search(t))
     if bare_host:url=url or bool(BARE_HOST.search(t))

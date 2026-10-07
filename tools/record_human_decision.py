@@ -137,7 +137,7 @@ def main():
     ce=_validate_cycle(updated_cycle)
     if ce:raise SystemExit('updated cycle invalid: '+'; '.join(ce))
 
-    human_event={'review_id':ns.review_id,'actor_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'result_digest':row['result_digest'],'note_digest':sha256_bytes(ns.note.encode()),'attestation_digest':supplied_digest}
+    human_event={'review_id':ns.review_id,'actor_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'result_digest':row['result_digest'],'note_digest':sha256_bytes(ns.note.encode()),'attestation_digest':supplied_digest}
     close_event={'state':updated_cycle['state'],'cycle_digest':updated_cycle['cycle_digest'],'gate_conclusion':updated_cycle['gate_conclusion'],'human_review_id':ns.review_id,'human_attestation_digest':supplied_digest}
     tx={'schema_version':'2.6','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event}
     _atomic_json(tx_path,tx)

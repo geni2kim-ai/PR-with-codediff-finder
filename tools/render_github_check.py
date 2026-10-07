@@ -24,6 +24,7 @@ def _human_proof_errors(c,events,cycle_path,human_attestation,human_key,case_pat
     if hp.get('verdict')!=verdict:e.append('HUMAN_DECISION verdict does not match terminal state')
     if hp.get('head_sha')!=c.get('binding',{}).get('head_sha'):e.append('HUMAN_DECISION head_sha mismatch')
     if hp.get('attestation_digest')!=ad:e.append('human attestation digest mismatch between decision and close')
+    if not hp.get('source_cycle_digest'):e.append('HUMAN_DECISION source_cycle_digest missing')
 
     att_path=Path(human_attestation) if human_attestation else Path(cycle_path).parent/'human-decision-attestation.json'
     if not att_path.is_file():e.append('persisted human decision attestation missing');return e
@@ -32,7 +33,7 @@ def _human_proof_errors(c,events,cycle_path,human_attestation,human_key,case_pat
     if human_attestation_digest(att)!=ad:e.append('persisted human attestation digest mismatch')
     actor=hp.get('actor_id')
     if not actor:e.append('HUMAN_DECISION actor_id missing')
-    ae=validate_human_attestation(att,case_id=c.get('case_id'),actor_id=actor,verdict=verdict,head_sha=c.get('binding',{}).get('head_sha'),key=human_key)
+    ae=validate_human_attestation(att,case_id=c.get('case_id'),actor_id=actor,verdict=verdict,head_sha=c.get('binding',{}).get('head_sha'),cycle_digest=hp.get('source_cycle_digest'),evidence_digest=c.get('sensor',{}).get('evidence_digest'),key=human_key)
     e.extend(ae)
 
     cp=Path(case_path) if case_path else Path(cycle_path).parent/'case-record.json'
