@@ -199,10 +199,10 @@ def main():
     ap.add_argument('--base',required=True,help='Trusted base ref/tip; adapter compares merge-base(base, head) to head')
     ap.add_argument('--head',required=True);ap.add_argument('--work-unit')
     ap.add_argument('--textdiff-root',default=str(ROOT/'vendor/TextDiffChecker_v1.4.6-harness.1'))
-    ap.add_argument('--output',required=True);ap.add_argument('--policy',default=str(ROOT/'policy/protected-paths.yml'))
+    ap.add_argument('--output',required=True);ap.add_argument('--policy',default=str(ROOT/'policy/protected-paths.yml'));ap.add_argument('--sensor-policy',default=str(ROOT/'policy/sensor-policy.yml'))
     ns=ap.parse_args();t0=time.perf_counter();repo=Path(ns.repo).resolve();tdroot=Path(ns.textdiff_root).resolve()
     checker=load_checker(tdroot);base_tip=resolve_commit(repo,ns.base);head=resolve_commit(repo,ns.head);base=merge_base(repo,base_tip,head)
-    entries=changed_entries(repo,base,head);cfg=load_yaml(ns.policy);sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');raw_cfg=sensor_cfg.get('raw_data',{})
+    entries=changed_entries(repo,base,head);cfg=load_yaml(ns.policy);sensor_cfg=load_yaml(ns.sensor_policy);raw_cfg=sensor_cfg.get('raw_data',{})
     if any(bool(raw_cfg.get(k)) for k in ('persist_source_bodies','persist_hunks','persist_trace_events')):
         raise SystemExit('raw_data persistence must remain disabled for the evidence adapter')
     all_paths=[]
