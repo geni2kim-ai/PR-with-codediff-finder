@@ -31,28 +31,30 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Verify manifest
+      - name: Verify manifest against Git blobs
         shell: python
         run: |
           import hashlib
+          import subprocess
           from pathlib import Path
 
-          root = Path(".")
           errors = []
-          for raw in (root / "MANIFEST.sha256").read_text(encoding="utf-8").splitlines():
+          for raw in Path("MANIFEST.sha256").read_text(encoding="utf-8").splitlines():
               if not raw.strip():
                   continue
               expected, rel = raw.split("  ", 1)
-              path = root / rel.removeprefix("./")
-              if not path.is_file():
-                  errors.append(f"missing: {rel}")
+              git_path = rel.removeprefix("./")
+              try:
+                  data = subprocess.check_output(["git", "show", f"HEAD:{git_path}"])
+              except subprocess.CalledProcessError:
+                  errors.append(f"missing Git blob: {rel}")
                   continue
-              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              actual = hashlib.sha256(data).hexdigest()
               if actual != expected:
                   errors.append(f"hash mismatch: {rel}")
           if errors:
               raise SystemExit("\n".join(errors))
-          print("MANIFEST: PASS")
+          print("MANIFEST Git-blob verification: PASS")
 
       - name: Run canonical full validation
         run: python tools/run_validation.py --full --test-timeout 120
