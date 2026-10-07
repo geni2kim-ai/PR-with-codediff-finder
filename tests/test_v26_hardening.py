@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
 sys.path.insert(0,str(TOOLS))
-from common import object_digest
+from common import object_digest,sha256_file
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest
@@ -99,6 +99,16 @@ class PolicyAuthorityTests(unittest.TestCase):
         # Generic repositories do not inherit harness-self-protection for arbitrary tests/tools.
         h=classify_paths(['tools/helper.py','tests/test_x.py'],self.protected,include_self_protection=False);self.assertFalse(h['human_floor']);self.assertFalse(h['governance'])
 
+    def test_noncanonical_fork_cannot_delete_self_protection_sentinel(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup)
+        (r/'tools').mkdir();(r/'policy').mkdir();(r/'src').mkdir()
+        (r/'tools/run_review_cycle.py').write_text('gate=True\n');(r/'policy/protected-paths.yml').write_text('x: 1\n');(r/'src/a.py').write_text('x=1\n')
+        base=commit(r,'base');(r/'tools/run_review_cycle.py').unlink();commit(r,'delete-gate')
+        ev=json.loads(adapter(r,base,repository='fork/noncanonical').read_text())
+        self.assertIn('tools/run_review_cycle.py',ev['summary']['protected_candidates'])
+        out=cycle(r,r/'evidence.json',base,'DELETE-GATE')
+        c=json.loads((out/'review-cycle.json').read_text());self.assertEqual(c['required_level'],'HUMAN');self.assertEqual(c['state'],'HUMAN_REQUIRED')
+
     def test_deterministic_signal_vocabulary_is_produced(self):
         td,r,_=gitrepo();self.addCleanup(td.cleanup)
         (r/'migrations').mkdir();(r/'migrations/001.sql').write_text('CREATE TABLE t(id INT);\n');base=commit(r,'base');(r/'migrations/001.sql').write_text('CREATE TABLE t(id INT);\nDROP TABLE t;\n');commit(r,'head')
@@ -112,6 +122,13 @@ class SensorAndSafetyTests(unittest.TestCase):
         p=r/'auth\\login.py';p.write_text('def allowed():\n    return False\n');base=commit(r,'base');p.write_text('def allowed():\n    return True\n');commit(r,'head')
         ev=json.loads(adapter(r,base).read_text());row=next(x for x in ev['files'] if x['path']=='auth\\login.py');self.assertEqual(row['status'],'ANALYZED');self.assertGreater(row['diff']['changed_lines'],0);self.assertGreater(row['lines']['a'],0);self.assertGreater(row['lines']['b'],0);self.assertTrue(ev['summary']['protected_candidates'])
 
+    def test_absent_optional_original_package_is_not_echoed_as_verified(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        ev=json.loads(adapter(r,base).read_text());archive=ROOT/'vendor/TextDiffChecker_v1_4_6_original.zip'
+        if not archive.is_file():
+            self.assertIsNone(ev['tool']['package_sha256'])
+            inv=next(x for x in ev['invariants'] if x['id']=='original-package-provenance');self.assertEqual(inv['status'],'not_required')
+
     def test_modified_missing_blob_is_semantically_invalid(self):
         o=json.loads((ROOT/'examples/textdiff-evidence.valid.json').read_text());o=copy.deepcopy(o);o['files'][0]['base_blob_sha']=None;o['semantic_digest']=object_digest({k:v for k,v in o.items() if k not in {'performance','semantic_digest','output_digest'}});o['output_digest']=object_digest(o,'output_digest')
         self.assertTrue(any('requires both Git blob SHAs' in e for e in evidence_errors(o,ROOT/'policy/protected-paths.yml')))
@@ -124,14 +141,17 @@ class SensorAndSafetyTests(unittest.TestCase):
     def test_safety_scan_avoids_code_identifier_false_positives_and_catches_secrets(self):
         for s in ['java.net.URL','self.app','pandas.io','javax.net.ssl','settings.dev']:
             self.assertFalse(scan_text(s)['external_urls_present'],s)
-        for s in ['https://evil.me/x','//attacker.sh/x','DB_PASSWORD=supersecret','GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz','"api_key": "abcdefghijklmnop"','Bearer abcdefghijklmnop','postgres://user:pass1234@db.example/x','eyJabcdefghijk.abcdefghijk.abcdefghijk']:
+        for s in ['https://evil.me/x','//attacker.sh/x','DB_PASSWORD=supersecret','GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz','"api_key": "abcdefghijklmnop"','Bearer abcdefghijklmnop','postgres://user:pass1234@db.example/x','eyJabcdefghijk.abcdefghijk.abcdefghijk','sk-abcdefghijklmnopqrstuvwxyz','sk-proj-abcdefghijklmnopqrstuvwxyz']:
             f=scan_text(s);self.assertTrue(f['external_urls_present'] or not f['secret_scan_passed'],s)
 
     def test_pin_must_not_be_empty(self):
         import yaml
         td=tempfile.TemporaryDirectory();self.addCleanup(td.cleanup);cfg=yaml.safe_load((ROOT/'policy/sensor-policy.yml').read_text());cfg['trusted_tool']['checker_sha256']='';p=Path(td.name)/'sensor.yml';p.write_text(yaml.safe_dump(cfg))
         # Pin contract is enforced by semantic validator against its canonical policy; direct sanity on shipped config too.
-        shipped=load_yaml(ROOT/'policy/sensor-policy.yml')['trusted_tool'];self.assertTrue(all(isinstance(v,str) and len(v)==64 for v in shipped.values()))
+        shipped=load_yaml(ROOT/'policy/sensor-policy.yml')['trusted_tool']
+        for k in ('checker_sha256','original_package_sha256','vendor_requirements_sha256','harness_requirements_sha256'):
+            self.assertTrue(isinstance(shipped[k],str) and len(shipped[k])==64)
+        self.assertIsInstance(shipped.get('original_package_required'),bool)
         o=json.loads((ROOT/'examples/textdiff-evidence.valid.json').read_text());old=(ROOT/'policy/sensor-policy.yml').read_text()
         # explicit malformed-pin check mirrors validator contract without mutating repository policy.
         self.assertFalse(isinstance(cfg['trusted_tool']['checker_sha256'],str) and len(cfg['trusted_tool']['checker_sha256'])==64)
@@ -151,13 +171,33 @@ class HumanAndGateTests(unittest.TestCase):
         c0=json.loads((out/'review-cycle.json').read_text());key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',c0['binding']['head_sha'],key)))
         run([sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','H1','--node-id','owner','--verdict','CONFIRMED'],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key})
         c=json.loads((out/'review-cycle.json').read_text());self.assertEqual(c['state'],'HUMAN_CONFIRMED');self.assertEqual(c['achieved_level'],'HUMAN')
-        dest=out/'check.json';run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(dest)]);j=json.loads(dest.read_text());self.assertEqual(j['conclusion'],'neutral');self.assertIn('predicted_conclusion=success',j['output']['summary'])
+        dest=out/'check.json';run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(dest)],env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key});j=json.loads(dest.read_text());self.assertEqual(j['conclusion'],'neutral');self.assertIn('predicted_conclusion=success',j['output']['summary'])
 
     def test_tampered_cycle_even_with_recomputed_digest_cannot_render(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
         c=json.loads((out/'review-cycle.json').read_text());c['state']='COMPLETE';c['required_level']='ADVERSARIAL';c['gate_conclusion']='success';c['cycle_digest']=object_digest(c,'cycle_digest');bad=out/'tampered-cycle.json';bad.write_text(json.dumps(c))
         cp=subprocess.run([sys.executable,str(TOOLS/'render_github_check.py'),str(bad),'--ledger',str(out/'case-events.jsonl'),'--output',str(out/'bad-check.json')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
         self.assertNotEqual(cp.returncode,0);self.assertIn('CYCLE_CLOSED',cp.stderr+cp.stdout)
+
+    def test_fabricated_human_close_without_signed_decision_cannot_render(self):
+        td,r,out=self._human_case();self.addCleanup(td.cleanup)
+        c=json.loads((out/'review-cycle.json').read_text());c['achieved_level']='HUMAN';c['state']='HUMAN_CONFIRMED';c['gate_conclusion']='success';c['cycle_digest']='';c['cycle_digest']=object_digest(c,'cycle_digest');(out/'forged.json').write_text(json.dumps(c))
+        append_event(out/'case-events.jsonl','HUMAN-GATE','CYCLE_CLOSED',{'state':'HUMAN_CONFIRMED','cycle_digest':c['cycle_digest'],'gate_conclusion':'success','human_review_id':'FORGED','human_attestation_digest':'0'*64},anchor_path=out/'case-events.anchor.json')
+        cp=subprocess.run([sys.executable,str(TOOLS/'render_github_check.py'),str(out/'forged.json'),'--ledger',str(out/'case-events.jsonl'),'--output',str(out/'forged-check.json')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':'not-the-signer'})
+        self.assertNotEqual(cp.returncode,0);self.assertIn('HUMAN_DECISION',cp.stderr+cp.stdout)
+
+    def test_human_transaction_recovers_after_ledger_commit_before_file_replace(self):
+        td,r,out=self._human_case();self.addCleanup(td.cleanup)
+        original_case=json.loads((out/'case-record.json').read_text());original_cycle=json.loads((out/'review-cycle.json').read_text())
+        key='human-key';att=out/'human-att.json';att.write_text(json.dumps(create_human_attestation('HUMAN-GATE','owner','CONFIRMED',original_cycle['binding']['head_sha'],key)))
+        args=[sys.executable,str(TOOLS/'record_human_decision.py'),'--case',str(out/'case-record.json'),'--cycle',str(out/'review-cycle.json'),'--ledger',str(out/'case-events.jsonl'),'--repo',str(r),'--attestation',str(att),'--review-id','RECOVER-1','--node-id','owner','--verdict','CONFIRMED']
+        env={**os.environ,'MAESTRO_HUMAN_DECISION_KEY':key};run(args,env=env)
+        final_case=json.loads((out/'case-record.json').read_text());final_cycle=json.loads((out/'review-cycle.json').read_text());events=load_events(out/'case-events.jsonl');count=len(events)
+        human=next(x['payload'] for x in events if x['event_type']=='HUMAN_DECISION' and x['payload'].get('review_id')=='RECOVER-1');close=next(x['payload'] for x in events if x['event_type']=='CYCLE_CLOSED' and x['payload'].get('human_review_id')=='RECOVER-1')
+        tx={'schema_version':'2.6','request':{'case_id':'HUMAN-GATE','review_id':'RECOVER-1','node_id':'owner','verdict':'CONFIRMED','head_sha':original_cycle['binding']['head_sha'],'attestation_digest':human['attestation_digest']},'attestation':json.loads(att.read_text()),'updated_case':final_case,'updated_cycle':final_cycle,'human_event_payload':human,'close_event_payload':close}
+        (out/'case-record.json').write_text(json.dumps(original_case));(out/'review-cycle.json').write_text(json.dumps(original_cycle));(out/'human-decision-transaction.json').write_text(json.dumps(tx));(out/'human-decision-attestation.json').unlink(missing_ok=True)
+        run(args,env=env)
+        self.assertEqual(len(load_events(out/'case-events.jsonl')),count);self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'HUMAN_CONFIRMED');self.assertFalse((out/'human-decision-transaction.json').exists());self.assertTrue((out/'human-decision-attestation.json').is_file())
 
     def test_human_decision_rejects_head_drift(self):
         td,r,out=self._human_case();self.addCleanup(td.cleanup)
@@ -174,6 +214,69 @@ class WorkerAndAuditTests(unittest.TestCase):
     def test_worker_command_digest_binds_module_source_and_cwd(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);(root/'modx.py').write_text('x=1\n');d1=worker_command_digest([sys.executable,'-m','modx'],root);(root/'modx.py').write_text('x=2\n');d2=worker_command_digest([sys.executable,'-m','modx'],root);self.assertNotEqual(d1,d2);other=root/'other';other.mkdir();d3=worker_command_digest([sys.executable,'-m','modx'],other);self.assertNotEqual(d2,d3)
+
+    def test_module_provenance_does_not_import_package(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);pkg=root/'evilpkg';pkg.mkdir();side=pkg/'SIDE_EFFECT'
+            (pkg/'__init__.py').write_text("from pathlib import Path\nPath(__file__).with_name('SIDE_EFFECT').write_text('owned')\n")
+            (pkg/'worker.py').write_text('x=1\n')
+            d=worker_command_digest([sys.executable,'-m','evilpkg.worker'],root)
+            self.assertRegex(d,r'^[0-9a-f]{64}        import yaml
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');ev=adapter(r,base)
+        cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['mode']='enforced';rp=r/'routing.yml';rp.write_text(yaml.safe_dump(cfg));cp=subprocess.run([sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id','NO-DISABLE','--output-dir',str(r/'out'),'--l1-cmd-json',cmdjson(),'--routing-policy',str(rp),'--disable-random-audit'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20,env={**os.environ,'MAESTRO_AUDIT_SEED':'x'})
+        self.assertNotEqual(cp.returncode,0);self.assertIn('forbidden',cp.stderr+cp.stdout)
+
+    def test_run_worker_timeout_does_not_block_on_stdin_and_kills_child(self):
+        from run_review_cycle import run_worker,ReviewerExecutionError
+        import yaml
+        td=tempfile.TemporaryDirectory();self.addCleanup(td.cleanup);w=Path(td.name)/'worker.py';pidfile=Path(td.name)/'child.pid'
+        w.write_text("import subprocess,sys,time,os\np=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\nopen(sys.argv[1],'w').write(str(p.pid))\ntime.sleep(60)\n")
+        # Reuse a valid task produced by a tiny SHADOW cycle, then run the hostile worker directly.
+        tdr,r,_=gitrepo();self.addCleanup(tdr.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TASK-SOURCE');task=json.loads((out/'l1-task.json').read_text())
+        cfg=yaml.safe_load((ROOT/'policy/reviewer-routing.yml').read_text());cfg['runtime']['timeout_seconds']=1
+        start=time.monotonic()
+        with self.assertRaises(ReviewerExecutionError) as cm:run_worker([sys.executable,str(w),str(pidfile)],task,cfg)
+        elapsed=time.monotonic()-start;self.assertEqual(cm.exception.kind,'TIMEOUT');self.assertLess(elapsed,4.0)
+        if pidfile.exists() and os.name!='nt':
+            pid=int(pidfile.read_text());deadline=time.monotonic()+2.0;alive=True
+            while time.monotonic()<deadline:
+                proc=Path(f'/proc/{pid}/stat')
+                if not proc.exists():alive=False;break
+                try:state=proc.read_text().split()[2]
+                except FileNotFoundError:alive=False;break
+                if state=='Z':alive=False;break
+                time.sleep(.05)
+            self.assertFalse(alive,'reviewer child survived timeout process-group kill')
+
+
+class RoutingFreezeTests(unittest.TestCase):
+    def _case(self,case_id):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,case_id);return r,out
+
+    def _route_args(self,out,root,extra=None):
+        args=[sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')]
+        if (out/'l2-review.json').is_file():args+=['--l2-ref',str(out/'l2-review.json')]
+        return args+(extra or [])
+
+    def test_invalid_mutable_ref_does_not_poison_immutable_destination(self):
+        r,out=self._case('ROUTE-BAD');root=r/'routing'
+        cp=subprocess.run(self._route_args(out,root,['--standards-ref',str(r/'missing-standard.md')]),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
+        self.assertNotEqual(cp.returncode,0);self.assertFalse((root/'case-bank/ROUTE-BAD').exists())
+
+    def test_routed_refs_are_frozen_and_queue_retry_is_idempotent(self):
+        r,out=self._case('ROUTE-FREEZE');root=r/'routing';std=r/'standard.md';spec=r/'spec.md';test=r/'test-result.json'
+        std.write_text('STANDARD-V1\n');spec.write_text('SPEC-V1\n');test.write_text('{"status":"pass"}\n')
+        args=self._route_args(out,root,['--standards-ref',str(std),'--spec-ref',str(spec),'--test-ref',str(test)])
+        cp=run(args);queue=Path(cp.stdout.strip());packet=json.loads(queue.read_text())
+        frozen_std=Path(packet['refs']['trusted_standards'][0]);frozen_spec=Path(packet['refs']['spec_ref']);frozen_test=Path(packet['refs']['test_results'][0])
+        self.assertEqual(frozen_std.read_text(),'STANDARD-V1\n');self.assertEqual(frozen_spec.read_text(),'SPEC-V1\n')
+        self.assertEqual(packet['digests']['trusted_standards'][0],sha256_file(frozen_std));self.assertEqual(packet['digests']['spec_ref'],sha256_file(frozen_spec));self.assertEqual(packet['digests']['test_results'][0],sha256_file(frozen_test))
+        std.write_text('MUTATED\n');spec.unlink();test.unlink();self.assertEqual(frozen_std.read_text(),'STANDARD-V1\n');self.assertEqual(frozen_spec.read_text(),'SPEC-V1\n')
+        queue.unlink();cp2=run(args);self.assertEqual(Path(cp2.stdout.strip()),queue);self.assertTrue(queue.is_file())
+
+
+if __name__=='__main__':unittest.main()
+);self.assertFalse(side.exists())
 
     def test_enforced_cli_cannot_disable_random_audit(self):
         import yaml
