@@ -38,5 +38,5 @@ def main():
     if errs:raise SystemExit('invalid anchored case: '+'; '.join(errs))
     updated=json.loads(json.dumps(case));updated['outcome']=request;errs=valid(updated)
     if errs:raise SystemExit('updated case invalid: '+'; '.join(errs))
-    tx={'schema_version':'2.6','request':request,'event_type':'OUTCOME_RECORDED','event_payload':updated['outcome'],'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p)
+    tx={'schema_version':'2.7','request':request,'event_type':'OUTCOME_RECORDED','event_payload':updated['outcome'],'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p)
 if __name__=='__main__':main()
