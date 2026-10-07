@@ -75,7 +75,7 @@ def finalize(pre_path,spec_path):
     for name in sorted(expected):
         post=sha256_file(cur[name]);items.append({'name':name,'pre_sha256':expected[name],'post_sha256':post,'equal':post==expected[name]})
     obj={'schema_version':'2.7','kind':'mutation-receipt','authority_effect':'NONE',
-         'all_unchanged':all(x['equal'] for x in items),'items':items,'receipt_digest':''}
+         'pre_snapshot_digest':pre['snapshot_digest'],'all_unchanged':all(x['equal'] for x in items),'items':items,'receipt_digest':''}
     obj['receipt_digest']=object_digest(obj,'receipt_digest')
     return obj
 
