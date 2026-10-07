@@ -255,6 +255,13 @@ class HumanAndGateTests(unittest.TestCase):
         self.assertNotEqual(cp.returncode,0);self.assertIn('HEAD',cp.stderr+cp.stdout)
 
 class TrustedInputFreezeTests(unittest.TestCase):
+    def test_review_cycle_uses_frozen_policy_refs(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'POLICY-FREEZE')
+        task=json.loads((out/'l1-task.json').read_text());policy_root=(out/'effective-policy').resolve()
+        self.assertTrue(task['trusted_refs']['policy'])
+        for raw in task['trusted_refs']['policy']:
+            p=Path(raw);self.assertTrue(p.is_file());self.assertTrue(str(p).startswith(str(policy_root)))
+
     def test_review_cycle_freezes_external_standards_spec_and_tests(self):
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');ev=adapter(r,base)
         with tempfile.TemporaryDirectory() as ext:
