@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,importlib.util,json,os,re,signal,shutil,subprocess,sys,tempfile,time
+import argparse,hashlib,hmac,json,os,re,signal,shutil,subprocess,sys,tempfile,time
 from datetime import datetime,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -73,6 +73,24 @@ SECRET_ENV_NAME=re.compile(r'(?i)(?:secret|token|password|passwd|credential|priv
 
 def sensitive_env_names(names):return sorted({str(x) for x in names if SECRET_ENV_NAME.search(str(x))})
 
+def _module_source_files(module,cwd_path):
+    """Resolve a local `python -m package.module` without importing package code."""
+    parts=[p for p in str(module).split('.') if p]
+    if not parts:return [],True
+    cur=Path(cwd_path).resolve();out=[]
+    for part in parts[:-1]:
+        pkg=cur/part
+        if not pkg.is_dir():return out,True
+        init=pkg/'__init__.py'
+        if init.is_file():out.append(init.resolve())
+        cur=pkg
+    last=parts[-1]
+    mod=cur/(last+'.py');pkg=cur/last;init=pkg/'__init__.py'
+    if mod.is_file():out.append(mod.resolve());return out,False
+    if init.is_file():out.append(init.resolve());return out,False
+    return out,True
+
+
 def worker_command_digest(cmd,cwd=None):
     if not cmd:return ZERO
     cwd_path=Path(cwd or os.getcwd()).resolve();tokens=[]
@@ -91,19 +109,10 @@ def worker_command_digest(cmd,cwd=None):
         else:tokens.append({'index':i,'kind':'literal','value':arg})
     module_provenance=[]
     if len(cmd)>=3 and cmd[1]=='-m':
-        module=cmd[2]
-        script="import importlib.util,json,sys;sys.path.insert(0,sys.argv[2]);s=importlib.util.find_spec(sys.argv[1]);print(json.dumps({'origin':getattr(s,'origin',None),'locations':list(getattr(s,'submodule_search_locations',[]) or [])}))"
-        try:
-            cp=subprocess.run([cmd[0],'-c',script,module,str(cwd_path)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=5)
-            info=json.loads(cp.stdout) if cp.returncode==0 else {}
-            paths=[]
-            if info.get('origin') and info['origin'] not in {'built-in','frozen'}:paths.append(Path(info['origin']))
-            for loc in info.get('locations',[]):
-                lp=Path(loc)
-                if lp.is_dir():paths.extend(sorted(lp.glob('*.py')))
-            for mp in paths:
-                if mp.is_file():module_provenance.append({'path':mp.name,'sha256':sha256_file(mp)})
-        except Exception:module_provenance.append({'module':module,'unresolved':True})
+        module=cmd[2];paths,unresolved=_module_source_files(module,cwd_path)
+        for mp in paths:
+            module_provenance.append({'path':mp.relative_to(cwd_path).as_posix() if _inside(mp,cwd_path) else mp.name,'sha256':sha256_file(mp)})
+        if unresolved:module_provenance.append({'module':module,'unresolved':True})
     return object_digest({'argv':tokens,'cwd':str(cwd_path),'module_provenance':module_provenance})
 
 def safe_env(allow,task=None):
@@ -303,7 +312,7 @@ def main():
         try:evidence=json.loads(Path(ns.evidence).read_text())
         except Exception as exc:terminal_block('EVIDENCE_UNREADABLE',type(exc).__name__);return
         binding={'repository':evidence.get('binding',{}).get('repository','unknown'),'base_sha':mb,'head_sha':head,'pr_number':None,'work_unit':evidence.get('binding',{}).get('work_unit')}
-        structural=evidence_errors(evidence,ROOT/'policy/protected-paths.yml')
+        structural=evidence_errors(evidence,ROOT/'policy/protected-paths.yml',repo,ns.expected_base,verify_git=False)
         if structural:
             ev('SENSOR_REJECTED',{'reasons':structural[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(structural));return
         if evidence.get('binding',{}).get('head_sha')!=head:
@@ -356,7 +365,7 @@ def main():
         for f in evidence['files']:
             if f.get('old_path'):paths.append(f['old_path'])
             paths.append(f['path'])
-        changed=sorted(set(paths));self_review=is_self_protected_repository(evidence.get('binding',{}).get('repository'),repo,protected);hits=classify_paths(changed,protected,include_self_protection=self_review)
+        changed=sorted(set(paths));self_review=is_self_protected_repository(evidence.get('binding',{}).get('repository'),repo,protected,base_ref=evidence.get('binding',{}).get('base_sha'));hits=classify_paths(changed,protected,include_self_protection=self_review)
         base_model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'};sig={};invfail=[x['id'] for x in evidence['invariants'] if x['status']=='failed'];lowenc=[f['path'] for f in evidence['files'] if f['encoding']['confidence']=='LOW']
         if not evidence['trust']['trusted_for_gate']:sig['sensor_runtime_untrusted']=True
         if evidence['summary']['quality_class']=='APPROXIMATE':sig['sensor_approximate']=True
