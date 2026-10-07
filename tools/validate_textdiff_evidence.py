@@ -46,7 +46,7 @@ def _git_errors(o,repo,expected_base=None):
     return e
 
 
-def semantic_errors(o,policy_path=None,repo=None,expected_base=None,verify_git=True):
+def semantic_errors(o,policy_path=None,repo=None,expected_base=None,verify_git=True,sensor_policy_path=None):
     e=[]
     if o.get('output_digest') != object_digest(o,'output_digest'):e.append('output_digest mismatch')
     semantic_view={k:v for k,v in o.items() if k not in {'performance','semantic_digest','output_digest'}}
@@ -78,7 +78,7 @@ def semantic_errors(o,policy_path=None,repo=None,expected_base=None,verify_git=T
         if alg & HEURISTIC_EVENTS and d['quality_class'] in {'PROVEN_EXACT','DETERMINISTIC'}:e.append(f'{path}: heuristic path requires HEURISTIC or APPROXIMATE')
         if 'full_myers_exceeded' in alg and 'banded_myers' in alg and d['quality_class']=='PROVEN_EXACT':e.append(f'{path}: banded after full cap cannot be PROVEN_EXACT')
     inv=o.get('invariants',[]);failed=[x['id'] for x in inv if x['status']=='failed'];trust=o.get('trust',{});regex=o.get('tool',{}).get('regex_timeout_available')
-    sensor_cfg=load_yaml(ROOT/'policy/sensor-policy.yml');tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=s.get('quality_class') in set(tdcfg.get('accepted_quality_classes',[]))
+    sensor_cfg=load_yaml(sensor_policy_path or ROOT/'policy/sensor-policy.yml');tdcfg=sensor_cfg.get('textdiff',{});regex_required=bool(tdcfg.get('trusted_runtime_requires_regex_timeout',True));quality_allowed=s.get('quality_class') in set(tdcfg.get('accepted_quality_classes',[]))
     error_file=any(x['status'] in {'ERROR','TIMEOUT'} for x in files);coverage_gap=any(x['status'] in {'SKIPPED','BINARY'} for x in files)
     must_untrust=(regex_required and not regex) or (not quality_allowed) or bool(failed) or error_file or coverage_gap
     if must_untrust and trust.get('trusted_for_gate'):e.append('trusted_for_gate must be false when runtime/invariant/file coverage gap exists')
