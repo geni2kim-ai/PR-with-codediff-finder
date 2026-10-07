@@ -10,7 +10,7 @@ sys.path.insert(0,str(TOOLS))
 from case_ledger import append_event,default_anchor_path
 from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
-from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt
+from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -47,6 +47,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             secret.write_text('mutated\n',encoding='utf-8')
             changed=finalize_mutation_receipt(pre_path,spec)
             self.assertFalse(changed['all_unchanged']);self.assertFalse(changed['items'][0]['equal'])
+            with self.assertRaises(SystemExit):reject_output_collision(secret,spec)
+            with self.assertRaises(SystemExit):reject_output_collision(pre_path,spec,pre_path)
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
