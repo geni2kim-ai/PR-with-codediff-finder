@@ -1,10 +1,10 @@
 from __future__ import annotations
-import argparse,json,re,sys
+import argparse,json,os,re,sys,tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
-from common import object_digest,sha256_file,write_json
+from common import object_digest,sha256_file
 
 NAME=re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
 
@@ -23,6 +23,25 @@ def load_spec(path):
         if not p.is_file():raise SystemExit(f'artifact missing: {name}')
         seen.add(name);out.append((name,p))
     return out
+
+def reject_output_collision(output,spec_path,pre_path=None):
+    protected={Path(spec_path).resolve()}
+    protected.update(path for _,path in load_spec(spec_path))
+    if pre_path is not None:protected.add(Path(pre_path).resolve())
+    out=Path(output).resolve()
+    if out in protected:raise SystemExit('mutation receipt output collides with protected input')
+    return out
+
+def atomic_json(path,obj):
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix=p.name+'.',suffix='.tmp',dir=str(p.parent))
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8',newline='\n') as f:
+            json.dump(obj,f,ensure_ascii=False,indent=2);f.write('\n');f.flush();os.fsync(f.fileno())
+        os.replace(tmp,p)
+    finally:
+        try:Path(tmp).unlink()
+        except FileNotFoundError:pass
 
 def capture(spec_path):
     rows=load_spec(spec_path)
@@ -67,8 +86,8 @@ def main():
     b=sub.add_parser('finalize');b.add_argument('--pre',required=True);b.add_argument('--spec',required=True);b.add_argument('--output',required=True)
     ns=ap.parse_args()
     if ns.cmd=='capture':
-        write_json(ns.output,capture(ns.spec));print('CAPTURED');return
-    obj=finalize(ns.pre,ns.spec);write_json(ns.output,obj);print('UNCHANGED' if obj['all_unchanged'] else 'CHANGED')
+        out=reject_output_collision(ns.output,ns.spec);atomic_json(out,capture(ns.spec));print('CAPTURED');return
+    out=reject_output_collision(ns.output,ns.spec,ns.pre);obj=finalize(ns.pre,ns.spec);atomic_json(out,obj);print('UNCHANGED' if obj['all_unchanged'] else 'CHANGED')
     if not obj['all_unchanged']:raise SystemExit(2)
 
 if __name__=='__main__':main()
