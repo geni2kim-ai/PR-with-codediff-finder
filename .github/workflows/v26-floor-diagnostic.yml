@@ -29,6 +29,7 @@ jobs:
               (r/'infra/main.tf').write_text('x=2\n');run(['git','add','-A'],r);run(['git','commit','-qm','head'],r)
               ev=r/'ev.json';subprocess.run([sys.executable,'tools/textdiff_adapter.py','--repo',str(r),'--repository','owner/repo','--base',base,'--head','HEAD','--output',str(ev)],check=True)
               e=json.loads(ev.read_text());paths=[x['path'] for x in e['files']];cfg=load_yaml('policy/protected-paths.yml');hits=classify_paths(paths,cfg)
+              print(json.dumps({'tool':e['tool'],'pins':load_yaml('policy/sensor-policy.yml')['trusted_tool']},sort_keys=True))
               model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'}
               direct=derive_required_level(model,hits,{},load_yaml('policy/escalation-policy.yml'),load_yaml('policy/sensor-policy.yml'))
               print(json.dumps({'paths':paths,'protected':e['summary']['protected_candidates'],'hits':hits,'direct':direct},sort_keys=True))
