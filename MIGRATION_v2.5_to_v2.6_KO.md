@@ -7,7 +7,7 @@
 4. `render_github_check.py`는 cycle 파일만으로 success를 만들지 않는다. 같은 case ledger/anchor가 필요하다.
 5. ENFORCED에서 `--disable-random-audit`는 허용되지 않는다.
 6. ENFORCED random audit에는 외부 `MAESTRO_AUDIT_SEED`가 필요하다.
-7. L2/Adversarial fresh-session은 routing YAML 자기선언이 아니라 signed runtime attestation으로 전달한다.
+7. L2/Adversarial fresh-session은 routing YAML 자기선언이 아니라 signed runtime attestation으로 전달하며, launcher가 `--l2-fresh-session --adversarial-fresh-session`을 명시하지 않으면 false로 처리한다.
 8. harness 저장소 자체를 리뷰할 때 `tools/tests/vendor/requirements` 변경은 self-protection floor를 받는다.
 
 ## 권장 전환 절차
