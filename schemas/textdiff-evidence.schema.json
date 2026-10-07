@@ -47,7 +47,10 @@
           "type": "string"
         },
         "package_sha256": {
-          "type": "string",
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^[0-9a-fA-F]{64}$"
         },
         "checker_sha256": {
