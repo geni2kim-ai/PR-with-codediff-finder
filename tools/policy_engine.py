@@ -1,5 +1,5 @@
 from __future__ import annotations
-import fnmatch
+import fnmatch, subprocess
 from pathlib import Path, PurePosixPath
 import yaml
 
@@ -44,11 +44,33 @@ def load_yaml(path):
 
 
 
-def is_self_protected_repository(repository: str | None = None, repo_path=None, protected_cfg=None) -> bool:
+def _git_tree_has(repo_path, ref, relpath):
+    try:
+        cp=subprocess.run(
+            ['git','-C',str(Path(repo_path).resolve()),'cat-file','-e',f'{ref}:{relpath}'],
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5
+        )
+        return cp.returncode==0
+    except Exception:
+        return False
+
+
+def is_self_protected_repository(repository: str | None = None, repo_path=None, protected_cfg=None, base_ref=None) -> bool:
+    """Identify this harness from immutable/base evidence when available.
+
+    The proposed HEAD may delete a sentinel.  A deletion must not be able to turn off
+    self-protection, so callers reviewing a Git change should pass the trusted
+    merge-base/base commit here.
+    """
     cfg = protected_cfg or {}
     names = {str(x).casefold() for x in cfg.get('self_protection_repository_names', [])}
     if repository and str(repository).casefold() in names:
         return True
+    if repo_path and base_ref:
+        return (
+            _git_tree_has(repo_path,base_ref,'tools/run_review_cycle.py') and
+            _git_tree_has(repo_path,base_ref,'policy/protected-paths.yml')
+        )
     if repo_path:
         root = Path(repo_path)
         return (root / 'tools/run_review_cycle.py').is_file() and (root / 'policy/protected-paths.yml').is_file()
