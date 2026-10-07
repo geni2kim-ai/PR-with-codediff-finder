@@ -26,7 +26,11 @@
   "digests": {
     "textdiff_evidence": "1c83bdc4ea48aeaa692505bb0820a285b8c477354aa29cd55c169d2d11e37de8",
     "l1_review": "228f6341346eaeaaae2393a8a5981bb7a8e4f775584ef04eb5b428b3c107b7c3",
-    "l2_review": "e349f88c0daa143dbabaae4ddae423daa530765b3b7c23b1f5c02a99b63f9d77"
+    "l2_review": "e349f88c0daa143dbabaae4ddae423daa530765b3b7c23b1f5c02a99b63f9d77",
+    "deterministic_policy": "0000000000000000000000000000000000000000000000000000000000000000",
+    "trusted_standards": [],
+    "spec_ref": null,
+    "test_results": []
   },
   "known_failure_families": [
     "MOCK-MAJOR"
