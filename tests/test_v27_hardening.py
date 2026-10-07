@@ -23,6 +23,7 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertNotIn('refs/heads/hardening/v2.6',text)
         self.assertIn('Build validated v2.7 source package',text)
         self.assertIn('v2.7-source-package',text)
+        self.assertGreaterEqual(text.count("github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'"),3)
 
     def test_latest_head_review_rule_is_repository_default(self):
         text=(ROOT/'AGENTS.md').read_text(encoding='utf-8')
