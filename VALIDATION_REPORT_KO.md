@@ -71,6 +71,18 @@ python tools/run_validation.py --full --test-timeout 120
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
 
+## Post-review delta 검증
+
+외부 검토를 다시 대조하는 과정에서 기존 ledger 파일을 **0바이트로 truncate한 뒤 anchor까지 삭제**하면 새 history처럼 재시작할 수 있는 잔여 반례를 추가로 발견해 차단했다.
+
+최신 delta:
+- `tools/case_ledger.py`: pre-existing ledger 파일은 이벤트가 0개로 보이더라도 anchor가 없으면 append 거부.
+- `tests/test_v26_hardening.py`: 기존 HMAC/anchor 회귀에 zero-byte truncation 조합 추가.
+- 최신 GitHub 파일 `tools/case_ledger.py` SHA-256: `8064dfdf923958452f85f50e4f3c3891f2c5a4d152ffd2b263da6cdca75b5958`.
+- 동일 바이트의 파일을 별도 Python probe로 실행하여 `PASS_BLOCKED: existing ledger anchor missing` 재현 확인.
+
+위의 **88 PASS / vendor 144 PASS** canonical full-run은 이 delta 이전 candidate에서 수행된 결과다. 최신 delta는 targeted execution으로 검증했으며, 현재 환경에서는 GitHub DNS가 차단되어 최신 branch 전체를 다시 clone해 full suite를 재실행하지 못했다. 따라서 merge/승격 전 최신 HEAD에서 canonical full-run을 한 번 더 수행해야 한다.
+
 ## NOT_RUN
 - 실제 GitHub Check Run API + required ruleset/branch protection E2E
 - 실제 OS network namespace/firewall/workspace-only filesystem isolation
@@ -81,4 +93,4 @@ python tools/run_validation.py --full --test-timeout 120
 - production incident connector
 
 ## 판정
-**HARDENED SHADOW CANDIDATE.** 코드/회귀 검증은 PASS지만 외부 인프라 전제가 남아 있으므로 ENFORCED production 승격을 스스로 승인하지 않는다.
+**HARDENED SHADOW CANDIDATE.** pre-delta canonical full-run과 post-delta targeted regression은 PASS다. 최신 HEAD 전체 full-run과 외부 인프라 전제가 남아 있으므로 ENFORCED production 승격이나 merge를 스스로 승인하지 않는다.
