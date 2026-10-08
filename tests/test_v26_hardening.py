@@ -11,7 +11,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
-from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys
+from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys,campaign_control_path
 from calibration_report import material_state,summarize_cases
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
@@ -500,7 +500,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
 
     def test_concurrent_campaign_execution_is_rejected_before_review(self):
         r,base=self._repo();case='BUDGET-CONCURRENT';out=r/'campaign-concurrent';ev=adapter(r,base)
-        token=sha256_bytes(case.encode('utf-8'))[:16];lock_target=out.parent/(out.name+'.case-'+token+'-control')
+        lock_target=campaign_control_path(out,'case',case)
         args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
         with case_ledger.ledger_lock(lock_target,timeout=1.0):
             cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
@@ -509,7 +509,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
 
     def test_different_case_lock_does_not_serialize_shared_output_root(self):
         r,base=self._repo();out=r/'campaign-shared-lock';ev=adapter(r,base);held_case='LOCK-CASE-A';run_case='LOCK-CASE-B'
-        token=sha256_bytes(held_case.encode('utf-8'))[:16];lock_target=out.parent/(out.name+'.case-'+token+'-control')
+        lock_target=campaign_control_path(out,'case',held_case)
         args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',run_case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
         with case_ledger.ledger_lock(lock_target,timeout=1.0):
             cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
