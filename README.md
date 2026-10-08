@@ -223,6 +223,7 @@ v2.7 distinguishes a finding from a remediation trigger.
 - `major`: **AGENT_REVIEW_REQUIRED**. L1 major raises the required level to at least L2.
 - `blocker`: **BLOCKING**. Adversarial/higher escalation rules remain active.
 - deterministic risk/protected-path floors override NOTE_ONLY classification.
+- critical semantic families (`SECURITY-CRITICAL`, `DATA-CORRUPTION`, `GOVERNANCE*`) and novel failure signals also override a low severity label.
 - random audit may still sample NOTE_ONLY cases for quality control, but it does not authorize cosmetic auto-fix loops.
 
 This prevents a typo/style finding from causing source edit → new HEAD → same finding class → repeated re-review. Low-priority cleanup is accumulated as notes/backlog instead.
