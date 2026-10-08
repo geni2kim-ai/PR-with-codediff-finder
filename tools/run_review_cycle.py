@@ -365,9 +365,13 @@ def campaign_history(root,case_id,hmac_key=None):
             if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
             try:anchor_obj=json.loads(anchor.read_text())
             except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-            events=load_events(ledger);errs=validate_events(events,case_id)
-            errs+=validate_anchor(ledger,anchor,events,case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
+            events=load_events(ledger);errs=validate_events(events)
+            event_case_ids={e.get('case_id') for e in events}
+            if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
+            event_case_id=next(iter(event_case_ids))
+            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
             if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+            if event_case_id!=case_id:continue
             opened=[e for e in events if e.get('event_type')=='CASE_OPENED'];closed=[e for e in events if e.get('event_type')=='CYCLE_CLOSED'];completed=[e for e in events if e.get('event_type')=='REVIEW_COMPLETED']
             if not opened:raise ValueError('campaign ledger missing CASE_OPENED')
             head_sha=opened[-1].get('payload',{}).get('head_sha')
