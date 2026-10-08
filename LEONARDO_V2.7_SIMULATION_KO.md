@@ -193,3 +193,30 @@ SHADOW의 unkeyed anchor는 self-consistency 보장 범위이고 외부 공격�
 
 회귀 테스트에서 WAITING_L1을 두 번 연속 재개한 뒤 L1 PASS로 완료하는 전체 흐름이 `attempt_index=1`을 유지하는지 고정했다.
 
+### 6. reviewer 완료 후 closeout 이전 중단 시 동일 agent 작업 재실행
+
+중단 시나리오를 `CYCLE_CLOSED` 이전까지 세분화하여 시뮬레이션했다.
+
+반례:
+1. L1 reviewer가 실제 실행되어 결과와 `REVIEW_COMPLETED` ledger event까지 기록
+2. `case-record.json` / `CYCLE_CLOSED` 작성 전에 프로세스 중단
+3. 동일 HEAD에서 `--retry`
+
+기존 `campaign_history()`는 `case-record.json`이 없는 attempt directory를 아예 이력에서 제외했다. 따라서 이미 비용을 지불한 L1 reviewer가 다음 실행에서 다시 호출될 수 있었다. 반복 budget 숫자는 증가하지 않더라도 실제 agent 시간/토큰은 중복 소비되는 경로였다.
+
+보완:
+- case record가 없어도 ledger/anchor가 존재하는 attempt를 검사한다.
+- ledger hash chain과 anchor가 유효하고 `CASE_OPENED`가 존재하며 `CYCLE_CLOSED`가 없으면 내부적으로 `INTERRUPTED_EMPTY` 또는 `INTERRUPTED_REVIEW` 상태로 복구 대상으로 분류한다.
+- 동일 HEAD의 interrupted attempt는 동일 logical attempt를 유지한다.
+- 이전 task/result pair가 현재 task와 완전히 호환되면 기존 SHADOW reuse 검증을 그대로 적용하여 완료된 L1/L2 결과를 재사용한다.
+- `CYCLE_CLOSED`는 있는데 case record가 사라진 비정상 상태는 정상 중단으로 간주하지 않고 fail-closed 한다.
+- reviewer 완료 후 중단된 상태에서 HEAD가 바뀌면 그 reviewer-bearing attempt는 이미 실제 검토 비용을 사용한 attempt로 계산한다. crash 후 HEAD 변경을 반복하여 자동 attempt 한도를 우회할 수 없다.
+
+추가 회귀:
+- L1 완료 직후 closeout 전 중단 → 동일 HEAD retry에서 L1 worker가 두 번째로 호출되지 않음
+- 위 경로에서 `reused_agent_stages=1`, logical `attempt_index=1` 유지
+- reviewer 완료 중단 후 HEAD 변경 → 다음 실행은 logical attempt 2
+- closed ledger인데 case record가 없는 경우 history invalid로 fail-closed
+
+이 보완은 interruption을 무조건 무료 retry로 취급하지 않는다. **실제 reviewer가 실행되지 않은 중단은 재개**, **이미 reviewer 비용을 쓴 중단은 그 작업을 재사용하거나, HEAD가 바뀌면 사용한 attempt로 계산**하는 방식으로 시간 절약과 budget 우회 방지를 동시에 맞춘다.
+
