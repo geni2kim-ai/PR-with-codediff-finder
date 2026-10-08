@@ -13,6 +13,7 @@ from runtime_attestation import create as create_runtime_attestation
 from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision,validate_receipt
 from verify_manifest import filesystem_errors
 from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
+from verify_package_hygiene import generated_paths
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -23,6 +24,7 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         text=(ROOT/'.github/workflows/harness-validation.yml').read_text(encoding='utf-8')
         self.assertIn('hardening/v2.7',text)
         self.assertNotIn('refs/heads/hardening/v2.6',text)
+        self.assertIn('Reject tracked generated artifacts',text)
         self.assertIn('Build validated v2.7 source package',text)
         self.assertIn('Verify clean-extracted v2.7 package',text)
         self.assertIn('source_package_receipt.py create',text)
@@ -34,6 +36,20 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertIn('Always review the latest committed code',text)
         self.assertIn('post-fix latest HEAD',text)
         self.assertIn('previous conclusion is **STALE**',text)
+
+    def test_package_hygiene_rejects_generated_cache_artifacts(self):
+        bad=generated_paths([
+            'src/app.py',
+            '.pytest_cache/v/cache/nodeids',
+            'pkg/__pycache__/mod.cpython-312.pyc',
+            'pkg/tool.pyo',
+        ])
+        self.assertEqual(bad,[
+            '.pytest_cache/v/cache/nodeids',
+            'pkg/__pycache__/mod.cpython-312.pyc',
+            'pkg/tool.pyo',
+        ])
+        self.assertEqual(generated_paths(['src/app.py','tests/test_app.py']),[])
 
     def test_v27_policy_documents_are_versioned(self):
         for name in ('escalation-policy.yml','protected-paths.yml','reviewer-routing.yml','sensor-policy.yml'):
