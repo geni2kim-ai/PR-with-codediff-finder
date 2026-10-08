@@ -125,6 +125,7 @@ def max_level(a,b): return LEVELS[max(LEVELS.index(a), LEVELS.index(b))]
 def active_escalation_signals(model, path_hits, signals):
     active=set()
     if signals.get('reviewer_confidence') in {'low','medium'}: active.add('reviewer_confidence_low_or_medium')
+    if signals.get('major_candidate'): active.add('major_candidate')
     if model['reversibility']=='MODERATE': active.add('moderate_reversibility')
     if model['blast_radius']!='LOCAL': active.add('service_or_larger_blast_radius')
     if signals.get('soft_large_diff'): active.add('soft_large_diff')
@@ -168,7 +169,7 @@ def active_escalation_signals(model, path_hits, signals):
 def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor_cfg=None):
     if escalation_cfg is None:
         escalation_cfg={
-          'L2_if_any':['reviewer_confidence_low_or_medium','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
+          'L2_if_any':['reviewer_confidence_low_or_medium','major_candidate','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
           'ADVERSARIAL_if_any':['l1_l2_disagreement','novel_failure_family','deterministic_reviewer_conflict','blocker_candidate','security_surface_high_or_critical','protected_path_adversarial_floor','unexplained_spec_change_after_pr_open','reviewer_policy_tampering'],
           'HUMAN_if_any':['governance_change','hard_reversibility','data_sensitivity_pii_or_secret','availability_critical','destructive_migration','public_contract_break','payment_or_irreversible_external_side_effect','ruleset_or_codeowners_change','adversarial_unresolved']
         }
@@ -207,5 +208,5 @@ def gate_conclusion(result):
     req=result["authority"]["required_level"]; got=result["authority"]["achieved_level"]
     if levels[got] < levels[req]: return "action_required"
     if result["risk"]["harness"]["human_review_required"] and got != "HUMAN": return "action_required"
-    if sev & {"minor","nit"}: return "neutral"
+    if sev & {"minor","nit"}: return "success"
     return "success"
