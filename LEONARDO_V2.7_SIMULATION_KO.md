@@ -450,6 +450,8 @@ append transaction 경계를 다시 시뮬레이션했다.
 
 ### 17. shared output root에서 unrelated case의 HMAC/pending 상태가 active case를 차단하는 문제
 
+> **SUPERSEDED:** 이 절의 no-key HMAC skip 결론은 section 20에서 철회되었다. 구조적 case 분류와 불필요한 recovery 방지는 유지하지만, HMAC-protected record는 unrelated여도 key 없이 skip하지 않는다.
+
 앞선 multi-case 병렬화 이후 case 격리성을 다시 시뮬레이션했다.
 
 반례 A:
@@ -480,6 +482,8 @@ append transaction 경계를 다시 시뮬레이션했다.
 이 변경은 shared root의 병렬성을 실제 **authority isolation**까지 확장한다. 다른 case의 정상적인 보안 설정 차이가 현재 case의 reviewer 실행이나 budget을 막지 않는다.
 
 ### 18. cross-case isolation이 HMAC-protected active history의 relabel 우회가 될 수 있는 문제
+
+> **SUPERSEDED IN PART:** active key가 있을 때의 relabel 방어는 유지된다. 다만 'active key가 없으면 unrelated HMAC을 skip 가능'이라는 당시 결론은 section 20에서 제거되었다.
 
 section 17 보완을 다시 공격적으로 검토했다.
 
