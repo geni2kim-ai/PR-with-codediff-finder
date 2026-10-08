@@ -12,7 +12,7 @@ from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_case_bundle import errors as case_bundle_errors
-from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path
+from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path,pending_append_case_id
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
 from queue_policy import choose_queue
@@ -380,8 +380,23 @@ def campaign_history(root,case_id,hmac_key=None):
     out=[];derived_attempt=0;previous=None;seen_ledger_identities=set()
     for d in dirs:
         try:
-            ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json'
-            if pending_append_path(ledger).is_file():
+            ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json';tx_path=pending_append_path(ledger)
+            events=load_events(ledger) if ledger.is_file() else []
+            event_case_id=None
+            if events:
+                errs=validate_events(events)
+                event_case_ids={e.get('case_id') for e in events}
+                if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
+                event_case_id=next(iter(event_case_ids))
+                if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+                if tx_path.is_file():
+                    tx_case_id=pending_append_case_id(ledger)
+                    if tx_case_id!=event_case_id:raise ValueError('pending append case_id disagrees with ledger case_id')
+                if event_case_id!=case_id:continue
+            elif tx_path.is_file():
+                event_case_id=pending_append_case_id(ledger)
+                if event_case_id!=case_id:continue
+            if tx_path.is_file():
                 recover_pending_append_if_present(ledger,anchor,hmac_key)
             if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
             try:anchor_obj=json.loads(anchor.read_text())
@@ -390,9 +405,9 @@ def campaign_history(root,case_id,hmac_key=None):
             event_case_ids={e.get('case_id') for e in events}
             if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
             event_case_id=next(iter(event_case_ids))
+            if event_case_id!=case_id:continue
             errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
             if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
-            if event_case_id!=case_id:continue
             ledger_identity=(anchor_obj.get('ledger_sha256'),anchor_obj.get('event_hash'),anchor_obj.get('seq'))
             if ledger_identity in seen_ledger_identities:raise ValueError('duplicate/replayed campaign ledger identity')
             seen_ledger_identities.add(ledger_identity)
