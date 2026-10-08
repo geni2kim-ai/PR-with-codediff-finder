@@ -11,7 +11,7 @@
     "current_attempt_worker_timeout_budget_seconds",
     "campaign_worker_timeout_ceiling_seconds",
     "current_material_finding_keys","repeated_material_finding_keys",
-    "automated_retry_allowed","stop_reason","budget_digest"
+    "automated_remediation_retry_allowed","stop_reason","budget_digest"
   ],
   "properties": {
     "schema_version": {"const":"2.7"},
@@ -31,7 +31,7 @@
     "repeated_material_finding_keys": {
       "type":"array","items":{"type":"string","minLength":1},"uniqueItems":true
     },
-    "automated_retry_allowed": {"type":"boolean"},
+    "automated_remediation_retry_allowed": {"type":"boolean"},
     "stop_reason": {
       "type":["string","null"],
       "enum":["SAME_MATERIAL_FINDING_REPEAT","AUTOMATED_ATTEMPT_LIMIT","NO_MATERIAL_FINDINGS",null]
