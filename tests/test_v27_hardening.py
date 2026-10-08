@@ -11,6 +11,7 @@ from case_ledger import append_event,default_anchor_path
 from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
 from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision,validate_receipt
+from verify_manifest import filesystem_errors
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -56,6 +57,23 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertFalse(changed['all_unchanged']);self.assertFalse(changed['items'][0]['equal'])
             with self.assertRaises(SystemExit):reject_output_collision(secret,spec)
             with self.assertRaises(SystemExit):reject_output_collision(pre_path,spec,pre_path)
+
+    def test_extracted_package_manifest_verification_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);(root/'sub').mkdir();(root/'a.txt').write_text('alpha\n',encoding='utf-8');(root/'sub'/'b.txt').write_bytes(b'beta\n')
+            import hashlib
+            rows=[
+                f"{hashlib.sha256((root/'a.txt').read_bytes()).hexdigest()}  ./a.txt",
+                f"{hashlib.sha256((root/'sub'/'b.txt').read_bytes()).hexdigest()}  ./sub/b.txt",
+            ]
+            (root/'MANIFEST.sha256').write_text('\n'.join(rows)+'\n',encoding='utf-8')
+            self.assertEqual(filesystem_errors(filesystem_root=root)[0],[])
+            (root/'a.txt').write_text('tampered\n',encoding='utf-8')
+            self.assertTrue(any('package hash mismatch: ./a.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
+            (root/'a.txt').write_text('alpha\n',encoding='utf-8');(root/'extra.txt').write_text('extra\n',encoding='utf-8')
+            self.assertTrue(any('unmanifested package file: extra.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
+            (root/'extra.txt').unlink();(root/'sub'/'b.txt').unlink()
+            self.assertTrue(any('manifested package file missing: sub/b.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
