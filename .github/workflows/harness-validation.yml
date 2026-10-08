@@ -34,6 +34,9 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Reject tracked generated artifacts
+        run: python tools/verify_package_hygiene.py --git-ref HEAD
+
       - name: Generate manifest candidate
         run: |
           python tools/generate_manifest.py --git-ref HEAD --output MANIFEST.generated.sha256
