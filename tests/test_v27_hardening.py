@@ -81,6 +81,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             with self.assertRaises(ValueError):filesystem_errors(filesystem_root=root)
             (root/'MANIFEST.sha256').write_text(f"{hashlib.sha256(payload).hexdigest()}  .\\a.txt\n",encoding='utf-8')
             with self.assertRaises(ValueError):filesystem_errors(filesystem_root=root)
+            outside=root.parent/'outside-manifest.sha256';outside.write_text(f"{hashlib.sha256(payload).hexdigest()}  ./a.txt\n",encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'inside filesystem root'):filesystem_errors(manifest=outside,filesystem_root=root)
 
     def test_source_package_receipt_binds_zip_manifest_and_head(self):
         with tempfile.TemporaryDirectory() as td:
@@ -100,6 +102,9 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             bad_name=json.loads(json.dumps(receipt));bad_name['package_name']='..\\pkg.zip';bad_name['receipt_digest']=''
             bad_name['receipt_digest']=__import__('common').object_digest(bad_name,'receipt_digest')
             self.assertIn('source package receipt package_name invalid',validate_package_receipt(bad_name))
+            bad_count=json.loads(json.dumps(receipt));bad_count['manifest_entries']=True;bad_count['receipt_digest']=''
+            bad_count['receipt_digest']=__import__('common').object_digest(bad_count,'receipt_digest')
+            self.assertIn('source package receipt manifest_entries invalid',validate_package_receipt(bad_count))
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
