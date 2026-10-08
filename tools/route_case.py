@@ -48,16 +48,14 @@ def _frozen_cycle_policy(case_path,requested_routing=None):
 
 def _frozen_cycle_inputs(case_path,standards_refs,spec_ref,test_refs):
     cycle_root=Path(case_path).resolve().parent;trusted=cycle_root/'trusted-inputs'
-    if trusted.is_dir():
-        standards=sorted((trusted/'standards').glob('*')) if (trusted/'standards').is_dir() else []
-        tests=sorted((trusted/'tests').glob('*')) if (trusted/'tests').is_dir() else []
-        specs=sorted((trusted/'spec').glob('*')) if (trusted/'spec').is_dir() else []
-        if len(specs)>1:raise SystemExit('multiple frozen spec files found')
-        return standards,(specs[0] if specs else None),tests
-    standards=[_load_file(x,'standard ref') for x in standards_refs]
-    tests=[_load_file(x,'test ref') for x in test_refs]
-    spec=_load_file(spec_ref,'spec ref') if spec_ref else None
-    return standards,spec,tests
+    frozen_standards=sorted((trusted/'standards').glob('*')) if (trusted/'standards').is_dir() else []
+    frozen_tests=sorted((trusted/'tests').glob('*')) if (trusted/'tests').is_dir() else []
+    frozen_specs=sorted((trusted/'spec').glob('*')) if (trusted/'spec').is_dir() else []
+    if len(frozen_specs)>1:raise SystemExit('multiple frozen spec files found')
+    standards=frozen_standards if frozen_standards else [_load_file(x,'standard ref') for x in standards_refs]
+    tests=frozen_tests if frozen_tests else [_load_file(x,'test ref') for x in test_refs]
+    spec=frozen_specs[0] if frozen_specs else (_load_file(spec_ref,'spec ref') if spec_ref else None)
+    return standards,spec,tests,bool(frozen_standards)
 def _review_digest(path,level,expected,evidence_digest,head_sha,expected_policy_digest):
     p=_load_file(path,f'{level} review');obj=json.loads(p.read_text());errs=validate_stage_result(obj)
     if errs:raise SystemExit(f'{level} review invalid: '+'; '.join(errs))
@@ -166,10 +164,11 @@ def main():
     l1_path,_=_review_digest(ns.l1_ref,'L1',l1_digest,evidence['output_digest'],case['binding']['head_sha'],effective_policy_digest);l2_path=None
     if ns.l2_ref:l2_path,_=_review_digest(ns.l2_ref,'L2',l2_digest,evidence['output_digest'],case['binding']['head_sha'],effective_policy_digest)
     elif l2_digest:raise SystemExit('case contains L2 review but --l2-ref was not supplied')
-    standards,spec,tests=_frozen_cycle_inputs(case_path,ns.standards_ref,ns.spec_ref,ns.test_ref)
-    expected_standards_digest=named_files_digest([(str(x).replace('\\','/'),Path(x).resolve()) for x in standards]) if standards else object_digest([])
-    for level in ('L1','L2'):
-        if level in trail and trail[level].get('standards_digest')!=expected_standards_digest:raise SystemExit(f'{level} frozen standards digest mismatch')
+    standards,spec,tests,standards_from_cycle=_frozen_cycle_inputs(case_path,ns.standards_ref,ns.spec_ref,ns.test_ref)
+    if standards_from_cycle:
+        expected_standards_digest=named_files_digest([(str(x).replace('\\','/'),Path(x).resolve()) for x in standards])
+        for level in ('L1','L2'):
+            if level in trail and trail[level].get('standards_digest')!=expected_standards_digest:raise SystemExit(f'{level} frozen standards digest mismatch')
     base_policies=[p for p in sorted(Path(policy_dir).glob('*.yml')) if p.name!='reviewer-routing.yml']
     reasons=reasons_for(case,rsi);q=choose_queue(reasons,case.get('labels'),rsi,case.get('failure_families'));bank_parent=cb.parent;bank_parent.mkdir(parents=True,exist_ok=True);stage=Path(tempfile.mkdtemp(prefix=f'.{case["case_id"]}.stage-',dir=bank_parent))
     try:
