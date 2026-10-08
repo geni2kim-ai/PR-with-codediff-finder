@@ -399,8 +399,6 @@ def campaign_history(root,case_id,hmac_key=None):
                             if not anchor.is_file():raise ValueError('unrelated ledger anchor missing')
                             try:unrelated_anchor=json.loads(anchor.read_text())
                             except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-                            try:unrelated_anchor=json.loads(anchor.read_text())
-                            except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
                             anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(unrelated_anchor.get('hmac_sha256')) or bool(hmac_key))
                             if anchor_errs:raise ValueError('unrelated ledger invalid: '+'; '.join(anchor_errs[:8]))
                             continue
