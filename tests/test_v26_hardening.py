@@ -354,6 +354,47 @@ class RoutingFreezeTests(unittest.TestCase):
 
 
 
+class FindingTriageTests(unittest.TestCase):
+    def _repo(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup)
+        (r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        return r,base
+
+    def test_nit_is_note_only_and_does_not_invoke_l2(self):
+        r,base=self._repo();out=cycle(r,adapter(r,base),base,'TRIAGE-NIT',l1='nit',l2='pass')
+        cyc=json.loads((out/'review-cycle.json').read_text())
+        notes=json.loads((out/'review-notes.json').read_text())
+        self.assertEqual(cyc['required_level'],'L1')
+        self.assertEqual(cyc['achieved_level'],'L1')
+        self.assertEqual(cyc['state'],'COMPLETE')
+        self.assertEqual(cyc['gate_conclusion'],'success')
+        self.assertFalse((out/'l2-review.json').exists())
+        self.assertFalse(notes['auto_fix'])
+        self.assertEqual(notes['authority_effect'],'NONE')
+        self.assertEqual([x['severity'] for x in notes['items']],['nit'])
+
+    def test_minor_reviewer_escalation_is_suppressed_when_risk_is_baseline(self):
+        r,base=self._repo();out=cycle(r,adapter(r,base),base,'TRIAGE-MINOR',l1='minor-escalate',l2='pass')
+        cyc=json.loads((out/'review-cycle.json').read_text())
+        notes=json.loads((out/'review-notes.json').read_text())
+        self.assertEqual(cyc['required_level'],'L1')
+        self.assertEqual(cyc['achieved_level'],'L1')
+        self.assertEqual(cyc['gate_conclusion'],'success')
+        self.assertFalse((out/'l2-review.json').exists())
+        self.assertEqual([x['severity'] for x in notes['items']],['minor'])
+
+    def test_major_finding_requires_second_agent_review(self):
+        r,base=self._repo();out=cycle(r,adapter(r,base),base,'TRIAGE-MAJOR',l1='major',l2='major')
+        cyc=json.loads((out/'review-cycle.json').read_text())
+        notes=json.loads((out/'review-notes.json').read_text())
+        self.assertEqual(cyc['required_level'],'L2')
+        self.assertEqual(cyc['achieved_level'],'L2')
+        self.assertTrue((out/'l2-review.json').is_file())
+        self.assertFalse((out/'adversarial-review.json').exists())
+        self.assertEqual(notes['items'],[])
+        self.assertEqual(cyc['gate_conclusion'],'failure')
+
+
 class V26FollowupRegressionTests(unittest.TestCase):
     def test_runtime_fresh_session_attestation_is_fail_closed_by_default(self):
         with tempfile.TemporaryDirectory() as td:
