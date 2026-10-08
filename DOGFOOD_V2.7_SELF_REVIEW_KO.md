@@ -76,12 +76,35 @@
 - ledger/anchor/case trail bundle 재검증.
 - 하나라도 불일치하면 requeue하지 않고 fail-closed.
 
+### DF27-04 — frozen-input 우선 수정의 route-only ref 호환 회귀
+
+초기 DF27-02 수정은 `trusted-inputs/` 디렉터리가 존재하기만 하면 CLI standards/spec/test refs를 전부 무시했다.
+
+기존 regression 결과:
+- cycle에 해당 타입의 frozen input이 없고 route 단계에서만 ref를 추가하는 기존 경로가 비어 버림.
+- 존재하지 않는 mutable standard ref를 fail-closed 하던 기존 테스트도 우회.
+
+보완:
+- 각 input 타입별로 **실제 frozen file이 존재할 때만** cycle snapshot을 우선.
+- frozen file이 없는 타입은 기존 CLI ref 검증/freeze 동작 유지.
+- standards provenance 비교는 cycle에 frozen standards가 실제 존재한 경우에만 적용.
+
 ## 추가 정합성 보완
 
 - case-bank policy index marker를 v2.7로 갱신.
 - dogfood 발견사항은 각각 executable regression으로 고정.
-- 최신 HEAD 검증이 완료된 뒤에만 manifest/validated package를 다시 생성한다.
+- meaningful hardening closeout에서 dogfood+fix를 기본 작업 규칙으로 추가.
+
+## 검증 결과
+
+최신 dogfood+fix code HEAD의 canonical push validation:
+- package hygiene: PASS
+- Git-blob manifest: **234 entries PASS**
+- harness: **129 PASS / 71 isolated groups**
+- vendored TextDiffChecker: **144 PASS / 1 GUI skip**
+- DIFF-FALSE-EXACT: PASS
+- `ALL VALIDATIONS PASS (FULL)`
 
 ## 최종 판정
 
-최종 CI/manifest/package 결과는 closeout HEAD에서 별도 기록한다. 이 문서는 dogfood에서 **무엇을 실제 재현했고 어떻게 코드로 흡수했는지**를 기록하는 evidence 문서다.
+세 가지 실제 runtime/downstream 결함과 한 가지 fix-induced compatibility regression을 같은 v2.7 candidate에서 보완했다. 최종 committed manifest와 clean-extracted package 검증은 closeout HEAD에서 다시 수행한다.
