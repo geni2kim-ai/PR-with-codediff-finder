@@ -1,5 +1,5 @@
 from __future__ import annotations
-import copy, hashlib, json, os, shutil, subprocess, sys, tempfile, time, unittest
+import copy, hashlib, json, os, shutil, subprocess, sys, tempfile, threading, time, unittest
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -558,6 +558,22 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         with case_ledger.ledger_lock(lock_target,timeout=1.0):
             cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
         self.assertEqual(cp.returncode,0,cp.stderr);self.assertTrue((out/'case-events.jsonl').is_file())
+
+    def test_shared_root_history_waits_for_unrelated_ledger_append_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ledger=root/'case-events.jsonl';anchor_path=root/'case-events.anchor.json'
+            case_ledger.append_event(ledger,'LOCKED-CASE-A','CASE_OPENED',{'head_sha':'a'*40},anchor_path=anchor_path)
+            original_ledger=ledger.read_bytes();original_anchor=anchor_path.read_bytes();result={}
+            with case_ledger.ledger_lock(ledger,timeout=1.0):
+                ledger.write_text('{"partial":',encoding='utf-8')
+                def reader():
+                    try:result['history']=campaign_history(root,'LOCKED-CASE-B')
+                    except Exception as exc:result['error']=exc
+                t=threading.Thread(target=reader);t.start();time.sleep(0.15)
+                self.assertTrue(t.is_alive(),'history reader ignored ledger append lock and consumed a partial write')
+                ledger.write_bytes(original_ledger);anchor_path.write_bytes(original_anchor)
+            t.join(3.0);self.assertFalse(t.is_alive())
+            self.assertNotIn('error',result);self.assertEqual(result.get('history'),[])
 
     def test_unrelated_hmac_case_does_not_block_shared_root_case(self):
         r,base=self._repo();out=r/'campaign-shared-hmac';ev=adapter(r,base)
