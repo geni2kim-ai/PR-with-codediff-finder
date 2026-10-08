@@ -11,6 +11,7 @@ from validate_textdiff_evidence import semantic_errors as evidence_errors
 from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
+from validate_case_bundle import errors as case_bundle_errors
 from case_ledger import append_event
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
@@ -339,28 +340,55 @@ def material_finding_key(f):
            'path':str(f.get('path') or '').strip() or None}
     return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
 
-def campaign_history(root,case_id):
+def _trail_authoritative_material(case):
+    trail=[r for r in case.get('review_trail',[]) if r.get('level') in {'L1','L2','ADVERSARIAL'}]
+    if not trail:return [],0
+    level_rank={'L1':1,'L2':2,'ADVERSARIAL':3}
+    row=max(trail,key=lambda r:level_rank[r.get('level')])
+    keys=[str(x) for x in (row.get('material_finding_keys') or [])]
+    if not keys and 'material_finding_keys' not in row:
+        keys=['family:'+str(x) for x in (row.get('finding_families') or [])]
+    count=int(row.get('material_finding_count',len(keys)))
+    return sorted(set(keys)),count
+
+def campaign_history(root,case_id,hmac_key=None):
     root=Path(root);dirs=[]
     if (root/'case-record.json').is_file():dirs.append(root)
     if root.is_dir():dirs.extend(sorted(p for p in root.glob('attempt-*') if p.is_dir() and (p/'case-record.json').is_file()))
-    out=[]
+    out=[];derived_attempt=0;previous=None
     for d in dirs:
-        try:case=json.loads((d/'case-record.json').read_text())
-        except Exception:continue
-        if case.get('case_id')!=case_id:continue
-        keys=set();material_count=0
-        for row in case.get('review_trail',[]):
-            material_count+=int(row.get('material_finding_count',len(row.get('finding_families',[]))))
-            for key in row.get('material_finding_keys',[]):keys.add(str(key))
-            if 'material_finding_keys' not in row:
-                for fam in row.get('finding_families',[]):keys.add('family:'+str(fam))
-        state=None
-        try:state=json.loads((d/'review-cycle.json').read_text()).get('state')
-        except Exception:pass
-        campaign=case.get('review_campaign') if isinstance(case.get('review_campaign'),dict) else {}
-        try:attempt_index=int(campaign.get('attempt_index'))
-        except Exception:attempt_index=len(out)+1
-        out.append({'dir':str(d.resolve()),'head_sha':case.get('binding',{}).get('head_sha'),'state':state,'material_count':material_count,'material_keys':sorted(keys),'attempt_index':attempt_index})
+        try:
+            case=json.loads((d/'case-record.json').read_text())
+            if case.get('case_id')!=case_id:continue
+            ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json'
+            if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
+            anchor_obj=json.loads(anchor.read_text())
+            errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
+            if errs:raise ValueError('case_bundle_invalid: '+'; '.join(errs[:8]))
+            from case_ledger import load_events
+            events=load_events(ledger);opened=[e for e in events if e.get('event_type')=='CASE_OPENED'];closed=[e for e in events if e.get('event_type')=='CYCLE_CLOSED']
+            if not opened or not closed:raise ValueError('campaign ledger missing CASE_OPENED/CYCLE_CLOSED')
+            head_sha=opened[-1].get('payload',{}).get('head_sha')
+            payload=closed[-1].get('payload',{});state=payload.get('state')
+            if not state:raise ValueError('campaign CYCLE_CLOSED state missing')
+            anchored_keys=payload.get('current_material_finding_keys')
+            if anchored_keys is not None:
+                if not isinstance(anchored_keys,list) or not all(isinstance(x,str) and x for x in anchored_keys):raise ValueError('campaign material keys invalid')
+                keys=sorted(set(anchored_keys));material_count=len(keys)
+            else:
+                keys,material_count=_trail_authoritative_material(case)
+            if previous is None:derived_attempt=1
+            elif not (previous.get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'} and previous.get('head_sha')==head_sha):
+                derived_attempt+=1
+            anchored_attempt=payload.get('attempt_index')
+            if anchored_attempt is not None:
+                try:anchored_attempt=int(anchored_attempt)
+                except Exception:raise ValueError('campaign attempt_index invalid')
+                if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
+            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt})
+            previous=out[-1]
+        except Exception as exc:
+            raise ValueError(f'{d}: {type(exc).__name__}: {exc}') from exc
     return out
 
 def authoritative_material_keys(stage_rows,esc_cfg=None):
@@ -467,7 +495,9 @@ def choose_out_dir(raw,retry):
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--repo',required=True);ap.add_argument('--evidence',required=True);ap.add_argument('--expected-base',required=True);ap.add_argument('--case-id',required=True);ap.add_argument('--output-dir',required=True);ap.add_argument('--retry',action='store_true');ap.add_argument('--l1-cmd-json');ap.add_argument('--l2-cmd-json');ap.add_argument('--adversarial-cmd-json');ap.add_argument('--routing-policy',default=str(ROOT/'policy/reviewer-routing.yml'));ap.add_argument('--runtime-attestation');ap.add_argument('--standards-ref',action='append',default=[]);ap.add_argument('--spec-ref');ap.add_argument('--test-ref',action='append',default=[]);ap.add_argument('--disable-random-audit',action='store_true');ns=ap.parse_args()
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',ns.case_id):raise SystemExit('unsafe case_id')
-    repo=Path(ns.repo).resolve();campaign_root=Path(ns.output_dir);history=campaign_history(campaign_root,ns.case_id)
+    repo=Path(ns.repo).resolve();campaign_root=Path(ns.output_dir)
+    try:history=campaign_history(campaign_root,ns.case_id,os.environ.get('MAESTRO_LEDGER_HMAC_KEY'))
+    except Exception as exc:raise SystemExit('review campaign history invalid: '+str(exc))
     bootstrap_campaign=load_yaml(ROOT/'policy/limits.yml').get('review_campaign',{})
     max_attempts=int(bootstrap_campaign.get('max_automated_attempts',3));repeat_limit=int(bootstrap_campaign.get('same_material_finding_repeat_limit',2))
     if max_attempts<1 or max_attempts>5:raise SystemExit('review campaign max_automated_attempts must be between 1 and 5')
@@ -710,7 +740,7 @@ def main():
         from case_ledger import load_events,validate_anchor
         ledger_ok=not validate_anchor(ledger,anchor,load_events(ledger),ns.case_id,ledger_key,require_hmac=(mode=='ENFORCED'))
         cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage,esc_cfg);write_json(out/'review-cycle.json',cyc)
-        ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
+        ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion'],'attempt_index':attempt_index,'current_material_finding_keys':current_material_keys,'review_budget_digest':budget['budget_digest']})
         if state=='ADVERSARIAL_REQUIRED':
             q=choose_queue(reasons,labels,None,families);packet={'schema_version':'2.4','case_id':case['case_id'],'binding':case['binding'],'queue':q,'escalation_reasons':sorted(set(reasons or ['POLICY_ESCALATION'])),
               'refs':{'textdiff_evidence':str(frozen.resolve()),'deterministic_policy':str(effective_policy_dir.resolve()),'l1_review':str((out/'l1-review.json').resolve()),'l2_review':str((out/'l2-review.json').resolve()) if (out/'l2-review.json').exists() else None,'trusted_standards':frozen_standards,'spec_ref':frozen_spec,'test_results':frozen_tests},
