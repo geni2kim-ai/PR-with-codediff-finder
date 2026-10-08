@@ -50,6 +50,7 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - A completed material review cannot be rerun on an unchanged HEAD.
 - Retry history is fail-closed: prior case/ledger/anchor integrity must validate before it can affect attempt count or resume state. Historical state comes from the anchored `CYCLE_CLOSED` event, and newer v2.7 events also bind logical attempt index plus authoritative material keys.
 - A crash/interruption before `CYCLE_CLOSED` does not discard already-completed reviewer work. If the partial ledger/anchor and prior task/result pair validate and the HEAD is unchanged, SHADOW may reuse the completed stage instead of invoking the reviewer again. If the HEAD changed after reviewer work completed, that interrupted reviewed attempt still counts toward the logical campaign attempt budget.
+- Reviewer execution failures such as timeout, process exit, oversized output/stderr, invalid JSON/result, or unsafe output are execution-retry events rather than source-remediation events. On the same HEAD they may resume the same logical attempt and reuse compatible lower stages, but every real worker invocation still consumes the campaign-wide worker-invocation ceiling.
 - Lower-stage material findings cleared by the highest completed machine authority stage do not remain remediation-budget findings when campaign history is reloaded.
 - The review budget never lowers deterministic authority floors.
 
