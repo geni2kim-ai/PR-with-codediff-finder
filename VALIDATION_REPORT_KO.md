@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **124 PASS / 68 isolated groups**
+- 합계: **125 PASS / 68 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 124 PASS (groups=68, sequential)`
+- `harness isolated tests: 125 PASS (groups=68, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -70,6 +70,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 6. source-package receipt는 exact HEAD, ZIP SHA-256, manifest SHA-256, manifest entry count 및 clean-extract/full-validation 상태를 묶는다.
 7. receipt semantic validator는 schema와 같은 exact field/name/type 규칙을 적용하고 `authority_effect=NONE`을 유지한다.
 8. HUMAN replay 문구는 구현보다 넓은 “global one-time nonce” 주장으로 읽히지 않도록 exact signed-attestation replay 범위로 정정했다.
+9. tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`가 source package에 봉인되지 않도록 package hygiene gate와 회귀 테스트를 추가했다.
 
 ## 최신 외부 feedback 대조
 
