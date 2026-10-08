@@ -294,3 +294,53 @@ campaign history를 ledger/anchor 기반으로 강화한 뒤 canonical regressio
 
 이 수정으로 **shared immutable output root의 case isolation**을 유지하면서, 다른 case를 현재 campaign 이력으로 잘못 해석하는 회귀를 제거했다. 기존 `test_reviewer_failure_is_audited_and_retry_gets_new_attempt`가 이 경계를 다시 검증한다.
 
+### 10. reviewer가 시작된 뒤 완료/실패 event 이전에 harness가 죽으면 worker ceiling을 우회
+
+worker invocation ceiling을 ledger의 `REVIEW_COMPLETED`와 `REVIEW_FAILED`만으로 계산하면 다음 경계가 남는다.
+
+반례:
+1. worker process가 실제 시작
+2. 모델이 토큰/시간을 소비
+3. harness 또는 host가 worker 종료 결과를 ledger에 쓰기 전에 중단
+4. 다음 실행에서 completed/failed event가 없으므로 이전 호출을 0회로 계산
+
+이 중단을 반복하면 logical attempt는 증가하지 않으면서 실제 worker 비용만 계속 발생하여 9회 hard ceiling을 우회할 수 있었다.
+
+보완:
+- worker process를 호출하기 **직전** ledger에 `REVIEW_STARTED`를 기록한다.
+- event에는 level, task ID/digest, logical attempt index, campaign worker invocation index를 포함한다.
+- `REVIEW_STARTED`가 존재하는 신규 ledger는 실제 invocation 수를 start event 개수로 계산한다.
+- 기존 v2.7 ledger는 backward compatibility를 위해 `REVIEW_COMPLETED(non-reuse) + REVIEW_FAILED` 방식으로 계산한다.
+- process 생성 자체가 실패해도 이미 start attempt를 사용한 것으로 보수적으로 계산한다.
+- review budget에 `campaign_worker_invocation_ceiling`과 `campaign_worker_invocations_used`를 명시하여 실제 사용량을 확인할 수 있게 했다.
+
+회귀:
+- L1 `REVIEW_STARTED` 직후 crash 상태를 수동 재현 → worker invocation 1로 복구
+- started-only crash를 9회 누적 → 10번째 reviewer 시작 전 차단
+- same-HEAD 재개에서는 remediation attempt 1 유지
+
+### 11. 완료 event 없이 남은 result 파일을 SHADOW reuse가 신뢰할 수 있는 문제
+
+`record_stage()`는 review result 파일을 먼저 저장하고 이후 `REVIEW_COMPLETED` ledger event를 쓴다. 따라서 result 파일 저장 직후 중단될 수 있다.
+
+기존 `reusable_stage_result()`는 task/result schema와 provenance가 맞으면 파일을 재사용했기 때문에, ledger상 완료되지 않은 partial result도 reuse 후보가 될 수 있었다.
+
+보완:
+- result reuse에 기존 task/result/provenance 검증을 모두 유지한다.
+- 추가로 previous ledger/anchor가 유효해야 한다.
+- 같은 level과 정확한 `result_digest`를 가진 `REVIEW_COMPLETED` event가 존재해야만 reuse한다.
+- started-only 상태에서 result 파일이 남아 있어도 완료 증거가 없으면 reviewer를 다시 실행한다.
+- 이전 started invocation은 worker ceiling에는 이미 1회로 남으므로 중복 실행이 무한히 무료가 되지 않는다.
+
+### 12. worker executable 시작 실패가 일반 HARNESS_EXCEPTION으로 분류되는 문제
+
+존재하지 않는 executable, OS process-create 오류 등 `subprocess.Popen()` 자체의 실패는 기존 `ReviewerExecutionError` 경로를 타지 않아 일반 harness exception으로 처리될 수 있었다.
+
+보완:
+- process-create `OSError`를 `PROCESS_START` reviewer execution failure로 변환한다.
+- ledger에는 `REVIEW_STARTED` + `REVIEW_FAILED(kind=PROCESS_START)`가 남는다.
+- 동일 HEAD에서는 execution retry로 취급하여 logical remediation attempt를 증가시키지 않는다.
+- 실제 호출 시도는 worker invocation ceiling 1회를 소비한다.
+
+결과적으로 reviewer 비용 관리는 이제 **시작 시점(start), 결과 확정(completed/failed), stage 재사용(completion proof)** 세 경계가 ledger로 연결된다.
+
