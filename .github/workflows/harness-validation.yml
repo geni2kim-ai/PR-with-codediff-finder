@@ -75,7 +75,12 @@ jobs:
 
       - name: Build validated v2.7 source package
         if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
-        run: git archive --format=zip --prefix=PR-with-codediff-finder-v2.7/ -o PR-with-codediff-finder-v2.7.zip HEAD
+        run: |
+          python tools/build_source_package.py \
+            --repo . \
+            --git-ref HEAD \
+            --prefix PR-with-codediff-finder-v2.7/ \
+            --output PR-with-codediff-finder-v2.7.zip
 
       - name: Verify clean-extracted v2.7 package
         if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
