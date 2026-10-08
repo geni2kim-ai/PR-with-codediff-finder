@@ -19,6 +19,7 @@ from queue_policy import choose_queue
 
 LEVELS=['SENSOR','L1','L2','ADVERSARIAL','HUMAN'];REVIEW_LEVELS=['L1','L2','ADVERSARIAL','HUMAN'];ZERO='0'*64
 CAMPAIGN_RESUMABLE_STATES={'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED','INTERRUPTED_EMPTY','INTERRUPTED_REVIEW'}
+RESUMABLE_REVIEW_FAILURES={'REVIEW_TIMEOUT','REVIEW_OUTPUT_LIMIT','REVIEW_STDERR_LIMIT','REVIEW_PROCESS_EXIT','REVIEW_INVALID_JSON','REVIEW_UNSAFE_OUTPUT','REVIEW_INVALID_RESULT'}
 
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 
@@ -389,8 +390,11 @@ def campaign_history(root,case_id,hmac_key=None):
             else:
                 state='INTERRUPTED_REVIEW' if completed else 'INTERRUPTED_EMPTY'
                 keys,material_count=_trail_authoritative_material(case) if case is not None else ([],0)
+            blocked=[e for e in events if e.get('event_type')=='CYCLE_BLOCKED']
+            failure_kind=blocked[-1].get('payload',{}).get('failure_kind') if blocked else None
+            resumable=state in CAMPAIGN_RESUMABLE_STATES or (state=='BLOCKED' and failure_kind in RESUMABLE_REVIEW_FAILURES)
             if previous is None:derived_attempt=1
-            elif not (previous.get('state') in CAMPAIGN_RESUMABLE_STATES and previous.get('head_sha')==head_sha):
+            elif not (previous.get('resumable') and previous.get('head_sha')==head_sha):
                 derived_attempt+=1
             if closed:
                 payload=closed[-1].get('payload',{});anchored_attempt=payload.get('attempt_index')
@@ -399,7 +403,7 @@ def campaign_history(root,case_id,hmac_key=None):
                     except Exception:raise ValueError('campaign attempt_index invalid')
                     if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
             worker_invocations=sum(1 for e in events if e.get('event_type')=='REVIEW_FAILED')+sum(1 for e in completed if not e.get('payload',{}).get('reused_from_previous_attempt',False))
-            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed),'worker_invocations':worker_invocations})
+            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed),'worker_invocations':worker_invocations,'resumable':resumable,'failure_kind':failure_kind})
             previous=out[-1]
         except Exception as exc:
             raise ValueError(f'{d}: {type(exc).__name__}: {exc}') from exc
@@ -528,7 +532,7 @@ def main():
         if historical_worker_invocations>=max_worker_invocations:
             raise SystemExit('review campaign worker invocation budget exhausted; HUMAN/owner decision required')
         current_head=git_resolve(repo,'HEAD')
-        continuing_authority_path=last.get('state') in CAMPAIGN_RESUMABLE_STATES and current_head==last.get('head_sha')
+        continuing_authority_path=bool(last.get('resumable')) and current_head==last.get('head_sha')
         if not continuing_authority_path and last_attempt_index>=max_attempts:
             raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
@@ -669,7 +673,7 @@ def main():
         if hits['governance']:labels.add('governance')
         if mode=='SHADOW':labels.add('shadow_only')
         resume_dir=None
-        if ns.retry and history and history[-1].get('head_sha')==head and history[-1].get('state') in CAMPAIGN_RESUMABLE_STATES:
+        if ns.retry and history and history[-1].get('head_sha')==head and history[-1].get('resumable'):
             resume_dir=Path(history[-1]['dir'])
         def record_stage(level,task,r,filename,reused=False):
             nonlocal achieved,current_stage
