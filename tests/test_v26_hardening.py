@@ -440,11 +440,11 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
     def test_budget_evaluator_bounds_same_and_new_material_findings(self):
         history=[{'state':'COMPLETE','material_keys':['family:MOCK-MAJOR']}]
         same=evaluate_review_budget(history,['family:MOCK-MAJOR'],2,3,2)
-        self.assertEqual(same['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(same['automated_retry_allowed'])
+        self.assertEqual(same['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(same['automated_remediation_retry_allowed'])
         new=evaluate_review_budget(history,['family:OTHER-MAJOR'],2,3,2)
-        self.assertIsNone(new['stop_reason']);self.assertTrue(new['automated_retry_allowed'])
+        self.assertIsNone(new['stop_reason']);self.assertTrue(new['automated_remediation_retry_allowed'])
         final=evaluate_review_budget(history,['family:THIRD-MAJOR'],3,3,2)
-        self.assertEqual(final['stop_reason'],'AUTOMATED_ATTEMPT_LIMIT');self.assertFalse(final['automated_retry_allowed'])
+        self.assertEqual(final['stop_reason'],'AUTOMATED_ATTEMPT_LIMIT');self.assertFalse(final['automated_remediation_retry_allowed'])
 
     def test_note_only_closeout_cannot_start_retry_loop(self):
         r,base=self._repo();case='BUDGET-NOTE';out=r/'campaign-note';ev=adapter(r,base)
@@ -466,7 +466,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertEqual(cp.returncode,0,cp.stderr);attempt=Path(cp.stdout.strip())
         cyc=json.loads((attempt/'review-cycle.json').read_text());budget=json.loads((attempt/'review-budget.json').read_text())
         self.assertEqual(cyc['state'],'HUMAN_REQUIRED');self.assertIn('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT',cyc['escalation_reasons'])
-        self.assertEqual(budget['attempt_index'],2);self.assertEqual(budget['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(budget['automated_retry_allowed'])
+        self.assertEqual(budget['attempt_index'],2);self.assertEqual(budget['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(budget['automated_remediation_retry_allowed'])
         schema=json.loads((ROOT/'schemas/review-budget.schema.json').read_text());self.assertEqual(list(Draft202012Validator(schema).iter_errors(budget)),[])
         self.assertEqual(len(campaign_history(out,case)),2)
 
@@ -477,7 +477,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         ev2=adapter(r,base);cp=self._retry(r,base,case,out,ev2,l1='pass',l2='pass')
         self.assertEqual(cp.returncode,0,cp.stderr);attempt=Path(cp.stdout.strip())
         cyc=json.loads((attempt/'review-cycle.json').read_text());budget=json.loads((attempt/'review-budget.json').read_text())
-        self.assertEqual(cyc['state'],'COMPLETE');self.assertEqual(cyc['gate_conclusion'],'success');self.assertEqual(budget['stop_reason'],'NO_MATERIAL_FINDINGS');self.assertFalse(budget['automated_retry_allowed'])
+        self.assertEqual(cyc['state'],'COMPLETE');self.assertEqual(cyc['gate_conclusion'],'success');self.assertEqual(budget['stop_reason'],'NO_MATERIAL_FINDINGS');self.assertFalse(budget['automated_remediation_retry_allowed'])
         cp2=self._retry(r,base,case,out,ev2,l1='pass')
         self.assertNotEqual(cp2.returncode,0);self.assertIn('already closed without material findings',cp2.stderr+cp2.stdout)
 
