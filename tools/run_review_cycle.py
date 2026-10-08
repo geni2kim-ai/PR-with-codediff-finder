@@ -543,9 +543,18 @@ def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mo
     c={'schema_version':'2.4','case_id':case_id,'binding':binding,'sensor':{'evidence_digest':evidence.get('output_digest',ZERO),'quality_class':evidence.get('summary',{}).get('quality_class','NOT_APPLICABLE'),'trusted_for_gate':bool(evidence.get('trust',{}).get('trusted_for_gate'))},'stages':stages,'required_level':required,'achieved_level':achieved,'state':state,'gate_conclusion':'','escalation_reasons':sorted(set(reasons)),'current_head_verified':state!='STALE','execution_mode':mode,'gate_effective':mode=='ENFORCED','evidence_git_verified':git_ok,'evidence_recomputed_verified':recomputed_ok,'worktree_clean_verified':worktree_ok,'ledger_anchor_verified':ledger_ok,'cycle_digest':''}
     c['gate_conclusion']=cycle_gate(state,required,achieved,current_stage,esc_cfg);c['cycle_digest']=object_digest(c,'cycle_digest');return c
 
+def campaign_control_path(root,kind,case_id=None):
+    base=Path(tempfile.gettempdir())/'codediff-finder-campaign-locks'
+    base.mkdir(mode=0o700,parents=True,exist_ok=True)
+    try:os.chmod(base,0o700)
+    except OSError:pass
+    root_token=sha256_bytes(str(Path(root).resolve()).encode('utf-8'))[:24]
+    case_token=('-'+sha256_bytes(case_id.encode('utf-8'))[:16]) if case_id is not None else ''
+    return base/f'{root_token}-{kind}{case_token}'
+
 def choose_out_dir(raw,retry):
     root=Path(raw).resolve();root.parent.mkdir(parents=True,exist_ok=True)
-    allocation_target=root.parent/(root.name+'.allocation-control')
+    allocation_target=campaign_control_path(root,'allocation')
     try:
         with ledger_lock(allocation_target,timeout=1.0):
             root.mkdir(parents=True,exist_ok=True)
@@ -563,8 +572,7 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--repo',required=True);ap.add_argument('--evidence',required=True);ap.add_argument('--expected-base',required=True);ap.add_argument('--case-id',required=True);ap.add_argument('--output-dir',required=True);ap.add_argument('--retry',action='store_true');ap.add_argument('--l1-cmd-json');ap.add_argument('--l2-cmd-json');ap.add_argument('--adversarial-cmd-json');ap.add_argument('--routing-policy',default=str(ROOT/'policy/reviewer-routing.yml'));ap.add_argument('--runtime-attestation');ap.add_argument('--standards-ref',action='append',default=[]);ap.add_argument('--spec-ref');ap.add_argument('--test-ref',action='append',default=[]);ap.add_argument('--disable-random-audit',action='store_true');ns=ap.parse_args()
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',ns.case_id):raise SystemExit('unsafe case_id')
     repo=Path(ns.repo).resolve();campaign_root=Path(ns.output_dir).resolve()
-    case_lock_token=sha256_bytes(ns.case_id.encode('utf-8'))[:16]
-    campaign_lock_target=campaign_root.parent/(campaign_root.name+'.case-'+case_lock_token+'-control')
+    campaign_lock_target=campaign_control_path(campaign_root,'case',ns.case_id)
     campaign_guard=ledger_lock(campaign_lock_target,timeout=1.0)
     try:campaign_guard.__enter__()
     except TimeoutError:raise SystemExit('review campaign case already active; concurrent execution for the same case is not allowed')
