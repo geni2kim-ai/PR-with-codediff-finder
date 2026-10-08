@@ -20,6 +20,7 @@
 | 16 | source ZIP 자체와 exact HEAD/manifest를 묶는 machine-readable 외부 binding이 없음 | source-package receipt에 HEAD, ZIP SHA-256, manifest SHA-256, entry count, clean-extract/full-validation claims를 바인딩; `authority_effect=NONE` | 해결 |
 | 17 | source-package receipt semantic validator가 schema보다 느슨한 package-name/int 타입을 허용할 수 있음 | exact package-name regex + bool-as-int 차단 + negative regression | 해결 |
 | 18 | generated pytest/Python cache가 Git에 추적되면 `git archive`와 manifest가 그대로 봉인할 수 있음 (R9B.4.1 generalization) | package hygiene gate로 `.pytest_cache`/`__pycache__`/`*.pyc`/`*.pyo` tracked artifact를 manifest 생성 전 차단 | 해결 |
+| 19 | `git archive --format=zip` 결과를 clean-extract했을 때 vendor text files가 Git blob manifest와 byte-level mismatch | archive 변환 경로를 제거하고 `git show HEAD:path` exact blob bytes를 직접 ZIP에 기록하는 builder로 교체 + mixed-newline regression | 해결 |
 
 ## v2.7 검수 원칙
 
