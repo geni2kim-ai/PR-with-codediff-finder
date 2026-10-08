@@ -49,3 +49,9 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - self-dogfood 후속: review 후 standards/spec/test 원본 변조가 adversarial packet에 반영되던 TOCTOU를 제거하고 `trusted-inputs/`를 downstream authority로 사용.
 - self-dogfood 후속: 손상된 immutable case-bank를 recovery가 재검증 없이 requeue하던 경로를 fail-closed.
 - frozen-input 우선 처리에서 route-only refs 호환성이 깨진 회귀를 기존 테스트로 발견해 타입별 fallback으로 보완.
+
+- finding triage 추가: `minor/nit`는 NOTE_ONLY로 기록하고 같은 closeout에서 자동 수정하지 않음.
+- L1 `major` finding은 최소 L2 agent review를 요구하고 `blocker`는 기존 adversarial/higher escalation 유지.
+- NOTE_ONLY finding은 `review-notes.json`에 `auto_fix=false`, `authority_effect=NONE`으로 저장.
+- NOTE_ONLY만 있는 L1 FINDINGS와 L2 PASS는 material disagreement로 보지 않아 불필요한 adversarial loop를 차단.
+- deterministic risk/protected-path floor 및 random audit는 finding triage보다 독립적으로 유지.
