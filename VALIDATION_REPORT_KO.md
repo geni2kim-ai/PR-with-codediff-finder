@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **126 PASS / 68 isolated groups**
+- 합계: **129 PASS / 71 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 126 PASS (groups=68, sequential)`
+- `harness isolated tests: 129 PASS (groups=71, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -73,6 +73,15 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 9. tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`가 source package에 봉인되지 않도록 package hygiene gate와 회귀 테스트를 추가했다.
 10. `git archive --format=zip` clean-extract에서 vendor 텍스트 바이트가 Git blob과 달라지는 것을 실제 검출했고, package builder를 exact Git blob byte 기반 ZIP 생성기로 교체했다.
 11. CRLF/LF 혼합 fixture를 ZIP에 넣어 Git blob bytes가 그대로 보존되는 회귀 테스트를 추가했다.
+
+## v2.7 self-dogfood 후속
+
+- baseline dogfood module: 10 PASS.
+- live policy mutation after review no longer changes/fails downstream routing; route consumes frozen `effective-policy/`.
+- live standards/spec/test mutation after review no longer enters the adversarial packet; route consumes frozen `trusted-inputs/`.
+- corrupted case-bank refs are revalidated before recovery requeue and fail closed on mismatch.
+- route-only refs remain supported when no reviewed frozen file exists, preventing the freeze fix from weakening legacy routing behavior.
+- dogfood+fix regressions increased the harness suite to **129 PASS / 71 isolated groups**.
 
 ## 최신 외부 feedback 대조
 
