@@ -543,6 +543,21 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             d=out/f'attempt-{i:04d}';d.mkdir()
             for p in files:shutil.copy2(p,d/p.name)
 
+    def test_reviewer_execution_failure_resume_reuses_lower_stage_without_new_remediation_attempt(self):
+        r,base=self._repo();case='BUDGET-REVIEW-FAIL-RESUME';out=r/'campaign-review-fail-resume';ev=adapter(r,base)
+        with tempfile.TemporaryDirectory() as td:
+            counter=Path(td)/'count.txt';worker=Path(td)/'counting_major.py'
+            worker.write_text("import pathlib,subprocess,sys\np=pathlib.Path("+repr(str(counter))+")\nn=int(p.read_text()) if p.exists() else 0\np.write_text(str(n+1))\ncp=subprocess.run([sys.executable,"+repr(str(ROOT/'tools/mock_reviewer.py'))+",'--mode','major'],input=sys.stdin.read(),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\nsys.stdout.write(cp.stdout);sys.stderr.write(cp.stderr);raise SystemExit(cp.returncode)\n")
+            l1cmd=json.dumps([sys.executable,str(worker)])
+            args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',l1cmd,'--l2-cmd-json',cmdjson('exit-fail'),'--disable-random-audit']
+            first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+            self.assertEqual(counter.read_text(),'1');self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'BLOCKED')
+            hist=campaign_history(out,case);self.assertTrue(hist[-1]['resumable']);self.assertEqual(hist[-1]['failure_kind'],'REVIEW_PROCESS_EXIT');self.assertEqual(hist[-1]['attempt_index'],1);self.assertEqual(hist[-1]['worker_invocations'],2)
+            retry=[cmdjson('major') if x==cmdjson('exit-fail') else x for x in args]+['--retry']
+            second=subprocess.run(retry,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(second.returncode,0,second.stderr)
+            d2=Path(second.stdout.strip());budget=json.loads((d2/'review-budget.json').read_text());casej=json.loads((d2/'case-record.json').read_text())
+            self.assertEqual(counter.read_text(),'1');self.assertEqual(budget['attempt_index'],1);self.assertEqual(budget['reused_agent_stages'],1);self.assertIn('lower_stage_reused',casej['labels'])
+
     def test_campaign_wide_worker_invocation_ceiling_blocks_retry_before_rerun(self):
         r,base=self._repo();case='BUDGET-WORKER-CEILING';out=r/'campaign-worker-ceiling';ev=adapter(r,base)
         args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
