@@ -16,6 +16,8 @@
     "reused_agent_stages",
     "per_stage_timeout_seconds",
     "current_attempt_worker_timeout_budget_seconds",
+    "campaign_worker_invocation_ceiling",
+    "campaign_worker_invocations_used",
     "campaign_worker_timeout_ceiling_seconds",
     "current_material_finding_keys",
     "repeated_material_finding_keys",
@@ -61,6 +63,14 @@
       "minimum": 1
     },
     "current_attempt_worker_timeout_budget_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "campaign_worker_invocation_ceiling": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "campaign_worker_invocations_used": {
       "type": "integer",
       "minimum": 0
     },
