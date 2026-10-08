@@ -575,7 +575,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             t.join(3.0);self.assertFalse(t.is_alive())
             self.assertNotIn('error',result);self.assertEqual(result.get('history'),[])
 
-    def test_unrelated_hmac_case_does_not_block_shared_root_case(self):
+    def test_unrelated_hmac_case_without_key_blocks_shared_root_case(self):
         r,base=self._repo();out=r/'campaign-shared-hmac';ev=adapter(r,base)
         case_a='SHARED-HMAC-A';case_b='SHARED-HMAC-B'
         args_a=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case_a,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
@@ -583,9 +583,8 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertEqual(cp_a.returncode,0,cp_a.stderr);self.assertTrue(json.loads((out/'case-events.anchor.json').read_text())['hmac_sha256'])
         args_b=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case_b,'--output-dir',str(out),'--retry','--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
         cp_b=subprocess.run(args_b,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
-        self.assertEqual(cp_b.returncode,0,cp_b.stderr);bdir=Path(cp_b.stdout.strip())
-        self.assertEqual(json.loads((bdir/'review-cycle.json').read_text())['state'],'COMPLETE')
-        hist=campaign_history(out,case_b);self.assertEqual(len(hist),1);self.assertEqual(hist[0]['attempt_index'],1)
+        self.assertNotEqual(cp_b.returncode,0);self.assertIn('HMAC key unavailable',cp_b.stderr+cp_b.stdout)
+        self.assertFalse((out/'attempt-0001'/'case-events.jsonl').exists())
 
     def test_shared_root_with_active_hmac_authority_rejects_different_unrelated_key(self):
         r,base=self._repo();out=r/'campaign-shared-hmac-authority';ev=adapter(r,base)
@@ -607,10 +606,12 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             e['case_id']='HMAC-RELABEL-B';e['prev_hash']=prev;e['event_hash']='';e['event_hash']=object_digest(e,'event_hash');prev=e['event_hash']
         ledger.write_text(''.join(json.dumps(e,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n' for e in events),encoding='utf-8')
         a=json.loads(anchorp.read_text());a['case_id']='HMAC-RELABEL-B';a['seq']=len(events);a['event_hash']=events[-1]['event_hash'];a['ledger_sha256']=sha256_file(ledger);anchorp.write_text(json.dumps(a))
+        with self.assertRaisesRegex(ValueError,'HMAC key unavailable'):
+            campaign_history(out,case)
         with self.assertRaisesRegex(ValueError,'HMAC mismatch'):
             campaign_history(out,case,key)
 
-    def test_unrelated_pending_hmac_transaction_is_not_recovered_or_blocking(self):
+    def test_unrelated_pending_hmac_transaction_without_key_fails_closed_without_mutation(self):
         r,base=self._repo();out=r/'campaign-shared-pending';out.mkdir();ev=adapter(r,base)
         ledger=out/'case-events.jsonl';anchorp=out/'case-events.anchor.json';txp=case_ledger.pending_append_path(ledger)
         original_write_anchor=case_ledger.write_anchor
@@ -625,9 +626,9 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         case_b='SHARED-PENDING-B'
         args_b=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case_b,'--output-dir',str(out),'--retry','--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
         cp_b=subprocess.run(args_b,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
-        self.assertEqual(cp_b.returncode,0,cp_b.stderr);bdir=Path(cp_b.stdout.strip())
-        self.assertEqual(bdir.name,'attempt-0001');self.assertEqual(json.loads((bdir/'review-cycle.json').read_text())['state'],'COMPLETE')
+        self.assertNotEqual(cp_b.returncode,0);self.assertIn('HMAC key unavailable',cp_b.stderr+cp_b.stdout)
         self.assertTrue(txp.is_file());self.assertEqual(txp.read_bytes(),tx_before);self.assertFalse(ledger.exists());self.assertFalse(anchorp.exists())
+        self.assertFalse((out/'attempt-0001'/'case-events.jsonl').exists())
 
     def test_attempt_directory_gap_fails_closed(self):
         r,base=self._repo();case='BUDGET-GAP';out=r/'campaign-gap';ev=adapter(r,base)
