@@ -61,3 +61,10 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - finding-triage regression 5건 추가; harness **134 PASS / 76 groups** 확인.
 
 - NOTE_ONLY 안전장치: `SECURITY-CRITICAL`, `DATA-CORRUPTION`, `GOVERNANCE*`, novel failure는 minor/nit 표기여도 agent-review 경로를 유지.
+
+- review campaign budget 추가: 자동 worker-bearing attempt 최대 3회.
+- 완료된 material finding review는 HEAD 변경 없이 retry할 수 없으며, 한 attempt의 material finding은 한 번의 remediation batch로 수정하도록 운영 규칙 고정.
+- 같은 material finding key가 수정 후 두 번째 완료 attempt에도 남으면 자동 보완을 중단하고 HUMAN_REQUIRED로 승격.
+- NOTE_ONLY/PASS closeout은 자동 retry 불가; backlog note를 지우기 위한 반복 수정 방지.
+- `review-budget.json`에 attempt/stage/timeout ceiling/repeat key/retry 가능 여부를 기록.
+- reviewer severity rubric을 action/impact 기준으로 구체화하여 사소한 항목의 major 과대분류로 인한 L2 비용을 줄임.

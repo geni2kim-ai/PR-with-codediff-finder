@@ -30,3 +30,15 @@ For every meaningful hardening batch, also exercise the downstream boundary afte
 11. Mutate caller standards/spec/test after the cycle and verify routing uses the cycle's frozen `trusted-inputs/`.
 12. Corrupt or delete a referenced case-bank artifact and verify recovery refuses to requeue the immutable packet.
 13. Convert every reproduced dogfood failure into an executable regression before closeout.
+
+
+## v2.7 review-campaign/time dogfood
+
+Exercise loop control as part of dogfood:
+
+14. NOTE_ONLY scenario: L1 returns only nit/minor. Confirm no L2 is launched solely for that finding, no remediation retry is allowed, and the item remains in `review-notes.json`.
+15. Major-remediation scenario: L1 major → L2 confirmation → one batched source change → new HEAD → one re-review. Confirm a clean second attempt closes the campaign.
+16. Repeated-major scenario: if the same material finding key remains after the batched fix, confirm the second completed material attempt becomes `HUMAN_REQUIRED` rather than starting another automatic fix.
+17. Unchanged-HEAD retry scenario: a completed material attempt must reject `--retry` until HEAD changes.
+18. Different-material scenario: new material families may consume the remaining attempt budget, but the campaign must stop after the third worker-bearing attempt.
+19. Record agent-stage count and timeout ceiling in `review-budget.json`; distinguish review-worker time from CI/package validation time.

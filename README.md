@@ -228,6 +228,19 @@ v2.7 distinguishes a finding from a remediation trigger.
 
 This prevents a typo/style finding from causing source edit → new HEAD → same finding class → repeated re-review. Low-priority cleanup is accumulated as notes/backlog instead.
 
+## Bounded review campaign
+
+Finding triage prevents low-value fixes; the review campaign budget prevents repeated material-fix loops.
+
+- NOTE_ONLY/PASS completes the campaign with no automatic remediation retry.
+- A material-finding retry requires a new HEAD, so rerunning the same code cannot consume agents repeatedly.
+- Material findings from one attempt should be fixed as one batch, then reviewed once.
+- The same material finding key repeating on the second completed material attempt forces HUMAN/owner adjudication.
+- At most 3 automated attempts are allowed for one campaign.
+- `review-budget.json` records attempt number, executed agent stages, per-stage timeout, campaign timeout ceiling, repeated material keys and whether another automated remediation retry is allowed.
+
+At the current 180-second reviewer timeout, typical upper bounds are approximately: NOTE_ONLY 3 minutes of worker budget; one major review plus one clean post-fix L1 re-review 9 minutes; a repeated major stops after about 12 minutes of worker timeout budget. The absolute three-attempt/three-stage ceiling is 27 minutes before HUMAN/owner handling. CI/package time is additional, so remediation changes should be batched into one HEAD rather than pushed one by one.
+
 ## v2.7 self-dogfood closeout
 
 The v2.7 candidate is dogfooded through downstream routing/recovery as well as the review cycle itself. The latest dogfood batch reproduced and fixed:

@@ -35,3 +35,19 @@ Finding severity controls the **next action**, not only presentation.
 - A NOTE_ONLY result may still be selected by random audit. The audit is quality-control sampling, not a remediation trigger.
 - L1 `FINDINGS` containing only NOTE_ONLY items versus L2 `PASS` is not a material disagreement.
 - Low-severity cleanup is accumulated as notes/backlog. Do not modify source merely to clear the note during closeout; this avoids typo/style fix → new HEAD → re-review loops.
+
+
+## Review campaign budget and time control
+
+The finding tier decides **who must review**; the campaign budget decides **how many automated remediation loops are allowed**.
+
+- A completed NOTE_ONLY/PASS attempt closes the automated campaign. It is not retried merely to clear backlog notes.
+- A completed material-finding attempt may be retried only after the source has a new HEAD. Fix the material findings as one bounded batch first.
+- The default campaign limit is **3 automated attempts**.
+- The same material finding key may appear in at most **2 completed material attempts**. If it survives the first remediation and appears again, the second occurrence changes the campaign to `HUMAN_REQUIRED`.
+- If different material issues continue to appear, the third worker-bearing attempt is the automated ceiling; remaining material findings require HUMAN/owner judgment rather than a fourth automatic fix/review cycle.
+- WAITING_L2 / ADVERSARIAL_REQUIRED recovery may resume the same HEAD because it is completing an unfinished authority path, not retrying a completed remediation.
+- A completed material review cannot be rerun on an unchanged HEAD.
+- The review budget never lowers deterministic authority floors.
+
+With the current 180-second worker timeout, three levels per attempt and three attempts give a hard worker-time ceiling of 1,620 seconds (27 minutes) before external/HUMAN work. Typical paths are materially lower because NOTE_ONLY uses L1 only and major uses L1+L2.
