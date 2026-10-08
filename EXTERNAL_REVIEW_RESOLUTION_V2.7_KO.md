@@ -15,6 +15,10 @@
 | 11 | 신규 mutation receipt의 output 경로를 원본과 같게 지정하면 receipt가 보호 대상 파일을 덮어쓸 수 있음 | output/spec/pre/artifact 경로 충돌 fail-closed + atomic receipt write | 해결 |
 | 12 | receipt CLI validator가 extra top-level field를 직접 거부하지 않아 digest 재계산 시 `path` 같은 필드가 섞일 수 있음 | semantic validator exact-field allowlist + path-bearing receipt 회귀 테스트 | 해결 |
 | 13 | push CI가 generated manifest를 작업트리에만 적용한 뒤 `git archive HEAD`를 만들면 ZIP 안에는 stale committed MANIFEST가 들어갈 수 있음 | source package 생성/업로드를 committed-manifest 검증이 선행되는 PR/manual 경로로 제한 | 해결 |
+| 14 | committed manifest는 Git object 검증만 지원해 전달된 ZIP을 `.git` 없이 직접 검증할 수 없음 | `verify_manifest.py --filesystem-root` 추가, missing/extra/hash/path ambiguity fail-closed | 해결 |
+| 15 | source ZIP이 생성된 뒤 clean-extract 상태에서 실제 실행 검증을 하지 않음 | ZIP 추출 → filesystem manifest 검증 → extracted-tree canonical full validation을 PR/manual release gate에 추가 | 해결 |
+| 16 | source ZIP 자체와 exact HEAD/manifest를 묶는 machine-readable 외부 binding이 없음 | source-package receipt에 HEAD, ZIP SHA-256, manifest SHA-256, entry count, clean-extract/full-validation claims를 바인딩; `authority_effect=NONE` | 해결 |
+| 17 | source-package receipt semantic validator가 schema보다 느슨한 package-name/int 타입을 허용할 수 있음 | exact package-name regex + bool-as-int 차단 + negative regression | 해결 |
 
 ## v2.7 검수 원칙
 
