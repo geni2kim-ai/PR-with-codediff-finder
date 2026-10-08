@@ -11,7 +11,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
-from run_review_cycle import audit_sample,worker_command_digest,finding_disposition
+from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
 from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation
@@ -414,6 +414,11 @@ class FindingTriageTests(unittest.TestCase):
                  'L2_if_any':[],'ADVERSARIAL_if_any':[],'HUMAN_if_any':[]}
         self.assertEqual(finding_disposition({'severity':'major'},hostile),'AGENT_REVIEW_REQUIRED')
         self.assertEqual(finding_disposition({'severity':'blocker'},hostile),'BLOCKING')
+        self.assertEqual(finding_disposition({'severity':'minor','failure_family':'SECURITY-CRITICAL'},hostile),'AGENT_REVIEW_REQUIRED')
+        self.assertEqual(finding_disposition({'severity':'nit','failure_family':'GOVERNANCE-TAMPERING'},hostile),'AGENT_REVIEW_REQUIRED')
+        novel={'confidence':'high','findings':[{'severity':'minor','failure_family':'NOVEL-X','axis':'standards'}],
+               'escalation':{'novel_failure_family':True}}
+        self.assertTrue(stage_signals(novel,hostile)[0]['novel_failure_family'])
         protected=load_yaml(ROOT/'policy/protected-paths.yml');hits=classify_paths([],protected,include_self_protection=False)
         model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'}
         level,reasons=derive_required_level(model,hits,{'major_candidate':True},hostile,{'textdiff':{}})
