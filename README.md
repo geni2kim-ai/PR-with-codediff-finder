@@ -24,6 +24,7 @@ Leonardo/Davinchi calibration / regression / standards loop
 - **Privacy-safe mutation receipts**: `tools/mutation_receipt.py` emits logical name + pre/post SHA-256 + equality only, without source paths/content, and fixes `authority_effect=NONE`.
 - **Clean-extract source-package verification**: `verify_manifest.py --filesystem-root` verifies the delivered tree without `.git`, rejects missing/extra/tampered files and unsafe manifest paths, and CI reruns canonical validation from the extracted ZIP.
 - **External source-package receipt**: the distributed ZIP is bound to exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count with `authority_effect=NONE`.
+- **Package hygiene gate**: tracked `.pytest_cache`, `__pycache__`, `*.pyc` and `*.pyo` artifacts are rejected before manifest generation/package sealing.
 - **Latest-HEAD review is a repository default**: every review/resume refreshes the current committed HEAD; changes invalidate earlier closeout until the post-fix HEAD is reviewed again.
 - **Crash-safe ledger append recovery**: an authenticated journal binds the exact pre-append ledger bytes, hash chain and next event so a crash between event fsync and anchor replacement can recover idempotently.
 - **Dead-lock recovery**: ledger locks record owner PID and are reclaimed immediately when the owner process no longer exists.
@@ -205,7 +206,7 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **124 PASS** across 68 isolated groups;
+- harness: **125 PASS** across 68 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
