@@ -40,7 +40,7 @@ Standards, spec and test result files are copied into the cycle output before re
 ### Source-package delivery boundary
 
 A Git-blob manifest PASS is not treated as proof that a distributed ZIP is complete. PR/manual packaging now:
-- creates the ZIP from the exact validated HEAD;
+- creates the ZIP directly from exact Git blob bytes of the validated HEAD, avoiding archive-time text-byte transformation;
 - extracts the ZIP into a clean directory;
 - verifies the extracted tree against `MANIFEST.sha256` without relying on `.git`;
 - rejects extra, missing, changed or path-ambiguous entries;
