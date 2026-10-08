@@ -398,7 +398,8 @@ def campaign_history(root,case_id,hmac_key=None):
                     try:anchored_attempt=int(anchored_attempt)
                     except Exception:raise ValueError('campaign attempt_index invalid')
                     if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
-            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed)})
+            worker_invocations=sum(1 for e in events if e.get('event_type')=='REVIEW_FAILED')+sum(1 for e in completed if not e.get('payload',{}).get('reused_from_previous_attempt',False))
+            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed),'worker_invocations':worker_invocations})
             previous=out[-1]
         except Exception as exc:
             raise ValueError(f'{d}: {type(exc).__name__}: {exc}') from exc
@@ -515,6 +516,7 @@ def main():
     max_attempts=int(bootstrap_campaign.get('max_automated_attempts',3));repeat_limit=int(bootstrap_campaign.get('same_material_finding_repeat_limit',2))
     if max_attempts<1 or max_attempts>5:raise SystemExit('review campaign max_automated_attempts must be between 1 and 5')
     if repeat_limit<2 or repeat_limit>max_attempts:raise SystemExit('review campaign same_material_finding_repeat_limit must be between 2 and max_automated_attempts')
+    max_worker_invocations=max_attempts*3;historical_worker_invocations=sum(int(x.get('worker_invocations',0)) for x in history)
     continuing_authority_path=False;last_attempt_index=0
     if ns.retry and history:
         last=history[-1]
@@ -523,6 +525,8 @@ def main():
         if last.get('state')=='HUMAN_REQUIRED':raise SystemExit('review campaign requires HUMAN decision; automated retry is not allowed')
         if bootstrap_campaign.get('stop_retry_after_note_only_closeout',True) and last.get('state')=='COMPLETE' and not last.get('material_count'):
             raise SystemExit('review campaign already closed without material findings; NOTE_ONLY items remain backlog and must not trigger retry')
+        if historical_worker_invocations>=max_worker_invocations:
+            raise SystemExit('review campaign worker invocation budget exhausted; HUMAN/owner decision required')
         current_head=git_resolve(repo,'HEAD')
         continuing_authority_path=last.get('state') in CAMPAIGN_RESUMABLE_STATES and current_head==last.get('head_sha')
         if not continuing_authority_path and last_attempt_index>=max_attempts:
@@ -672,7 +676,13 @@ def main():
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));notes=review_notes_obj(stage_rows,esc_cfg);write_json(out/'review-notes.json',notes);note_count=sum(1 for x in r.get('findings',[]) if finding_disposition(x,esc_cfg)=='NOTE_ONLY');material_count=len(material_findings(r,esc_cfg));labels.add('note_only_findings_present') if note_count else None;labels.add('agent_review_findings_present') if material_count else None
             if reused:labels.add('lower_stage_reused');reused_levels.add(level)
             ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence'],'note_only_findings':note_count,'agent_review_findings':material_count,'reused_from_previous_attempt':bool(reused)});achieved=level;current_stage=r;return r
+        current_worker_invocations=0
         def do_worker(level,cmd,task,filename):
+            nonlocal current_worker_invocations
+            if historical_worker_invocations+current_worker_invocations>=max_worker_invocations:
+                labels.add('review_budget_worker_invocation_limit');reasons.append('REVIEW_BUDGET_WORKER_INVOCATION_LIMIT')
+                terminal_block('REVIEW_CAMPAIGN_WORKER_BUDGET_EXHAUSTED',f'worker invocation ceiling {max_worker_invocations} reached; HUMAN/owner decision required',level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
+            current_worker_invocations+=1
             try:r=run_worker(cmd,task,cfg)
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
