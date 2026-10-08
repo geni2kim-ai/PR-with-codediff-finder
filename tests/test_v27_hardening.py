@@ -12,6 +12,7 @@ from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
 from mutation_receipt import capture as capture_mutation_receipt,finalize as finalize_mutation_receipt,reject_output_collision,validate_receipt
 from verify_manifest import filesystem_errors
+from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -74,6 +75,22 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertTrue(any('unmanifested package file: extra.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
             (root/'extra.txt').unlink();(root/'sub'/'b.txt').unlink()
             self.assertTrue(any('manifested package file missing: sub/b.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
+
+    def test_source_package_receipt_binds_zip_manifest_and_head(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);pkg=root/'pkg.zip';pkg.write_bytes(b'zip-bytes')
+            import hashlib
+            payload=b'alpha\n';(root/'a.txt').write_bytes(payload)
+            manifest=root/'MANIFEST.sha256';manifest.write_text(f"{hashlib.sha256(payload).hexdigest()}  ./a.txt\n",encoding='utf-8')
+            receipt=create_package_receipt(pkg,manifest,'a'*40,clean_extract_verified=True,canonical_validation_passed=True)
+            schema=json.loads((ROOT/'schemas/source-package-receipt.schema.json').read_text(encoding='utf-8'))
+            self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)),[])
+            self.assertEqual(validate_package_receipt(receipt,pkg,manifest),[])
+            pkg.write_bytes(b'tampered')
+            self.assertIn('source package sha256 mismatch',validate_package_receipt(receipt,pkg,manifest))
+            pkg.write_bytes(b'zip-bytes');leaked=json.loads(json.dumps(receipt));leaked['path']='secret';leaked['receipt_digest']=''
+            leaked['receipt_digest']=__import__('common').object_digest(leaked,'receipt_digest')
+            self.assertIn('source package receipt fields mismatch',validate_package_receipt(leaked,pkg,manifest))
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
