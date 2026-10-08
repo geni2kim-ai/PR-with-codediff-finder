@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:review-notes:2.7",
+  "title": "Review Notes v2.7",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","kind","authority_effect","auto_fix","items","notes_digest"],
+  "properties": {
+    "schema_version": {"const":"2.7"},
+    "kind": {"const":"review-notes"},
+    "authority_effect": {"const":"NONE"},
+    "auto_fix": {"const":false},
+    "items": {
+      "type":"array",
+      "items":{
+        "type":"object",
+        "additionalProperties":false,
+        "required":["level","finding_id","severity","axis","path","line","claim","recommendation","result_digest"],
+        "properties":{
+          "level":{"enum":["L1","L2","ADVERSARIAL"]},
+          "finding_id":{"type":"string","minLength":1},
+          "severity":{"enum":["minor","nit"]},
+          "axis":{"enum":["correctness_security","standards","spec","test_integrity","supply_chain_compatibility","risk"]},
+          "path":{"type":"string","minLength":1},
+          "line":{"type":["integer","null"],"minimum":1},
+          "claim":{"type":"string","minLength":1},
+          "recommendation":{"type":"string","minLength":1},
+          "result_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "notes_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}
