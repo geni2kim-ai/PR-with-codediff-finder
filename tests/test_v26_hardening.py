@@ -1,5 +1,5 @@
 from __future__ import annotations
-import copy, hashlib, json, os, subprocess, sys, tempfile, time, unittest
+import copy, hashlib, json, os, shutil, subprocess, sys, tempfile, time, unittest
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -536,6 +536,32 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         cycle(r,ev,base,case,l1='nit',out=out);(out/'case-record.json').unlink()
         cp=self._retry(r,base,case,out,ev,l1='pass')
         self.assertNotEqual(cp.returncode,0);self.assertIn('closed campaign attempt missing case-record',cp.stderr+cp.stdout)
+
+    def _duplicate_partial_attempt(self,out,count):
+        files=[p for p in out.iterdir() if p.is_file()]
+        for i in range(1,count+1):
+            d=out/f'attempt-{i:04d}';d.mkdir()
+            for p in files:shutil.copy2(p,d/p.name)
+
+    def test_campaign_wide_worker_invocation_ceiling_blocks_retry_before_rerun(self):
+        r,base=self._repo();case='BUDGET-WORKER-CEILING';out=r/'campaign-worker-ceiling';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
+        first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+        self._turn_waiting_l2_into_interrupted_l1(out,case);self._duplicate_partial_attempt(out,8)
+        hist=campaign_history(out,case);self.assertEqual(sum(x['worker_invocations'] for x in hist),9);self.assertEqual({x['attempt_index'] for x in hist},{1})
+        cp=subprocess.run(args+['--retry','--l2-cmd-json',cmdjson('major')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('worker invocation budget exhausted',cp.stderr+cp.stdout)
+
+    def test_worker_ceiling_is_enforced_inside_resume_before_tenth_stage(self):
+        r,base=self._repo();case='BUDGET-WORKER-INRUN';out=r/'campaign-worker-inrun';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
+        first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+        self._turn_waiting_l2_into_interrupted_l1(out,case);self._duplicate_partial_attempt(out,7)
+        hist=campaign_history(out,case);self.assertEqual(sum(x['worker_invocations'] for x in hist),8)
+        cp=subprocess.run(args+['--retry','--l2-cmd-json',cmdjson('novel'),'--adversarial-cmd-json',cmdjson('pass')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertEqual(cp.returncode,0,cp.stderr);d=Path(cp.stdout.strip());failure=json.loads((d/'review-failure.json').read_text())
+        self.assertEqual(failure['failure_kind'],'REVIEW_CAMPAIGN_WORKER_BUDGET_EXHAUSTED');self.assertFalse((d/'adversarial-review.json').exists())
+        self.assertEqual(json.loads((d/'review-cycle.json').read_text())['state'],'BLOCKED')
 
     def test_higher_authority_clearance_removes_lower_stage_material_from_budget(self):
         r,base=self._repo();case='BUDGET-CLEARED';out=r/'campaign-cleared';ev=adapter(r,base)
