@@ -55,3 +55,7 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - NOTE_ONLY finding은 `review-notes.json`에 `auto_fix=false`, `authority_effect=NONE`으로 저장.
 - NOTE_ONLY만 있는 L1 FINDINGS와 L2 PASS는 material disagreement로 보지 않아 불필요한 adversarial loop를 차단.
 - deterministic risk/protected-path floor 및 random audit는 finding triage보다 독립적으로 유지.
+
+- finding triage authority hardening: config가 `major/blocker`를 NOTE_ONLY로 하향하거나 agent-review floor를 제거하지 못하도록 fail-closed.
+- case trail에 `material_finding_count` / `note_only_finding_count`를 기록하고 downstream routing도 material disagreement만 승격.
+- finding-triage regression 5건 추가; harness **134 PASS / 76 groups** 확인.
