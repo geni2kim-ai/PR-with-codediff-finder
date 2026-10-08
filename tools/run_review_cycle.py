@@ -366,13 +366,13 @@ def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repea
     exhausted=bool(current) and attempt_index>=max_attempts
     retry_allowed=bool(current) and not repeated and not exhausted
     stop_reason='SAME_MATERIAL_FINDING_REPEAT' if repeated else ('AUTOMATED_ATTEMPT_LIMIT' if exhausted else ('NO_MATERIAL_FINDINGS' if not current else None))
-    return {'repeated_material_keys':repeated,'attempt_limit_reached':exhausted,'automated_retry_allowed':retry_allowed,'stop_reason':stop_reason}
+    return {'repeated_material_keys':repeated,'attempt_limit_reached':exhausted,'automated_remediation_retry_allowed':retry_allowed,'stop_reason':stop_reason}
 
 def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds):
     obj={'schema_version':'2.7','kind':'review-budget','case_id':case_id,'authority_effect':'ESCALATION_ONLY','attempt_index':attempt_index,'max_automated_attempts':max_attempts,'same_material_finding_repeat_limit':repeat_limit,
          'executed_agent_stages':len(stage_rows),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':len(stage_rows)*timeout_seconds,
          'campaign_worker_timeout_ceiling_seconds':max_attempts*3*timeout_seconds,'current_material_finding_keys':sorted(set(current_keys)),
-         'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_retry_allowed':evaluation['automated_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
+         'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_remediation_retry_allowed':evaluation['automated_remediation_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
     obj['budget_digest']=object_digest(obj,'budget_digest');return obj
 
 def cycle_gate(state,required,achieved,stage):
