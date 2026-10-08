@@ -377,6 +377,42 @@ def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows
          'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_remediation_retry_allowed':evaluation['automated_remediation_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
     obj['budget_digest']=object_digest(obj,'budget_digest');return obj
 
+def _task_ref_hashes(task):
+    refs=task.get('trusted_refs',{})
+    def many(values):
+        out=[]
+        for raw in values or []:
+            p=Path(raw)
+            if not p.is_file():return None
+            out.append(sha256_file(p))
+        return out
+    policy=many(refs.get('policy'));standards=many(refs.get('standards'));tests=many(refs.get('tests'))
+    spec=refs.get('spec');spec_hash=None
+    if spec:
+        p=Path(spec)
+        if not p.is_file():return None
+        spec_hash=sha256_file(p)
+    if None in (policy,standards,tests):return None
+    return {'policy':policy,'standards':standards,'spec':spec_hash,'tests':tests}
+
+def reusable_stage_result(previous_dir,level,current_task,mode):
+    if mode!='SHADOW' or previous_dir is None:return None
+    previous_dir=Path(previous_dir);task_path=previous_dir/f'{level.lower()}-task.json';result_path=previous_dir/f'{level.lower()}-review.json'
+    if not task_path.is_file() or not result_path.is_file():return None
+    try:
+        old_task=json.loads(task_path.read_text());result=json.loads(result_path.read_text())
+    except Exception:return None
+    if validate_task(old_task) or validate_stage(result,old_task):return None
+    stable_fields=('case_id','level','changed_paths','security_boundary','limits','review_focus','output_contract','lower_layer_result_digests')
+    if any(old_task.get(k)!=current_task.get(k) for k in stable_fields):return None
+    if old_task.get('binding')!=current_task.get('binding'):return None
+    for key in ('evidence_digest','semantic_digest','quality_class','trusted_for_gate'):
+        if old_task.get('sensor',{}).get(key)!=current_task.get('sensor',{}).get(key):return None
+    if old_task.get('reviewer_contract')!=current_task.get('reviewer_contract'):return None
+    if _task_ref_hashes(old_task)!=_task_ref_hashes(current_task):return None
+    if validate_stage(result,current_task):return None
+    return result
+
 def cycle_gate(state,required,achieved,stage,esc_cfg=None):
     if state=='STALE':return 'cancelled'
     if state=='HUMAN_CONFIRMED':return 'success'
@@ -561,17 +597,30 @@ def main():
         l1cmd=parse_cmd(ns.l1_cmd_json);l2cmd=parse_cmd(ns.l2_cmd_json);advcmd=parse_cmd(ns.adversarial_cmd_json);stage_rows=[];families=set();labels=set();state=None;achieved='SENSOR';current_stage=None
         if hits['governance']:labels.add('governance')
         if mode=='SHADOW':labels.add('shadow_only')
-        def do_worker(level,cmd,task,filename):
+        resume_dir=None
+        if ns.retry and history and history[-1].get('head_sha')==head and history[-1].get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'}:
+            resume_dir=Path(history[-1]['dir'])
+        def record_stage(level,task,r,filename,reused=False):
             nonlocal achieved,current_stage
+            write_json(out/filename,r);stage_rows.append((level,task,r,filename));notes=review_notes_obj(stage_rows,esc_cfg);write_json(out/'review-notes.json',notes);note_count=sum(1 for x in r.get('findings',[]) if finding_disposition(x,esc_cfg)=='NOTE_ONLY');material_count=len(material_findings(r,esc_cfg));labels.add('note_only_findings_present') if note_count else None;labels.add('agent_review_findings_present') if material_count else None
+            if reused:labels.add('lower_stage_reused')
+            ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence'],'note_only_findings':note_count,'agent_review_findings':material_count,'reused_from_previous_attempt':bool(reused)});achieved=level;current_stage=r;return r
+        def do_worker(level,cmd,task,filename):
             try:r=run_worker(cmd,task,cfg)
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
-            write_json(out/filename,r);stage_rows.append((level,task,r,filename));notes=review_notes_obj(stage_rows,esc_cfg);write_json(out/'review-notes.json',notes);note_count=sum(1 for x in r.get('findings',[]) if finding_disposition(x,esc_cfg)=='NOTE_ONLY');material_count=len(material_findings(r,esc_cfg));labels.add('note_only_findings_present') if note_count else None;labels.add('agent_review_findings_present') if material_count else None;ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence'],'note_only_findings':note_count,'agent_review_findings':material_count});achieved=level;current_stage=r;return r
+            return record_stage(level,task,r,filename,False)
+        def reuse_or_run(level,cmd,task,filename):
+            reused=reusable_stage_result(resume_dir,level,task,mode)
+            if reused is not None:return record_stage(level,task,reused,filename,True)
+            if not cmd:return None
+            return do_worker(level,cmd,task,filename)
         frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
-        if not l1cmd:state='WAITING_L1'
+        l1=reuse_or_run('L1',l1cmd,l1task,'l1-review.json')
+        if l1 is None:
+            if not l1cmd:state='WAITING_L1'
+            else:return
         else:
-            l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
-            if l1 is None:return
             s,ff=stage_signals(l1,esc_cfg);families|=ff;sig.update({k:v for k,v in s.items() if v})
             deterministic_issue=any(sig.get(k) for k in ('test_integrity_finding','sensor_failed_invariant','sensor_nontext_sensitive','destructive_migration','public_contract_break','ruleset_codeowners_change'))
             if l1['verdict']=='PASS' and deterministic_issue:sig['deterministic_reviewer_conflict']=True;reasons.append('DETERMINISTIC_REVIEWER_CONFLICT')
@@ -583,10 +632,11 @@ def main():
             if audit:required=max_level(required,'L2');reasons.append('RANDOM_AUDIT_L1')
             if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('L2'):
                 l2task=make_task('L2',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l2cmd);write_json(out/'l2-task.json',l2task)
-                if not l2cmd:state='WAITING_L2'
+                l2=reuse_or_run('L2',l2cmd,l2task,'l2-review.json')
+                if l2 is None:
+                    if not l2cmd:state='WAITING_L2'
+                    else:return
                 else:
-                    l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
-                    if l2 is None:return
                     s2,ff2=stage_signals(l2,esc_cfg);families|=ff2;sig.update({k:v for k,v in s2.items() if v})
                     if disagreement(l1,l2,esc_cfg):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
                     _lvl,_why=derive_required_level(l2['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l2,esc_cfg);required=max_level(required,_req)
@@ -597,10 +647,11 @@ def main():
                     if REVIEW_LEVELS.index(required)>=REVIEW_LEVELS.index('ADVERSARIAL'):
                         lower=[out/'l1-review.json',out/'l2-review.json'];ld=[l1['result_digest'],l2['result_digest']]
                         atask=make_task('ADVERSARIAL',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,lower,ld,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=advcmd);write_json(out/'adversarial-task.json',atask)
-                        if not advcmd:state='ADVERSARIAL_REQUIRED'
+                        adv=reuse_or_run('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
+                        if adv is None:
+                            if not advcmd:state='ADVERSARIAL_REQUIRED'
+                            else:return
                         else:
-                            adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
-                            if adv is None:return
                             s3,ff3=stage_signals(adv,esc_cfg);families|=ff3;sig.update({k:v for k,v in s3.items() if v})
                             if adv['verdict']=='FINDINGS' and any(f['severity'] in {'blocker','major'} for f in adv.get('findings',[])):sig['adversarial_unresolved']=True;reasons.append('ADVERSARIAL_UNRESOLVED')
                             _lvl,_why=derive_required_level(adv['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(adv,esc_cfg);required=max_level(required,_req)

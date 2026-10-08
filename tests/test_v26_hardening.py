@@ -469,6 +469,23 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
         self.assertNotEqual(cp.returncode,0);self.assertIn('requires a new HEAD',cp.stderr+cp.stdout)
 
+    def test_waiting_l2_resume_reuses_compatible_l1_in_shadow(self):
+        r,base=self._repo();case='BUDGET-RESUME';out=r/'campaign-resume';ev=adapter(r,base)
+        with tempfile.TemporaryDirectory() as td:
+            counter=Path(td)/'count.txt';worker=Path(td)/'counting_major.py'
+            worker.write_text("import pathlib,subprocess,sys\np=pathlib.Path("+repr(str(counter))+")\nn=int(p.read_text()) if p.exists() else 0\np.write_text(str(n+1))\ncp=subprocess.run([sys.executable,"+repr(str(ROOT/'tools/mock_reviewer.py'))+",'--mode','major'],input=sys.stdin.read(),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\nsys.stdout.write(cp.stdout);sys.stderr.write(cp.stderr);raise SystemExit(cp.returncode)\n")
+            l1cmd=json.dumps([sys.executable,str(worker)])
+            args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',l1cmd,'--disable-random-audit']
+            first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+            self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'WAITING_L2');self.assertEqual(counter.read_text(),'1')
+            retry=args+['--retry','--l2-cmd-json',cmdjson('major')]
+            second=subprocess.run(retry,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(second.returncode,0,second.stderr)
+            attempt=Path(second.stdout.strip());cyc=json.loads((attempt/'review-cycle.json').read_text());casej=json.loads((attempt/'case-record.json').read_text())
+            self.assertEqual(counter.read_text(),'1')
+            self.assertEqual(cyc['state'],'COMPLETE');self.assertIn('lower_stage_reused',casej['labels'])
+            events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
+            self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
+
     def test_same_material_finding_after_batched_fix_requires_human(self):
         r,base=self._repo();case='BUDGET-REPEAT';out=r/'campaign-repeat';ev=adapter(r,base)
         cycle(r,ev,base,case,l1='major',l2='major',out=out)
