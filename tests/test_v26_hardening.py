@@ -470,6 +470,16 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
         self.assertNotEqual(cp.returncode,0);self.assertIn('requires a new HEAD',cp.stderr+cp.stdout)
 
+    def test_waiting_l1_without_worker_does_not_consume_remediation_attempts(self):
+        r,base=self._repo();case='BUDGET-WAIT-L1';out=r/'campaign-wait-l1';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--disable-random-audit']
+        first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+        self.assertEqual(json.loads((out/'review-cycle.json').read_text())['state'],'WAITING_L1');self.assertEqual(json.loads((out/'review-budget.json').read_text())['attempt_index'],1)
+        second=subprocess.run(args+['--retry'],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(second.returncode,0,second.stderr)
+        d2=Path(second.stdout.strip());self.assertEqual(json.loads((d2/'review-cycle.json').read_text())['state'],'WAITING_L1');self.assertEqual(json.loads((d2/'review-budget.json').read_text())['attempt_index'],1)
+        third=subprocess.run(args+['--retry','--l1-cmd-json',cmdjson('pass')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(third.returncode,0,third.stderr)
+        d3=Path(third.stdout.strip());self.assertEqual(json.loads((d3/'review-cycle.json').read_text())['state'],'COMPLETE');self.assertEqual(json.loads((d3/'review-budget.json').read_text())['attempt_index'],1)
+
     def test_waiting_l2_resume_reuses_compatible_l1_in_shadow(self):
         r,base=self._repo();case='BUDGET-RESUME';out=r/'campaign-resume';ev=adapter(r,base)
         with tempfile.TemporaryDirectory() as td:
