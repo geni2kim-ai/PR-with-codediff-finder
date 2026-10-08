@@ -245,3 +245,31 @@ SHADOW의 unkeyed anchor는 self-consistency 보장 범위이고 외부 공격�
 
 이로써 logical remediation attempt 제한과 실제 agent 실행시간 제한이 분리된다. **resume은 attempt를 불필요하게 소비하지 않지만, resume 자체가 무제한 agent 재실행 통로가 되지도 않는다.**
 
+### 8. reviewer 실행 실패가 source remediation attempt를 소모하는 문제
+
+worker-time ceiling을 강제한 뒤 failure path를 다시 시뮬레이션했다.
+
+반례:
+1. L1 major 완료
+2. L2 reviewer가 timeout / process exit / invalid JSON 등 실행 오류로 실패
+3. 소스 HEAD는 그대로
+4. 동일 HEAD에서 retry
+
+기존에는 해당 cycle이 `BLOCKED`로 닫히므로 다음 retry가 새 remediation attempt로 계산되었고, resume 대상에서도 제외되어 이미 성공한 L1까지 다시 실행될 수 있었다. source remediation은 전혀 일어나지 않았는데 source-remediation budget과 worker 비용을 동시에 소모하는 구조였다.
+
+보완:
+- reviewer execution failure 중 `REVIEW_TIMEOUT`, `REVIEW_OUTPUT_LIMIT`, `REVIEW_STDERR_LIMIT`, `REVIEW_PROCESS_EXIT`, `REVIEW_INVALID_JSON`, `REVIEW_UNSAFE_OUTPUT`, `REVIEW_INVALID_RESULT`은 동일 HEAD에서 resumable execution failure로 분류한다.
+- 이 경우 logical `attempt_index`는 증가하지 않는다.
+- 이전 L1/L2 task/result가 현재 입력과 호환되면 기존 SHADOW reuse 검증을 거쳐 재사용한다.
+- 실패했던 stage만 다시 실행한다.
+- 실제 실패 호출은 `REVIEW_FAILED` ledger event로 worker invocation ceiling에 계속 포함된다.
+- `INVALID_TASK`, campaign worker-budget exhaustion, 일반 harness/policy block은 자동 resumable failure로 취급하지 않는다.
+
+회귀:
+- L1 major 성공 + L2 process-exit 실패 → state BLOCKED
+- history는 `failure_kind=REVIEW_PROCESS_EXIT`, resumable=true, logical attempt 1로 재구성
+- 동일 HEAD retry에서 L1 worker 재호출 없이 L1 결과 재사용
+- L2만 다시 실행하고 최종 budget의 `attempt_index=1` 유지
+
+이제 **source를 고쳐 다시 검토하는 반복**과 **reviewer 실행 자체의 일시 실패를 재시도하는 반복**이 서로 다른 budget으로 관리된다. 전자는 3 remediation attempts, 후자는 campaign-wide worker invocation ceiling으로 각각 제한된다.
+
