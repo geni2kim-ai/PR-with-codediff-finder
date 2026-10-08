@@ -344,3 +344,16 @@ worker invocation ceiling을 ledger의 `REVIEW_COMPLETED`와 `REVIEW_FAILED`만�
 
 결과적으로 reviewer 비용 관리는 이제 **시작 시점(start), 결과 확정(completed/failed), stage 재사용(completion proof)** 세 경계가 ledger로 연결된다.
 
+### 13. SHADOW + ledger HMAC에서 정상 resume reuse가 비활성화되는 문제
+
+선택적으로 `MAESTRO_LEDGER_HMAC_KEY`를 사용하는 SHADOW 경로를 시뮬레이션했다.
+
+기존에는 campaign history는 HMAC key로 ledger/anchor를 정상 검증했지만, `reusable_stage_result()`가 같은 anchor를 다시 확인할 때 key를 전달하지 않았다. HMAC이 존재하는 정상 anchor도 "key unavailable"로 판단되어 lower-stage reuse가 실패하고 reviewer를 다시 실행할 수 있었다.
+
+보완:
+- stage reuse 검증에도 동일 ledger HMAC key를 전달한다.
+- HMAC이 설정된 SHADOW에서 WAITING_L2 resume 시 검증된 L1 결과를 정상 재사용한다.
+- HMAC 검증 실패 시에는 기존처럼 reuse하지 않는다.
+
+회귀 테스트에서 HMAC anchor를 사용한 동일 HEAD resume가 L1 worker를 두 번째로 호출하지 않고 `reused_agent_stages=1`, `attempt_index=1`을 유지하는지 고정했다.
+
