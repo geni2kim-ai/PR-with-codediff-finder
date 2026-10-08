@@ -374,7 +374,7 @@ def campaign_history(root,case_id,hmac_key=None):
     if (root/'case-record.json').is_file() or (root/'case-events.jsonl').is_file():dirs.append(root)
     if root.is_dir():
         dirs.extend(p for p in validate_attempt_layout(root) if (p/'case-record.json').is_file() or (p/'case-events.jsonl').is_file())
-    out=[];derived_attempt=0;previous=None;seen_ledger_identities={}
+    out=[];derived_attempt=0;previous=None;seen_ledger_identities=set()
     for d in dirs:
         try:
             ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json'
