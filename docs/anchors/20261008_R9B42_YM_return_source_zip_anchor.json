@@ -1,0 +1,9 @@
+{
+  "schema_version": "SYNAPSE-R9B42-YM-RETURN-SOURCE-ZIP-ANCHOR-1",
+  "artifact_name": "ym_r9b42_package_20261008.zip",
+  "sha256": "4298587e16c9836da66765aabf7620f22ebc83ebfbd9f387333493e0b0995354",
+  "anchor_semantics": "PRODUCER_OWNED_IMMUTABLE_PUBLICATION_OF_SOURCE_RETURN_ZIP_DIGEST",
+  "privacy_note": "The source ZIP itself is not republished here because it may contain raw/local evidence. This anchor publishes only its digest.",
+  "authority_effect": "NONE",
+  "r9c_status": "BLOCKED"
+}
