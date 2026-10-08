@@ -378,7 +378,7 @@ def campaign_history(root,case_id,hmac_key=None):
             else:
                 keys,material_count=_trail_authoritative_material(case)
             if previous is None:derived_attempt=1
-            elif not (previous.get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'} and previous.get('head_sha')==head_sha):
+            elif not (previous.get('state') in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED'} and previous.get('head_sha')==head_sha):
                 derived_attempt+=1
             anchored_attempt=payload.get('attempt_index')
             if anchored_attempt is not None:
@@ -511,7 +511,7 @@ def main():
         if bootstrap_campaign.get('stop_retry_after_note_only_closeout',True) and last.get('state')=='COMPLETE' and not last.get('material_count'):
             raise SystemExit('review campaign already closed without material findings; NOTE_ONLY items remain backlog and must not trigger retry')
         current_head=git_resolve(repo,'HEAD')
-        continuing_authority_path=last.get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'} and current_head==last.get('head_sha')
+        continuing_authority_path=last.get('state') in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED'} and current_head==last.get('head_sha')
         if not continuing_authority_path and last_attempt_index>=max_attempts:
             raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
