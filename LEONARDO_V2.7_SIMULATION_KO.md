@@ -448,3 +448,34 @@ append transaction 경계를 다시 시뮬레이션했다.
 
 이 보완으로 **"실제 history corruption"과 "정상적인 append 도중의 crash"를 구분**한다. 복구 가능한 중단 때문에 HUMAN/owner 개입이 필요해지는 불필요한 운영 정지를 줄이면서 기존 fail-closed 무결성은 유지한다.
 
+### 17. shared output root에서 unrelated case의 HMAC/pending 상태가 active case를 차단하는 문제
+
+앞선 multi-case 병렬화 이후 case 격리성을 다시 시뮬레이션했다.
+
+반례 A:
+1. 같은 output root의 case A가 선택적 ledger HMAC key A로 정상 완료
+2. case B는 같은 root를 사용하지만 key A를 보유하지 않음
+3. 기존 `campaign_history(B)`가 case ID를 건너뛰기 전에 A의 anchor를 key B/무키 상태로 검증
+4. A는 B의 budget/history와 무관한데도 `ledger HMAC key unavailable`로 B가 차단될 수 있음
+
+반례 B:
+1. case A가 authenticated pending append transaction을 남긴 채 중단
+2. case B가 같은 root에서 시작
+3. 기존 history loader가 case ID를 확인하기 전에 A의 transaction을 B의 HMAC authority로 복구하려 시도
+4. 정상 case B가 unrelated A의 recovery authority 때문에 차단되거나 A의 pending state를 불필요하게 변경할 수 있음
+
+보완:
+- ledger가 존재하면 먼저 schema/hash-chain과 단일 case ID 일관성을 검증한다.
+- 그 case ID가 active case와 다르면 anchor HMAC 검증과 pending recovery를 수행하지 않고 history budget에서 제외한다.
+- ledger가 아직 없고 pending transaction만 있으면 새 `pending_append_case_id()`가 transaction digest, event hash, seq/prev-hash, case-id consistency를 authentication-neutral 방식으로 검증하여 소유 case를 분류한다.
+- pending transaction이 active case일 때만 기존 full recovery가 실행되어 HMAC, pre-ledger SHA-256, divergence 검사를 모두 수행한다.
+- ledger case ID와 pending transaction case ID가 충돌하면 fail-closed 한다.
+- mixed/missing case ID 또는 구조적으로 손상된 ledger는 "unrelated"라고 임의 추정하지 않는다.
+
+회귀:
+- case A HMAC ledger + case B no HMAC, same root → B 정상 완료
+- case A authenticated pending transaction only + case B same root → B 정상 완료, A transaction bytes/ledger 상태는 변경하지 않음
+- active-case HMAC 검증과 pending recovery의 기존 fail-closed 동작은 유지
+
+이 변경은 shared root의 병렬성을 실제 **authority isolation**까지 확장한다. 다른 case의 정상적인 보안 설정 차이가 현재 case의 reviewer 실행이나 budget을 막지 않는다.
+
