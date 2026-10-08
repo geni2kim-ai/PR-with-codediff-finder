@@ -27,12 +27,37 @@ def _load_file(path,label):
     p=Path(path).resolve()
     if not p.is_file():raise SystemExit(f'{label} missing: {p}')
     return p
-def _effective_policy_digest(routing_policy):
-    entries=[]
-    for p in sorted((ROOT/'policy').glob('*.yml')):
+def _effective_policy_digest(routing_policy,policy_dir=None):
+    root=Path(policy_dir).resolve() if policy_dir else (ROOT/'policy').resolve();entries=[]
+    for p in sorted(root.glob('*.yml')):
         if p.name!='reviewer-routing.yml':entries.append((f'policy/{p.name}',p))
     entries.append(('policy/reviewer-routing.effective.yml',Path(routing_policy).resolve()))
     return named_files_digest(entries)
+
+def _frozen_cycle_policy(case_path,requested_routing=None):
+    cycle_root=Path(case_path).resolve().parent;policy_dir=cycle_root/'effective-policy'
+    if policy_dir.is_dir():
+        frozen=_load_file(policy_dir/'reviewer-routing.yml','frozen routing policy')
+        if requested_routing:
+            requested=_load_file(requested_routing,'routing policy')
+            if sha256_file(requested)!=sha256_file(frozen):
+                raise SystemExit('routing policy override does not match frozen cycle policy')
+        return policy_dir,frozen
+    routing=_load_file(requested_routing,'routing policy') if requested_routing else _load_file(ROOT/'policy/reviewer-routing.yml','routing policy')
+    return (ROOT/'policy').resolve(),routing
+
+def _frozen_cycle_inputs(case_path,standards_refs,spec_ref,test_refs):
+    cycle_root=Path(case_path).resolve().parent;trusted=cycle_root/'trusted-inputs'
+    if trusted.is_dir():
+        standards=sorted((trusted/'standards').glob('*')) if (trusted/'standards').is_dir() else []
+        tests=sorted((trusted/'tests').glob('*')) if (trusted/'tests').is_dir() else []
+        specs=sorted((trusted/'spec').glob('*')) if (trusted/'spec').is_dir() else []
+        if len(specs)>1:raise SystemExit('multiple frozen spec files found')
+        return standards,(specs[0] if specs else None),tests
+    standards=[_load_file(x,'standard ref') for x in standards_refs]
+    tests=[_load_file(x,'test ref') for x in test_refs]
+    spec=_load_file(spec_ref,'spec ref') if spec_ref else None
+    return standards,spec,tests
 def _review_digest(path,level,expected,evidence_digest,head_sha,expected_policy_digest):
     p=_load_file(path,f'{level} review');obj=json.loads(p.read_text());errs=validate_stage_result(obj)
     if errs:raise SystemExit(f'{level} review invalid: '+'; '.join(errs))
@@ -78,26 +103,31 @@ def main():
     if cb.exists():_recover_completed_case_bank(cb,root,schema,case);return
     anchor=Path(ns.anchor) if ns.anchor else default_anchor_path(ns.ledger);errs=[e.message for e in Draft202012Validator(case_schema).iter_errors(case)]+semantic_errors(case);hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');errs+=bundle_errors(case,ns.ledger,anchor,False,hmac_key)
     if errs:raise SystemExit('invalid case bundle: '+'; '.join(errs))
-    evidence_path=_load_file(ns.evidence,'evidence');evidence=json.loads(evidence_path.read_text());evidence_schema=json.loads((ROOT/'schemas/textdiff-evidence.schema.json').read_text());ee=[e.message for e in Draft202012Validator(evidence_schema).iter_errors(evidence)]+evidence_semantic_errors(evidence,ROOT/'policy/protected-paths.yml',verify_git=False)
+    policy_dir,routing_path=_frozen_cycle_policy(case_path,ns.routing_policy)
+    evidence_path=_load_file(ns.evidence,'evidence');evidence=json.loads(evidence_path.read_text());evidence_schema=json.loads((ROOT/'schemas/textdiff-evidence.schema.json').read_text());ee=[e.message for e in Draft202012Validator(evidence_schema).iter_errors(evidence)]+evidence_semantic_errors(evidence,policy_dir/'protected-paths.yml',verify_git=False,sensor_policy_path=policy_dir/'sensor-policy.yml')
     if ee:raise SystemExit('invalid evidence: '+'; '.join(ee))
     if evidence.get('output_digest')!=case['sensor']['evidence_digest']:raise SystemExit('case/evidence digest mismatch')
     for k in ('repository','base_sha','head_sha'):
         if evidence.get('binding',{}).get(k)!=case.get('binding',{}).get(k):raise SystemExit(f'case/evidence binding mismatch: {k}')
-    frozen_routing=case_path.parent/'reviewer-routing.effective.yml';routing_path=_load_file(ns.routing_policy,'routing policy') if ns.routing_policy else (_load_file(frozen_routing,'frozen routing policy') if frozen_routing.is_file() else _load_file(ROOT/'policy/reviewer-routing.yml','routing policy'));effective_policy_digest=_effective_policy_digest(routing_path)
+    effective_policy_digest=_effective_policy_digest(routing_path,policy_dir)
     rsi_path=_load_file(ns.rsi,'RSI') if ns.rsi else None;rsi=json.loads(rsi_path.read_text()) if rsi_path else None;trail={r['level']:r for r in case.get('review_trail',[])};l1_digest=(trail.get('L1') or {}).get('result_digest');l2_digest=(trail.get('L2') or {}).get('result_digest')
     for level in ('L1','L2'):
         if level in trail and trail[level].get('policy_digest')!=effective_policy_digest:raise SystemExit(f'{level} case trail effective policy digest mismatch')
     l1_path,_=_review_digest(ns.l1_ref,'L1',l1_digest,evidence['output_digest'],case['binding']['head_sha'],effective_policy_digest);l2_path=None
     if ns.l2_ref:l2_path,_=_review_digest(ns.l2_ref,'L2',l2_digest,evidence['output_digest'],case['binding']['head_sha'],effective_policy_digest)
     elif l2_digest:raise SystemExit('case contains L2 review but --l2-ref was not supplied')
-    standards=[_load_file(x,'standard ref') for x in ns.standards_ref];tests=[_load_file(x,'test ref') for x in ns.test_ref];spec=_load_file(ns.spec_ref,'spec ref') if ns.spec_ref else None;base_policies=[p for p in sorted((ROOT/'policy').glob('*.yml')) if p.name!='reviewer-routing.yml']
+    standards,spec,tests=_frozen_cycle_inputs(case_path,ns.standards_ref,ns.spec_ref,ns.test_ref)
+    expected_standards_digest=named_files_digest([(str(x).replace('\\','/'),Path(x).resolve()) for x in standards]) if standards else object_digest([])
+    for level in ('L1','L2'):
+        if level in trail and trail[level].get('standards_digest')!=expected_standards_digest:raise SystemExit(f'{level} frozen standards digest mismatch')
+    base_policies=[p for p in sorted(Path(policy_dir).glob('*.yml')) if p.name!='reviewer-routing.yml']
     reasons=reasons_for(case,rsi);q=choose_queue(reasons,case.get('labels'),rsi,case.get('failure_families'));bank_parent=cb.parent;bank_parent.mkdir(parents=True,exist_ok=True);stage=Path(tempfile.mkdtemp(prefix=f'.{case["case_id"]}.stage-',dir=bank_parent))
     try:
         _copy(ns.case,stage/'case-record.json');_copy(evidence_path,stage/'textdiff-evidence.json');_copy(ns.ledger,stage/'case-events.jsonl');_copy(anchor,stage/'case-events.anchor.json')
         if rsi_path:_copy(rsi_path,stage/'rsi-evaluation.json')
         _copy(l1_path,stage/'l1-review.json')
         if l2_path:_copy(l2_path,stage/'l2-review.json')
-        trusted_stage=stage/'trusted';trusted_final=cb/'trusted';policy_stage=trusted_stage/'policy';policy_final=trusted_final/'policy';policy_stage.mkdir(parents=True,exist_ok=True);policy_index={'schema_version':'2.6','files':[]}
+        trusted_stage=stage/'trusted';trusted_final=cb/'trusted';policy_stage=trusted_stage/'policy';policy_final=trusted_final/'policy';policy_stage.mkdir(parents=True,exist_ok=True);policy_index={'schema_version':'2.7','files':[]}
         for p in base_policies:
             dst=policy_stage/p.name;_copy(p,dst);policy_index['files'].append({'name':p.name,'sha256':sha256_file(dst)})
         routed=policy_stage/'reviewer-routing.yml';_copy(routing_path,routed);policy_index['files'].append({'name':'reviewer-routing.yml','sha256':sha256_file(routed)});policy_index['files'].sort(key=lambda x:x['name']);policy_index['reviewer_provenance_digest']=effective_policy_digest;write_json(trusted_stage/'policy-index.json',policy_index);policy_index_digest=sha256_file(trusted_stage/'policy-index.json')
