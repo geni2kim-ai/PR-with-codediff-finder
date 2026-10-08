@@ -564,3 +564,25 @@ section 17~18의 HMAC 격리를 다시 공격했다.
 
 이 수정은 이전 라운드의 availability 우선 판단을 철회한 것이다. HMAC이 등장한 root에서는 case 격리보다 **anti-tamper authority 보존**을 우선한다.
 
+### 21. clean-extracted 검증에서 /proc descendant 종료 확인이 race로 실패하는 문제
+
+최신 exact-HEAD canonical은 통과했지만 clean-extracted package 검증에서 기존 regression test가 한 번 실패했다.
+
+실패:
+- `V26CodexFollowupTests.test_validation_group_kills_descendants_after_pass`
+- child PID 종료 여부를 `/proc/<pid>/stat`로 확인하는 순간 process가 사라짐
+- `Path.read_text()`가 Linux procfs race에서 `ProcessLookupError(ESRCH)`를 발생
+- 테스트는 `FileNotFoundError`만 "이미 종료됨"으로 처리하여 실제 성공 조건을 test error로 오판
+
+코드 리딩:
+- `tools/run_validation.py::_run_group()`는 passing group 종료 후에도 `_terminate_test_group(group_id)`를 finally에서 실행한다.
+- `_terminate_test_group()` 자체도 이미 `ProcessLookupError`를 정상적인 "이미 없음" 상태로 처리한다.
+- 따라서 이번 실패는 descendant leak이 아니라 **검증 테스트의 procfs 관측 race**였다.
+
+보완:
+- descendant 종료를 확인하는 두 regression loop 모두 `FileNotFoundError`와 `ProcessLookupError`를 동일하게 "process already exited"로 처리한다.
+- 실제 process가 살아 있거나 zombie가 아닌 상태는 기존처럼 deadline까지 감시한다.
+- validation runner의 kill semantics는 변경하지 않았다.
+
+이 수정은 source authority나 review policy가 아니라 검증 파이프라인의 결정성을 높이는 회귀 보완이다.
+
