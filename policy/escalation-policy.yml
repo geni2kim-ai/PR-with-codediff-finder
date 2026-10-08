@@ -4,8 +4,18 @@ levels:
 - L2
 - ADVERSARIAL
 - HUMAN
+finding_triage:
+  note_only_severities:
+  - minor
+  - nit
+  agent_review_severities:
+  - major
+  - blocker
+  suppress_note_only_reviewer_escalation: true
+  note_only_auto_fix: false
 L2_if_any:
 - reviewer_confidence_low_or_medium
+- major_candidate
 - moderate_reversibility
 - service_or_larger_blast_radius
 - soft_large_diff
