@@ -163,6 +163,14 @@ def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
     Path(tx_path).unlink(missing_ok=True)
     return ev
 
+def recover_pending_append_if_present(ledger,anchor_path=None,hmac_key=None):
+    p=Path(ledger);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
+    if not tx_path.exists():return False
+    with ledger_lock(p):
+        if not tx_path.exists():return False
+        _recover_pending_append(p,anchor,tx_path,hmac_key)
+    return True
+
 def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
     core=_anchor_core(ledger,case_id,events,key_id);obj={**core,'hmac_sha256':_mac(core,hmac_key) if hmac_key else None}
     p=Path(anchor);tmp=p.with_suffix(p.suffix+'.tmp');write_json(tmp,obj);os.replace(tmp,p);return obj
