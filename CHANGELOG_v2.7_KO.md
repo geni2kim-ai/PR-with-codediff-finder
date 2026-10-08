@@ -31,6 +31,8 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - exact HEAD + ZIP SHA-256 + manifest SHA-256 + entry count를 묶는 외부 source-package receipt 추가 (`authority_effect=NONE`).
 - source-package receipt semantic validator를 schema와 동일한 package-name/type 계약으로 맞춤.
 - tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`를 manifest/package 생성 전에 거부하는 package hygiene gate 추가.
+- `git archive --format=zip` clean-extract에서 일부 vendor text blob hash가 달라지는 문제를 검출하여, exact Git blob bytes를 직접 ZIP에 기록하는 package builder로 교체.
+- CRLF/LF 혼합 blob의 archive/extract byte preservation 회귀 테스트 추가.
 
 ## 호환성
 
