@@ -360,7 +360,7 @@ class WorkerAndAuditTests(unittest.TestCase):
                 proc=Path(f'/proc/{pid}/stat')
                 if not proc.exists():alive=False;break
                 try:state=proc.read_text().split()[2]
-                except FileNotFoundError:alive=False;break
+                except (FileNotFoundError,ProcessLookupError):alive=False;break
                 if state=='Z':alive=False;break
                 time.sleep(.05)
             self.assertFalse(alive,'reviewer child survived timeout process-group kill')
@@ -1097,7 +1097,7 @@ class V26CodexFollowupTests(unittest.TestCase):
                     stat=Path(f'/proc/{pid}/stat')
                     if not stat.exists():alive=False;break
                     try:state=stat.read_text().split()[2]
-                    except FileNotFoundError:alive=False;break
+                    except (FileNotFoundError,ProcessLookupError):alive=False;break
                     if state=='Z':alive=False;break
                     time.sleep(.05)
                 self.assertFalse(alive,'passing validation group leaked a descendant')
