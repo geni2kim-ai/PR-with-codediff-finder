@@ -569,8 +569,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         cp_b=subprocess.run(args_b,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
         self.assertEqual(cp_b.returncode,0,cp_b.stderr);bdir=Path(cp_b.stdout.strip())
         self.assertEqual(json.loads((bdir/'review-cycle.json').read_text())['state'],'COMPLETE')
-        self.assertEqual(campaign_history(out,case_b),[campaign_history(out,case_b)[0]])
-        self.assertEqual(campaign_history(out,case_b)[0]['attempt_index'],1)
+        hist=campaign_history(out,case_b);self.assertEqual(len(hist),1);self.assertEqual(hist[0]['attempt_index'],1)
 
     def test_unrelated_pending_hmac_transaction_is_not_recovered_or_blocking(self):
         r,base=self._repo();out=r/'campaign-shared-pending';out.mkdir();ev=adapter(r,base)
