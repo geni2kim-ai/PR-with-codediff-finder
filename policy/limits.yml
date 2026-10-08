@@ -12,6 +12,11 @@ calibration:
   - latency_p95
   - token_cost_p95
   - truncated_context_rate
+  - note_only_rate
+  - major_l2_downgrade_rate
+  - automated_attempts_p95
+  - same_material_repeat_rate
+  - review_budget_human_escalation_rate
   rule: Change limits only through benchmark-backed policy PR with human approval.
 review:
   max_findings: 12

@@ -206,11 +206,12 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **126 PASS** across 68 isolated groups;
+- harness: **139 PASS** across 81 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
 - v2.7 package-integrity follow-up code-bearing validation: **SUCCESS** (Harness Full Validation #270, source HEAD `9c2f0d04bbee5cfad92ad6b8373c4a6e7a0198c3`);
+- latest review-campaign code-bearing validation: **139 PASS / 81 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, DIFF-FALSE-EXACT PASS, full validation PASS;
 - final manifest/PR packaging validation is required on the closeout HEAD before the package is treated as validated.
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.

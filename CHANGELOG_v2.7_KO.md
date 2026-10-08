@@ -68,3 +68,8 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - NOTE_ONLY/PASS closeout은 자동 retry 불가; backlog note를 지우기 위한 반복 수정 방지.
 - `review-budget.json`에 attempt/stage/timeout ceiling/repeat key/retry 가능 여부를 기록.
 - reviewer severity rubric을 action/impact 기준으로 구체화하여 사소한 항목의 major 과대분류로 인한 L2 비용을 줄임.
+
+- review campaign 실전 시뮬레이션 5종 추가: NOTE_ONLY 종료, unchanged-HEAD retry 거부, batched fix 후 PASS, same-finding repeat HUMAN 승격, global attempt budget.
+- repository 내부 output-dir에서 이전 attempt 산출물을 dirty worktree로 오인해 retry가 막히던 문제를 campaign-root ignore로 수정.
+- campaign calibration 지표(`note_only_rate`, `major_l2_downgrade_rate`, `automated_attempts_p95`, `same_material_repeat_rate`, `review_budget_human_escalation_rate`) 추가.
+- review campaign 보완 후 canonical harness **139 PASS / 81 groups** 확인.

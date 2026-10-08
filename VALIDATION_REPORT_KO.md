@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **134 PASS / 76 isolated groups**
+- 합계: **139 PASS / 81 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 134 PASS (groups=76, sequential)`
+- `harness isolated tests: 139 PASS (groups=81, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -115,4 +115,31 @@ v2.7 코어 source HEAD의 canonical full validation은 PASS했다. 최종 packa
 - NOTE_ONLY L1 FINDINGS와 L2 PASS는 material disagreement가 아니며 downstream `route_case`에서도 다시 adversarial escalation으로 살아나지 않는다.
 - `major`는 코드 하드플로어로 최소 L2, `blocker`는 최소 ADVERSARIAL을 요구하며 config로 하향할 수 없다.
 - protected-path/risk/deterministic floors와 random audit는 finding triage와 독립적으로 유지된다.
-- 최신 code-bearing validation: **134 PASS / 76 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+- 최신 code-bearing validation: **139 PASS / 81 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+
+
+## v2.7 coding/review campaign simulation follow-up
+
+Executable simulations were added for the development loop itself.
+
+- NOTE_ONLY closeout refuses automated retry.
+- A completed material-finding review refuses retry when HEAD is unchanged.
+- One batched remediation followed by a clean L1 PASS closes the campaign.
+- The same material finding key surviving the batched remediation makes the second completed material attempt `HUMAN_REQUIRED`.
+- A pure budget evaluator verifies that different new material issues may use the remaining attempt budget, but the third worker-bearing attempt is the automated ceiling.
+- Review output stored inside the repository no longer causes the next retry to fail as dirty merely because the previous attempt directory is untracked; the full campaign root is excluded from worktree-dirty checks.
+- `review-budget.json` records attempt/stage/time ceiling and remediation retry eligibility.
+
+Latest code-bearing validation after these changes:
+- harness: **139 PASS / 81 isolated groups**
+- vendored TextDiffChecker: **144 PASS / 1 GUI skip**
+- DIFF-FALSE-EXACT: PASS
+- canonical result: `ALL VALIDATIONS PASS (FULL)`
+
+Time-model conclusion with the current 180-second reviewer timeout:
+- NOTE_ONLY: 1 stage, 180-second worker ceiling;
+- one major review + one clean post-fix L1: 3 cumulative stages, 540 seconds;
+- same major surviving the fix: 4 cumulative stages, 720 seconds, then HUMAN;
+- absolute campaign ceiling: 3 attempts × 3 stages × 180 seconds = 1,620 seconds before HUMAN/owner handling.
+
+This bound is for reviewer workers only; CI/package validation remains additional, so the repository rules now require one remediation batch/HEAD rather than one HEAD per finding.

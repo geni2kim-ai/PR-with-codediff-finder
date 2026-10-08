@@ -63,3 +63,33 @@ v2.7 소스를 실제로 코딩하고 리뷰/수정하는 상황을 가정해, f
 - low-value 작업시간은 줄이면서 security/governance/test-integrity floor는 유지한다.
 
 이 시뮬레이션은 자동 merge/HUMAN/ENFORCED 권한을 생성하지 않는다. 실제 calibration 데이터가 쌓이면 `automated_attempts_p95`, `same_finding_repeat_rate`, `note_only_rate`, `latency_p95`를 기준으로 attempt 한도를 조정한다.
+
+
+## 실행 검증 결과
+
+회귀 테스트로 시뮬레이션을 실제 실행했다.
+
+- `test_budget_evaluator_bounds_same_and_new_material_findings`: PASS
+- `test_material_retry_requires_changed_head`: PASS
+- `test_note_only_closeout_cannot_start_retry_loop`: PASS
+- `test_one_batched_fix_then_pass_closes_campaign`: PASS
+- `test_same_material_finding_after_batched_fix_requires_human`: PASS
+
+전체 canonical validation 결과는 **139 PASS / 81 isolated groups**, vendored TextDiffChecker **144 PASS / 1 GUI skip**, DIFF-FALSE-EXACT PASS였다.
+
+시뮬레이션 도중 추가로 발견된 문제:
+- review output directory가 repository 내부에 있을 때 2차 attempt가 1차 attempt 산출물을 untracked working-tree 변경으로 오인할 수 있었다.
+- retry worktree 검사에서 현재 attempt만 제외하던 것을 campaign root 전체 제외로 수정했다.
+- 이 문제는 retry 시뮬레이션 테스트가 직접 통과함으로써 재검증했다.
+
+## calibration 제안
+
+등급/시간 정책은 고정값으로 영구 유지하기보다 backdata로 조정한다. `policy/limits.yml` calibration 지표에 다음을 추가했다.
+
+- `note_only_rate`
+- `major_l2_downgrade_rate`
+- `automated_attempts_p95`
+- `same_material_repeat_rate`
+- `review_budget_human_escalation_rate`
+
+특히 `major_l2_downgrade_rate`가 높으면 L1이 사소한 문제를 major로 과대평가하는 신호이고, `same_material_repeat_rate`가 높으면 fix 품질이나 finding 설명 품질을 먼저 개선해야 한다.
