@@ -357,8 +357,21 @@ def campaign_history(root,case_id):
         state=None
         try:state=json.loads((d/'review-cycle.json').read_text()).get('state')
         except Exception:pass
-        out.append({'dir':str(d.resolve()),'head_sha':case.get('binding',{}).get('head_sha'),'state':state,'material_count':material_count,'material_keys':sorted(keys)})
+        campaign=case.get('review_campaign') if isinstance(case.get('review_campaign'),dict) else {}
+        try:attempt_index=int(campaign.get('attempt_index'))
+        except Exception:attempt_index=len(out)+1
+        out.append({'dir':str(d.resolve()),'head_sha':case.get('binding',{}).get('head_sha'),'state':state,'material_count':material_count,'material_keys':sorted(keys),'attempt_index':attempt_index})
     return out
+
+def authoritative_material_keys(stage_rows,esc_cfg=None):
+    # Campaign retry accounting follows the highest completed machine authority
+    # stage, not every lower-stage allegation. A finding cleared by L2/Adversarial
+    # must not survive only as a budget/repeat signal and force a false HUMAN loop.
+    for level in ('ADVERSARIAL','L2','L1'):
+        rows=[r for lvl,_,r,_ in stage_rows if lvl==level]
+        if rows:
+            return sorted({material_finding_key(f) for f in material_findings(rows[-1],esc_cfg)})
+    return []
 
 def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repeat_limit):
     seen={}
@@ -459,15 +472,21 @@ def main():
     max_attempts=int(bootstrap_campaign.get('max_automated_attempts',3));repeat_limit=int(bootstrap_campaign.get('same_material_finding_repeat_limit',2))
     if max_attempts<1 or max_attempts>5:raise SystemExit('review campaign max_automated_attempts must be between 1 and 5')
     if repeat_limit<2 or repeat_limit>max_attempts:raise SystemExit('review campaign same_material_finding_repeat_limit must be between 2 and max_automated_attempts')
+    continuing_authority_path=False;last_attempt_index=0
     if ns.retry and history:
         last=history[-1]
+        try:last_attempt_index=int(last.get('attempt_index') or len(history))
+        except Exception:last_attempt_index=len(history)
         if last.get('state')=='HUMAN_REQUIRED':raise SystemExit('review campaign requires HUMAN decision; automated retry is not allowed')
         if bootstrap_campaign.get('stop_retry_after_note_only_closeout',True) and last.get('state')=='COMPLETE' and not last.get('material_count'):
             raise SystemExit('review campaign already closed without material findings; NOTE_ONLY items remain backlog and must not trigger retry')
-        if len(history)>=max_attempts:raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
+        current_head=git_resolve(repo,'HEAD')
+        continuing_authority_path=last.get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'} and current_head==last.get('head_sha')
+        if not continuing_authority_path and last_attempt_index>=max_attempts:
+            raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
-            if git_resolve(repo,'HEAD')==last.get('head_sha'):raise SystemExit('material remediation retry requires a new HEAD; batch fixes before re-reviewing')
-    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=len(history)+1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
+            if current_head==last.get('head_sha'):raise SystemExit('material remediation retry requires a new HEAD; batch fixes before re-reviewing')
+    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=(last_attempt_index if continuing_authority_path else last_attempt_index+1) if history else 1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
     routing_source=Path(ns.routing_policy).resolve()
     if not routing_source.is_file():raise SystemExit(f'routing policy missing: {routing_source}')
     effective_routing=out/'reviewer-routing.effective.yml';shutil.copy2(routing_source,effective_routing)
@@ -675,7 +694,7 @@ def main():
         if not worktree_ok and state!='STALE':state='BLOCKED';reasons.append('WORKTREE_DIRTY_AFTER_REVIEW')
         executed_levels={level for level,_,_,_ in stage_rows}
         if any(lvl in executed_levels and not runtime_fresh_sessions.get(lvl,False) for lvl in ('L2','ADVERSARIAL')):labels.add('model_session_independence_unverified')
-        current_material_keys=sorted({material_finding_key(f) for _,_,r,_ in stage_rows for f in material_findings(r,esc_cfg)})
+        current_material_keys=authoritative_material_keys(stage_rows,esc_cfg)
         budget_eval=evaluate_review_budget(history,current_material_keys,attempt_index,max_attempts,repeat_limit)
         if state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['repeated_material_keys']:
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT');labels.add('review_budget_same_material_repeat')
