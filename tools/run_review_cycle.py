@@ -359,8 +359,10 @@ def validate_attempt_layout(root):
     if not root.exists():return []
     numbered=[]
     for p in root.iterdir():
-        if not p.is_dir() or not p.name.startswith('attempt-'):continue
-        m=re.fullmatch(r'attempt-(\\d{4})',p.name)
+        if not p.name.startswith('attempt-'):continue
+        if p.is_symlink():raise ValueError(f'symlinked immutable attempt directory is forbidden: {p.name}')
+        if not p.is_dir():raise ValueError(f'non-directory attempt entry is forbidden: {p.name}')
+        m=re.fullmatch(r'attempt-(\d{4})',p.name)
         if not m:raise ValueError(f'malformed immutable attempt directory: {p.name}')
         numbered.append((int(m.group(1)),p))
     numbered.sort()
