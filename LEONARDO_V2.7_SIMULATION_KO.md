@@ -220,3 +220,28 @@ SHADOW의 unkeyed anchor는 self-consistency 보장 범위이고 외부 공격�
 
 이 보완은 interruption을 무조건 무료 retry로 취급하지 않는다. **실제 reviewer가 실행되지 않은 중단은 재개**, **이미 reviewer 비용을 쓴 중단은 그 작업을 재사용하거나, HEAD가 바뀌면 사용한 attempt로 계산**하는 방식으로 시간 절약과 budget 우회 방지를 동시에 맞춘다.
 
+### 7. resume 재실행으로 hard worker-time ceiling을 초과할 수 있는 문제
+
+문서에는 기본값 기준 `3 attempts × 3 reviewer levels × 180초 = 1,620초`가 hard worker-time ceiling으로 정의되어 있었지만, 기존 구현은 그 값을 `review-budget.json`에 계산하여 기록할 뿐 campaign 전체 reviewer 호출 횟수에는 직접 강제하지 않았다.
+
+반례:
+- 동일 HEAD에서 unfinished authority path를 여러 번 resume
+- 이전 task/result가 정책/입력 변경 등으로 reuse 불가
+- 같은 logical attempt 안에서 reviewer가 반복 재실행
+- `attempt_index`는 증가하지 않으므로 3-attempt 제한을 건드리지 않으면서 실제 worker 시간은 1,620초를 넘어갈 수 있음
+
+보완:
+- 각 validated campaign directory의 ledger에서 실제 worker invocation 수를 재구성한다.
+- `REVIEW_COMPLETED` 중 `reused_from_previous_attempt=false`인 실행과 `REVIEW_FAILED`를 실제 invocation으로 센다.
+- reuse된 기존 결과는 worker time을 다시 소비하지 않으므로 한도에서 제외한다.
+- 기본 campaign 전체 invocation ceiling은 기존 정책식과 동일하게 `max_automated_attempts × 3`으로 강제한다.
+- 이미 ceiling에 도달한 상태에서는 새 retry를 시작하지 않고 HUMAN/owner 결정을 요구한다.
+- 한 실행을 시작할 때는 한도 미만이었더라도 L2 실행으로 9번째를 채운 뒤 Adversarial이 10번째가 되는 경우, Adversarial worker를 호출하기 전에 `REVIEW_CAMPAIGN_WORKER_BUDGET_EXHAUSTED`로 차단한다.
+
+추가 회귀:
+- 동일 logical attempt의 interrupted L1 흔적 9개 → 다음 retry가 reviewer를 다시 호출하지 않고 즉시 budget exhaustion
+- 누적 8회 상태에서 L1 reuse + L2 실행으로 9회 도달 → 10번째 Adversarial 호출 직전 BLOCKED
+- 여러 interrupted/resumed directory가 모두 logical attempt 1이어도 실제 reviewer invocation은 별도로 누적
+
+이로써 logical remediation attempt 제한과 실제 agent 실행시간 제한이 분리된다. **resume은 attempt를 불필요하게 소비하지 않지만, resume 자체가 무제한 agent 재실행 통로가 되지도 않는다.**
+
