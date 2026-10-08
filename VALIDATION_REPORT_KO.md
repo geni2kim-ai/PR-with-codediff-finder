@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **125 PASS / 68 isolated groups**
+- 합계: **126 PASS / 68 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -21,7 +21,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - `DIFF-FALSE-EXACT` fixture: **PASS**
 
 ### Manifest
-- source HEAD #270 push validation에서 generated manifest 적용 후 Git blob 검증: **PASS (231 entries)**
+- source HEAD #270 push validation에서 generated manifest 적용 후 Git blob 검증: **PASS (233 entries)**
 - PR/manual 경로는 committed `MANIFEST.sha256`이 generated manifest와 byte-for-byte 일치해야 다음 단계로 진행하는 fail-closed 구조를 유지한다.
 
 ### Schema / semantic examples
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 125 PASS (groups=68, sequential)`
+- `harness isolated tests: 126 PASS (groups=68, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -71,6 +71,8 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 7. receipt semantic validator는 schema와 같은 exact field/name/type 규칙을 적용하고 `authority_effect=NONE`을 유지한다.
 8. HUMAN replay 문구는 구현보다 넓은 “global one-time nonce” 주장으로 읽히지 않도록 exact signed-attestation replay 범위로 정정했다.
 9. tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`가 source package에 봉인되지 않도록 package hygiene gate와 회귀 테스트를 추가했다.
+10. `git archive --format=zip` clean-extract에서 vendor 텍스트 바이트가 Git blob과 달라지는 것을 실제 검출했고, package builder를 exact Git blob byte 기반 ZIP 생성기로 교체했다.
+11. CRLF/LF 혼합 fixture를 ZIP에 넣어 Git blob bytes가 그대로 보존되는 회귀 테스트를 추가했다.
 
 ## 최신 외부 feedback 대조
 
