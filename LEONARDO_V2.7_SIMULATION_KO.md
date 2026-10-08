@@ -507,3 +507,56 @@ section 17 보완을 다시 공격적으로 검토했다.
 
 이 보완으로 multi-case throughput 최적화가 HMAC의 anti-tamper 성질을 약화시키지 않도록 경계를 다시 닫았다.
 
+### 19. 서로 다른 case의 concurrent append 중간 상태를 history scanner가 corruption으로 읽는 문제
+
+shared root에서 서로 다른 case의 병렬 실행을 허용한 상태를 실제 파일 경계로 다시 시뮬레이션했다.
+
+`append_event()`는 ledger별 lock 아래에서 transaction journal → ledger append → anchor replace를 수행한다. 하지만 기존 `campaign_history()`는 해당 ledger lock을 잡지 않고 ledger/anchor를 읽었다.
+
+반례:
+1. case A가 ledger lock을 잡고 append 수행 중
+2. ledger file이 write 중이거나 새 event는 보이지만 anchor 교체 전
+3. 동시에 case B가 같은 root에서 history scan
+4. B는 A의 일시적인 partial JSON 또는 ledger/anchor mismatch를 영구 corruption으로 오판
+5. B의 reviewer는 시작조차 못 하고 불필요한 retry가 발생
+
+보완:
+- 각 campaign history entry의 초기 ledger/event/anchor/pending 상태를 읽을 때 해당 ledger의 append lock을 획득한다.
+- unrelated case의 구조/HMAC 검증과 skip 판단도 같은 consistent snapshot 안에서 수행한다.
+- active case pending transaction은 snapshot 확인 후 기존 recovery 경로로 넘긴다.
+- 2초 안에 consistent snapshot lock을 얻지 못하면 `campaign ledger busy during consistent history snapshot`로 reviewer 시작 전에 fail-closed 한다.
+- partial write 자체를 durable history corruption으로 기록하지 않는다.
+
+회귀:
+- unrelated ledger lock을 잡은 상태에서 ledger bytes를 의도적으로 partial JSON으로 바꿈
+- 동시에 다른 case의 history reader 실행
+- reader가 즉시 partial JSON을 소비하지 않고 lock 해제까지 대기
+- 원래 valid ledger/anchor를 복원 후 reader 정상 완료, unrelated history는 budget에서 제외
+
+### 20. no-key shared-root HMAC skip은 relabel 여부를 판별할 수 없는 근본적 모호성
+
+section 17~18의 HMAC 격리를 다시 공격했다.
+
+초기 정책은 active run에 HMAC key가 없으면 structurally valid unrelated HMAC ledger를 key 없이 skip할 수 있게 했다. 그러나 key가 없는 관찰자는 다음 두 상태를 구분할 수 없다.
+
+- 실제 unrelated HMAC case A
+- active case의 HMAC-protected history를 공격자가 case B로 relabel하고 unkeyed hash/ledger SHA만 재계산한 상태
+
+둘 다 HMAC key 없이는 "정말 unrelated"인지 인증할 수 없다. 따라서 no-key skip을 허용하면 HMAC-protected retry/worker history reset 가능성이 남는다.
+
+보완:
+- shared output root는 case ID와 무관하게 하나의 ledger-HMAC trust domain으로 취급한다.
+- encountered ledger anchor에 HMAC이 있으면, unrelated case라도 해당 key가 없을 때 skip하지 않고 fail-closed 한다.
+- pending append transaction에 HMAC이 있으면 `pending_append_case_id()`도 key 없이 분류/skip하지 않는다.
+- active key가 있는데 unrelated protected record가 다른 key를 쓰면 HMAC mismatch로 차단한다.
+- unkeyed shared-root case들은 기존처럼 서로 독립적으로 병렬 실행 가능하다.
+- keyed case와 unkeyed/no-key case를 같은 root에서 섞고 싶다면 별도 output root로 trust domain을 분리해야 한다.
+
+회귀:
+- HMAC case A + no-key case B, same root → B reviewer 시작 전 `HMAC key unavailable` 차단
+- HMAC pending transaction + no-key unrelated case → transaction을 변형/복구하지 않고 key-unavailable로 차단
+- HMAC history를 다른 case ID로 relabel 후 unkeyed hash 전부 재계산 → no-key run도 HMAC key-unavailable로 history reset 차단
+- 올바른 key를 제공하면 relabel은 기존대로 HMAC mismatch로 차단
+
+이 수정은 이전 라운드의 availability 우선 판단을 철회한 것이다. HMAC이 등장한 root에서는 case 격리보다 **anti-tamper authority 보존**을 우선한다.
+
