@@ -10,11 +10,17 @@ from validate_textdiff_evidence import semantic_errors as evidence_semantic_erro
 from validate_stage_result import validate as validate_stage_result
 from case_ledger import default_anchor_path
 from queue_policy import choose_queue
+def _trail_material_state(row):
+    if row.get('verdict')=='BLOCKED':return 'BLOCKED'
+    if 'material_finding_count' in row:
+        return 'FINDINGS' if int(row.get('material_finding_count',0))>0 else 'PASS'
+    return row.get('verdict')
+
 def reasons_for(case,rsi=None):
     labels=set(case.get('labels',[]));trail=case.get('review_trail',[]);reasons=[];by={}
     for r in trail:by.setdefault(r['level'],[]).append(r)
     l1=by.get('L1',[]);l2=by.get('L2',[])
-    if l1 and l2 and l1[-1]['verdict']!=l2[-1]['verdict']:reasons.append('L1_L2_DISAGREEMENT')
+    if l1 and l2 and _trail_material_state(l1[-1])!=_trail_material_state(l2[-1]):reasons.append('L1_L2_DISAGREEMENT')
     if any(r.get('confidence')=='low' for r in trail):reasons.append('LOW_CONFIDENCE')
     if 'novel_failure_family' in labels or (rsi and 'NOVEL-FAILURE-FAMILY' in rsi.get('failure_tags',[])):reasons.append('NOVEL_FAILURE_FAMILY')
     if 'governance' in labels:reasons.append('GOVERNANCE_CHANGE')
