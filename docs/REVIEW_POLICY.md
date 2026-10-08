@@ -46,7 +46,7 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - The default campaign limit is **3 automated attempts**.
 - The same material finding key may appear in at most **2 completed material attempts**. If it survives the first remediation and appears again, the second occurrence changes the campaign to `HUMAN_REQUIRED`.
 - If different material issues continue to appear, the third worker-bearing attempt is the automated ceiling; remaining material findings require HUMAN/owner judgment rather than a fourth automatic fix/review cycle.
-- WAITING_L2 / ADVERSARIAL_REQUIRED recovery may resume the same HEAD because it is completing an unfinished authority path, not retrying a completed remediation.
+- WAITING_L1 / WAITING_L2 / ADVERSARIAL_REQUIRED recovery may resume the same HEAD because it is completing an unfinished authority path, not retrying a completed remediation. WAITING_L1 has executed no reviewer yet and therefore does not consume a remediation attempt merely by being resumed.
 - A completed material review cannot be rerun on an unchanged HEAD.
 - Retry history is fail-closed: prior case/ledger/anchor integrity must validate before it can affect attempt count or resume state. Historical state comes from the anchored `CYCLE_CLOSED` event, and newer v2.7 events also bind logical attempt index plus authoritative material keys.
 - Lower-stage material findings cleared by the highest completed machine authority stage do not remain remediation-budget findings when campaign history is reloaded.
