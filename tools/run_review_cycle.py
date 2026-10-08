@@ -276,16 +276,54 @@ def run_worker(cmd,task,cfg):
     if errs:raise ReviewerExecutionError('INVALID_RESULT','invalid reviewer result: '+'; '.join(errs))
     return r
 
-def stage_signals(r):
-    ff={f.get('failure_family') for f in r.get('findings',[]) if f.get('failure_family')}
-    return {'reviewer_confidence':r['confidence'],'blocker_candidate':any(f['severity']=='blocker' for f in r['findings']),
-            'novel_failure_family':bool(r['escalation']['novel_failure_family']),'test_integrity_finding':any(f['axis']=='test_integrity' for f in r['findings']),
-            'reviewer_policy_tampering':any((f.get('failure_family') or '').startswith('GOVERNANCE') for f in r['findings'])}, ff
+def finding_disposition(f,esc_cfg=None):
+    triage=(esc_cfg or {}).get('finding_triage',{})
+    note=set(triage.get('note_only_severities',['minor','nit']))
+    severity=f.get('severity')
+    if severity in note:return 'NOTE_ONLY'
+    if severity=='blocker':return 'BLOCKING'
+    return 'AGENT_REVIEW_REQUIRED'
 
-def requested_target(r):return r['escalation']['target'] if r['escalation']['requested'] and r['escalation']['target']!='NONE' else r['level']
-def disagreement(a,b):
-    if a['verdict']!=b['verdict']:return True
-    sa={(f['severity'],f.get('failure_family'),f['axis']) for f in a['findings'] if f['severity'] in {'blocker','major'}};sb={(f['severity'],f.get('failure_family'),f['axis']) for f in b['findings'] if f['severity'] in {'blocker','major'}};return sa!=sb
+def material_findings(r,esc_cfg=None):
+    return [f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)!='NOTE_ONLY']
+
+def _baseline_risk(r):
+    risk=r.get('risk_signal',{})
+    return risk.get('reversibility')=='EASY' and risk.get('blast_radius')=='LOCAL' and risk.get('data_sensitivity')=='NONE' and risk.get('security_surface')=='LOW' and risk.get('availability_criticality')=='LOW'
+
+def stage_signals(r,esc_cfg=None):
+    material=material_findings(r,esc_cfg);ff={f.get('failure_family') for f in material if f.get('failure_family')}
+    only_notes=bool(r.get('findings')) and not material
+    return {'reviewer_confidence':'high' if only_notes else r['confidence'],
+            'major_candidate':any(f['severity']=='major' for f in material),
+            'blocker_candidate':any(f['severity']=='blocker' for f in material),
+            'novel_failure_family':bool(material) and bool(r['escalation']['novel_failure_family']),
+            'test_integrity_finding':any(f['axis']=='test_integrity' for f in material),
+            'reviewer_policy_tampering':any((f.get('failure_family') or '').startswith('GOVERNANCE') for f in material)}, ff
+
+def requested_target(r,esc_cfg=None):
+    requested=r['escalation']['target'] if r['escalation']['requested'] and r['escalation']['target']!='NONE' else r['level']
+    if requested==r['level']:return requested
+    if r.get('findings') and not material_findings(r,esc_cfg) and _baseline_risk(r) and not r['escalation'].get('novel_failure_family'):
+        return r['level']
+    return requested
+
+def disagreement(a,b,esc_cfg=None):
+    if a['verdict']=='BLOCKED' or b['verdict']=='BLOCKED':return a['verdict']!=b['verdict']
+    ma=material_findings(a,esc_cfg);mb=material_findings(b,esc_cfg)
+    if bool(ma)!=bool(mb):return True
+    sa={(f['severity'],f.get('failure_family'),f['axis']) for f in ma};sb={(f['severity'],f.get('failure_family'),f['axis']) for f in mb}
+    return sa!=sb
+
+def review_notes_obj(stage_rows,esc_cfg=None):
+    items=[]
+    for level,task,r,ref in stage_rows:
+        for f in r.get('findings',[]):
+            if finding_disposition(f,esc_cfg)=='NOTE_ONLY':
+                items.append({'level':level,'finding_id':f['finding_id'],'severity':f['severity'],'axis':f['axis'],'path':f['path'],'line':f.get('line'),'claim':f['claim'],'recommendation':f['recommendation'],'result_digest':r['result_digest']})
+    obj={'schema_version':'2.7','kind':'review-notes','authority_effect':'NONE','auto_fix':False,'items':items,'notes_digest':''}
+    obj['notes_digest']=object_digest(obj,'notes_digest')
+    return obj
 
 def cycle_gate(state,required,achieved,stage):
     if state=='STALE':return 'cancelled'
@@ -297,7 +335,7 @@ def cycle_gate(state,required,achieved,stage):
     sev={f['severity'] for f in stage['findings']}
     if sev & {'blocker','major'}:return 'failure'
     if LEVELS.index(achieved)<LEVELS.index(required):return 'action_required'
-    if sev & {'minor','nit'}:return 'neutral'
+    if sev & {'minor','nit'}:return 'success'
     return 'success'
 
 def make_case(case_id,evidence,stage_rows,labels,families):
@@ -455,16 +493,16 @@ def main():
             try:r=run_worker(cmd,task,cfg)
             except ReviewerExecutionError as exc:
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
-            write_json(out/filename,r);stage_rows.append((level,task,r,filename));ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']});achieved=level;current_stage=r;return r
+            write_json(out/filename,r);stage_rows.append((level,task,r,filename));notes=review_notes_obj(stage_rows,esc_cfg);write_json(out/'review-notes.json',notes);note_count=sum(1 for x in r.get('findings',[]) if finding_disposition(x,esc_cfg)=='NOTE_ONLY');ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence'],'note_only_findings':note_count});achieved=level;current_stage=r;return r
         frozen=out/'textdiff-evidence.json';l1task=make_task('L1',ns.case_id,evidence,frozen,repo,changed,cfg,limits_cfg,frozen_standards,frozen_spec,frozen_tests,routing_policy=effective_routing,policy_dir=effective_policy_dir,runtime_verified=runtime_verified,runtime_attestation_digest_value=runtime_att_digest,runtime_fresh_sessions=runtime_fresh_sessions,worker_cmd=l1cmd);write_json(out/'l1-task.json',l1task)
         if not l1cmd:state='WAITING_L1'
         else:
             l1=do_worker('L1',l1cmd,l1task,'l1-review.json')
             if l1 is None:return
-            s,ff=stage_signals(l1);families|=ff;sig.update({k:v for k,v in s.items() if v})
+            s,ff=stage_signals(l1,esc_cfg);families|=ff;sig.update({k:v for k,v in s.items() if v})
             deterministic_issue=any(sig.get(k) for k in ('test_integrity_finding','sensor_failed_invariant','sensor_nontext_sensitive','destructive_migration','public_contract_break','ruleset_codeowners_change'))
             if l1['verdict']=='PASS' and deterministic_issue:sig['deterministic_reviewer_conflict']=True;reasons.append('DETERMINISTIC_REVIEWER_CONFLICT')
-            _lvl,_why=derive_required_level(l1['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l1);required=max_level(required,_req)
+            _lvl,_why=derive_required_level(l1['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l1,esc_cfg);required=max_level(required,_req)
             if l1['escalation']['requested']:reasons.append('L1_REQUEST_'+_req)
             ra=esc_cfg.get('random_audit',{});audit_eligible=(required=='L1');audit=bool(ra.get('enabled')) and not ns.disable_random_audit and audit_eligible and audit_sample(float(ra.get('l1_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L1')
             labels.add('random_audit_l1_selected' if audit else ('random_audit_l1_not_selected' if audit_eligible and bool(ra.get('enabled')) and not ns.disable_random_audit else 'random_audit_l1_not_eligible'))
@@ -476,9 +514,9 @@ def main():
                 else:
                     l2=do_worker('L2',l2cmd,l2task,'l2-review.json')
                     if l2 is None:return
-                    s2,ff2=stage_signals(l2);families|=ff2;sig.update({k:v for k,v in s2.items() if v})
-                    if disagreement(l1,l2):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
-                    _lvl,_why=derive_required_level(l2['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l2);required=max_level(required,_req)
+                    s2,ff2=stage_signals(l2,esc_cfg);families|=ff2;sig.update({k:v for k,v in s2.items() if v})
+                    if disagreement(l1,l2,esc_cfg):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
+                    _lvl,_why=derive_required_level(l2['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l2,esc_cfg);required=max_level(required,_req)
                     if l2['escalation']['requested']:reasons.append('L2_REQUEST_'+_req)
                     audit2_eligible=(required=='L2');audit2=bool(ra.get('enabled')) and not ns.disable_random_audit and audit2_eligible and audit_sample(float(ra.get('l2_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L2')
                     labels.add('random_audit_l2_selected' if audit2 else ('random_audit_l2_not_selected' if audit2_eligible and bool(ra.get('enabled')) and not ns.disable_random_audit else 'random_audit_l2_not_eligible'))
@@ -490,9 +528,9 @@ def main():
                         else:
                             adv=do_worker('ADVERSARIAL',advcmd,atask,'adversarial-review.json')
                             if adv is None:return
-                            s3,ff3=stage_signals(adv);families|=ff3;sig.update({k:v for k,v in s3.items() if v})
+                            s3,ff3=stage_signals(adv,esc_cfg);families|=ff3;sig.update({k:v for k,v in s3.items() if v})
                             if adv['verdict']=='FINDINGS' and any(f['severity'] in {'blocker','major'} for f in adv.get('findings',[])):sig['adversarial_unresolved']=True;reasons.append('ADVERSARIAL_UNRESOLVED')
-                            _lvl,_why=derive_required_level(adv['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(adv);required=max_level(required,_req)
+                            _lvl,_why=derive_required_level(adv['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(adv,esc_cfg);required=max_level(required,_req)
                             if adv['escalation']['requested']:reasons.append('ADVERSARIAL_REQUEST_'+_req)
                             state='HUMAN_REQUIRED' if required=='HUMAN' else 'COMPLETE'
                     else:state='HUMAN_REQUIRED' if required=='HUMAN' else 'COMPLETE'
