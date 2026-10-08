@@ -48,6 +48,8 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - If different material issues continue to appear, the third worker-bearing attempt is the automated ceiling; remaining material findings require HUMAN/owner judgment rather than a fourth automatic fix/review cycle.
 - WAITING_L2 / ADVERSARIAL_REQUIRED recovery may resume the same HEAD because it is completing an unfinished authority path, not retrying a completed remediation.
 - A completed material review cannot be rerun on an unchanged HEAD.
+- Retry history is fail-closed: prior case/ledger/anchor integrity must validate before it can affect attempt count or resume state. Historical state comes from the anchored `CYCLE_CLOSED` event, and newer v2.7 events also bind logical attempt index plus authoritative material keys.
+- Lower-stage material findings cleared by the highest completed machine authority stage do not remain remediation-budget findings when campaign history is reloaded.
 - The review budget never lowers deterministic authority floors.
 
 With the current 180-second worker timeout, three levels per attempt and three attempts give a hard worker-time ceiling of 1,620 seconds (27 minutes) before external/HUMAN work. Typical paths are materially lower because NOTE_ONLY uses L1 only and major uses L1+L2.
