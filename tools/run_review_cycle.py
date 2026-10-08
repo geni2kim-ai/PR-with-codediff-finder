@@ -19,7 +19,7 @@ from queue_policy import choose_queue
 
 LEVELS=['SENSOR','L1','L2','ADVERSARIAL','HUMAN'];REVIEW_LEVELS=['L1','L2','ADVERSARIAL','HUMAN'];ZERO='0'*64
 CAMPAIGN_RESUMABLE_STATES={'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED','INTERRUPTED_EMPTY','INTERRUPTED_REVIEW'}
-RESUMABLE_REVIEW_FAILURES={'REVIEW_TIMEOUT','REVIEW_OUTPUT_LIMIT','REVIEW_STDERR_LIMIT','REVIEW_PROCESS_EXIT','REVIEW_INVALID_JSON','REVIEW_UNSAFE_OUTPUT','REVIEW_INVALID_RESULT'}
+RESUMABLE_REVIEW_FAILURES={'REVIEW_TIMEOUT','REVIEW_OUTPUT_LIMIT','REVIEW_STDERR_LIMIT','REVIEW_PROCESS_START','REVIEW_PROCESS_EXIT','REVIEW_INVALID_JSON','REVIEW_UNSAFE_OUTPUT','REVIEW_INVALID_RESULT'}
 
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 
@@ -243,7 +243,8 @@ def run_worker(cmd,task,cfg):
             kwargs={'stdin':inf,'stdout':of,'stderr':ef,'shell':False,'env':safe_env(rt.get('environment_allowlist',[]),task),'cwd':task['binding']['workspace_ref']}
             if os.name!='nt':kwargs['start_new_session']=True
             else:kwargs['creationflags']=getattr(subprocess,'CREATE_NEW_PROCESS_GROUP',0)
-            p=subprocess.Popen(cmd,**kwargs)
+            try:p=subprocess.Popen(cmd,**kwargs)
+            except OSError as exc:raise ReviewerExecutionError('PROCESS_START',f'reviewer process start failed: {type(exc).__name__}: {exc}') from exc
             failure=None
             while p.poll() is None:
                 if time.monotonic()-start>timeout:
@@ -406,7 +407,12 @@ def campaign_history(root,case_id,hmac_key=None):
                     try:anchored_attempt=int(anchored_attempt)
                     except Exception:raise ValueError('campaign attempt_index invalid')
                     if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
-            worker_invocations=sum(1 for e in events if e.get('event_type')=='REVIEW_FAILED')+sum(1 for e in completed if not e.get('payload',{}).get('reused_from_previous_attempt',False))
+            started=[e for e in events if e.get('event_type')=='REVIEW_STARTED']
+            if started:
+                worker_invocations=len(started)
+            else:
+                # Backward compatibility for pre-REVIEW_STARTED v2.7 ledgers.
+                worker_invocations=sum(1 for e in events if e.get('event_type')=='REVIEW_FAILED')+sum(1 for e in completed if not e.get('payload',{}).get('reused_from_previous_attempt',False))
             out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed),'worker_invocations':worker_invocations,'resumable':resumable,'failure_kind':failure_kind})
             previous=out[-1]
         except Exception as exc:
@@ -435,11 +441,13 @@ def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repea
     stop_reason='SAME_MATERIAL_FINDING_REPEAT' if repeated else ('AUTOMATED_ATTEMPT_LIMIT' if exhausted else ('NO_MATERIAL_FINDINGS' if not current else None))
     return {'repeated_material_keys':repeated,'attempt_limit_reached':exhausted,'automated_remediation_retry_allowed':retry_allowed,'stop_reason':stop_reason}
 
-def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds,reused_count=0):
+def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds,reused_count=0,historical_worker_invocations=0,current_worker_invocations=None):
     executed=max(0,len(stage_rows)-int(reused_count))
+    current_worker_invocations=executed if current_worker_invocations is None else int(current_worker_invocations)
+    ceiling=max_attempts*3
     obj={'schema_version':'2.7','kind':'review-budget','case_id':case_id,'authority_effect':'ESCALATION_ONLY','attempt_index':attempt_index,'max_automated_attempts':max_attempts,'same_material_finding_repeat_limit':repeat_limit,
-         'executed_agent_stages':executed,'reused_agent_stages':int(reused_count),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':executed*timeout_seconds,
-         'campaign_worker_timeout_ceiling_seconds':max_attempts*3*timeout_seconds,'current_material_finding_keys':sorted(set(current_keys)),
+         'executed_agent_stages':executed,'reused_agent_stages':int(reused_count),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':current_worker_invocations*timeout_seconds,
+         'campaign_worker_invocation_ceiling':ceiling,'campaign_worker_invocations_used':int(historical_worker_invocations)+current_worker_invocations,'campaign_worker_timeout_ceiling_seconds':ceiling*timeout_seconds,'current_material_finding_keys':sorted(set(current_keys)),
          'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_remediation_retry_allowed':evaluation['automated_remediation_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
     obj['budget_digest']=object_digest(obj,'budget_digest');return obj
 
@@ -691,9 +699,11 @@ def main():
                 labels.add('review_budget_worker_invocation_limit');reasons.append('REVIEW_BUDGET_WORKER_INVOCATION_LIMIT')
                 terminal_block('REVIEW_CAMPAIGN_WORKER_BUDGET_EXHAUSTED',f'worker invocation ceiling {max_worker_invocations} reached; HUMAN/owner decision required',level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             current_worker_invocations+=1
+            task_digest=sha256_bytes(canonical_bytes(task))
+            ev('REVIEW_STARTED',{'level':level,'task_id':task.get('task_id'),'task_digest':task_digest,'logical_attempt_index':attempt_index,'worker_invocation_index':historical_worker_invocations+current_worker_invocations})
             try:r=run_worker(cmd,task,cfg)
             except ReviewerExecutionError as exc:
-                ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
+                ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'task_digest':task_digest,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             return record_stage(level,task,r,filename,False)
         def reuse_or_run(level,cmd,task,filename):
             reused=reusable_stage_result(resume_dir,level,task,mode)
@@ -761,7 +771,7 @@ def main():
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT');labels.add('review_budget_same_material_repeat')
         elif state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['attempt_limit_reached']:
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_AUTOMATED_ATTEMPT_LIMIT');labels.add('review_budget_attempt_limit')
-        budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']),len(reused_levels));write_json(out/'review-budget.json',budget)
+        budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']),len(reused_levels),historical_worker_invocations,current_worker_invocations);write_json(out/'review-budget.json',budget)
         case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg)
         case['review_campaign']={'attempt_index':budget['attempt_index'],'max_automated_attempts':budget['max_automated_attempts'],'stop_reason':budget['stop_reason'],'automated_remediation_retry_allowed':budget['automated_remediation_retry_allowed'],'executed_agent_stages':budget['executed_agent_stages'],'reused_agent_stages':budget['reused_agent_stages'],'current_attempt_worker_timeout_budget_seconds':budget['current_attempt_worker_timeout_budget_seconds'],'repeated_material_finding_keys':budget['repeated_material_finding_keys']}
         write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
