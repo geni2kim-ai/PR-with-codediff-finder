@@ -279,7 +279,11 @@ def run_worker(cmd,task,cfg):
 def finding_disposition(f,esc_cfg=None):
     triage=(esc_cfg or {}).get('finding_triage',{})
     note=set(triage.get('note_only_severities',['minor','nit'])) & {'minor','nit'}
-    severity=f.get('severity')
+    severity=f.get('severity');family=str(f.get('failure_family') or '')
+    forced_exact={'SECURITY-CRITICAL','DATA-CORRUPTION'}|set(triage.get('force_agent_review_failure_families',[]))
+    forced_prefix={'GOVERNANCE'}|set(triage.get('force_agent_review_failure_family_prefixes',[]))
+    if family in forced_exact or any(family.startswith(x) for x in forced_prefix if x):
+        return 'BLOCKING' if severity=='blocker' else 'AGENT_REVIEW_REQUIRED'
     if severity in note:return 'NOTE_ONLY'
     if severity=='blocker':return 'BLOCKING'
     return 'AGENT_REVIEW_REQUIRED'
@@ -297,9 +301,9 @@ def stage_signals(r,esc_cfg=None):
     return {'reviewer_confidence':'high' if only_notes else r['confidence'],
             'major_candidate':any(f['severity']=='major' for f in material),
             'blocker_candidate':any(f['severity']=='blocker' for f in material),
-            'novel_failure_family':bool(material) and bool(r['escalation']['novel_failure_family']),
+            'novel_failure_family':bool(r['escalation']['novel_failure_family']),
             'test_integrity_finding':any(f['axis']=='test_integrity' for f in material),
-            'reviewer_policy_tampering':any((f.get('failure_family') or '').startswith('GOVERNANCE') for f in material)}, ff
+            'reviewer_policy_tampering':any((f.get('failure_family') or '').startswith('GOVERNANCE') for f in r.get('findings',[]))}, ff
 
 def requested_target(r,esc_cfg=None):
     requested=r['escalation']['target'] if r['escalation']['requested'] and r['escalation']['target']!='NONE' else r['level']
