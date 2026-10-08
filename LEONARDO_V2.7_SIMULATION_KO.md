@@ -410,3 +410,41 @@ campaign-wide worker ceiling을 강화한 뒤 동시 실행을 시뮬레이션�
 - **가장 마지막 attempt 디렉터리 하나만 완전히 삭제**하고 더 높은 번호의 디렉터리가 전혀 없는 경우에는 디렉터리 sequence만으로 과거 tail 존재를 증명할 수 없다. 이 문제를 완전히 막으려면 campaign root 밖의 독립 append-only campaign journal/owner storage가 필요하다.
 - SHADOW에서는 이를 운영 무결성 NOTE로 남기며, 현재 단계에서 외부 persistent authority까지 추가하여 다시 대규모 구조 변경 루프를 만들지는 않는다.
 
+### 16. 복구 가능한 ledger append 중단을 campaign history corruption으로 오판하는 문제
+
+append transaction 경계를 다시 시뮬레이션했다.
+
+기존 `case_ledger.append_event()`는 다음 순서의 중단을 복구할 수 있도록 transaction journal을 이미 가지고 있다.
+
+1. pending append transaction 기록
+2. ledger event append + fsync
+3. anchor 교체
+4. pending transaction 제거
+
+하지만 `campaign_history()`는 retry 시 pending transaction을 먼저 복구하지 않고 ledger/anchor를 바로 검증했다.
+
+반례 A:
+- `REVIEW_STARTED` 또는 다른 event가 ledger에 append됨
+- anchor 교체 직전에 host/process 중단
+- pending transaction은 정상이고 복구 가능
+- 다음 retry의 history loader는 ledger와 old/missing anchor를 비교하여 corruption으로 차단
+
+반례 B:
+- pending transaction은 기록되었지만 ledger append 직전에 중단
+- ledger 파일 자체가 아직 없을 수 있음
+- 기존 history directory discovery는 pending transaction만 남은 attempt를 아예 보지 못할 수 있음
+
+보완:
+- `case_ledger.recover_pending_append_if_present()`를 안전한 public recovery 경로로 추가했다.
+- campaign history는 ledger/anchor 검증 전에 pending append transaction을 먼저 복구한다.
+- ledger 파일이 아직 없어도 pending transaction만 존재하는 attempt를 history 후보로 포함한다.
+- recovery는 기존 ledger lock, transaction digest, event hash chain, pre-ledger SHA-256, HMAC 규칙을 그대로 사용한다.
+- transaction 변조, HMAC 불일치, pre-ledger divergence는 계속 fail-closed 한다.
+
+추가 회귀:
+- authenticated transaction이 ledger에는 append됐지만 anchor가 없는 상태 → history load가 복구 후 `INTERRUPTED_EMPTY`로 재구성
+- pending transaction은 남았지만 ledger write 자체가 사라진 상태 → transaction journal에서 ledger/anchor 복원
+- pending transaction payload 변조 → history loader가 `append transaction digest mismatch`로 거부
+
+이 보완으로 **"실제 history corruption"과 "정상적인 append 도중의 crash"를 구분**한다. 복구 가능한 중단 때문에 HUMAN/owner 개입이 필요해지는 불필요한 운영 정지를 줄이면서 기존 fail-closed 무결성은 유지한다.
+
