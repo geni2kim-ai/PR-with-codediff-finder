@@ -215,6 +215,18 @@ Validated candidate results:
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.
 
+## Finding triage and anti-loop behavior
+
+v2.7 distinguishes a finding from a remediation trigger.
+
+- `minor` / `nit`: **NOTE_ONLY**. Recorded in `review-notes.json`; `auto_fix=false`; no additional reviewer solely because of the finding.
+- `major`: **AGENT_REVIEW_REQUIRED**. L1 major raises the required level to at least L2.
+- `blocker`: **BLOCKING**. Adversarial/higher escalation rules remain active.
+- deterministic risk/protected-path floors override NOTE_ONLY classification.
+- random audit may still sample NOTE_ONLY cases for quality control, but it does not authorize cosmetic auto-fix loops.
+
+This prevents a typo/style finding from causing source edit → new HEAD → same finding class → repeated re-review. Low-priority cleanup is accumulated as notes/backlog instead.
+
 ## v2.7 self-dogfood closeout
 
 The v2.7 candidate is dogfooded through downstream routing/recovery as well as the review cycle itself. The latest dogfood batch reproduced and fixed:
