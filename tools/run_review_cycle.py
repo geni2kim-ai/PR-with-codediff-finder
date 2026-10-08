@@ -482,7 +482,7 @@ def main():
         ev('CASE_OPENED',{'repository':str(repo),'base_sha':mb,'head_sha':head,'expected_base_ref':ns.expected_base})
         bad_env=sensitive_env_names(cfg.get('runtime',{}).get('environment_allowlist',[]))
         if bad_env:terminal_block('RUNTIME_CONFIG_INVALID','sensitive environment names in allowlist: '+', '.join(bad_env));return
-        dirty=worktree_dirty(repo,[ns.evidence,out]);worktree_ok=not dirty['tracked'] and not dirty['untracked']
+        dirty=worktree_dirty(repo,[ns.evidence,campaign_root]);worktree_ok=not dirty['tracked'] and not dirty['untracked']
         if not worktree_ok:terminal_block('WORKTREE_DIRTY_BEFORE_REVIEW',json.dumps(dirty));return
         try:evidence=json.loads(Path(ns.evidence).read_text())
         except Exception as exc:terminal_block('EVIDENCE_UNREADABLE',type(exc).__name__);return
@@ -615,7 +615,7 @@ def main():
         if final_head!=evidence['binding']['head_sha']:state='STALE';reasons.append('HEAD_CHANGED_DURING_REVIEW')
         if final_base_tip!=evidence.get('binding',{}).get('base_ref_sha') or final_mb!=evidence.get('binding',{}).get('base_sha'):
             state='STALE';reasons.append('BASE_REF_CHANGED_DURING_REVIEW')
-        dirty_after=worktree_dirty(repo,[ns.evidence,out]);worktree_ok=not dirty_after['tracked'] and not dirty_after['untracked']
+        dirty_after=worktree_dirty(repo,[ns.evidence,campaign_root]);worktree_ok=not dirty_after['tracked'] and not dirty_after['untracked']
         if not worktree_ok and state!='STALE':state='BLOCKED';reasons.append('WORKTREE_DIRTY_AFTER_REVIEW')
         executed_levels={level for level,_,_,_ in stage_rows}
         if any(lvl in executed_levels and not runtime_fresh_sessions.get(lvl,False) for lvl in ('L2','ADVERSARIAL')):labels.add('model_session_independence_unverified')
