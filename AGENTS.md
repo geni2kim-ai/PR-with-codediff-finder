@@ -12,8 +12,12 @@ These rules are the default instructions for work in this repository.
 6. After a fix, review the **post-fix latest HEAD**, not only the patch that was just written.
 7. Run the canonical validation on the latest HEAD and refresh `MANIFEST.sha256` only from that exact committed source.
 8. A review may be reported as PASS only when the exact reported HEAD, manifest, regression tests, and CI result agree.
-9. Do not self-authorize merge, HUMAN approval, or ENFORCED promotion merely because local or CI tests pass. External promotion gates remain separate.
-10. Review reports must record the exact HEAD SHA and identify any NOT_RUN external/E2E checks.
+9. Negative tests must prove the **intended failure branch/reason**, not merely any earlier rejection. Preserve exit code/stdout/stderr or equivalent evidence when practical.
+10. A freshness/expiry rejection is **not** replay-prevention evidence. Claim single-use replay protection only when nonce/run-id consumption or equivalent verifier state is exercised by duplicate-use tests.
+11. Literal status/capability flags are configuration claims unless they are derived from an independently checkable operation/result. Do not report them as measured evidence.
+12. Cleanup claims must prove the relevant path: timeout/kill execution, bounded wait, before/after process existence and residual child-tree state when process cleanup is material.
+13. Do not self-authorize merge, HUMAN approval, or ENFORCED promotion merely because local or CI tests pass. External promotion gates remain separate.
+14. Review reports must record the exact reviewed HEAD SHA and identify any NOT_RUN external/E2E checks.
 
 ## Review priority
 
