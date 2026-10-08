@@ -278,7 +278,7 @@ def run_worker(cmd,task,cfg):
 
 def finding_disposition(f,esc_cfg=None):
     triage=(esc_cfg or {}).get('finding_triage',{})
-    note=set(triage.get('note_only_severities',['minor','nit']))
+    note=set(triage.get('note_only_severities',['minor','nit'])) & {'minor','nit'}
     severity=f.get('severity')
     if severity in note:return 'NOTE_ONLY'
     if severity=='blocker':return 'BLOCKING'
