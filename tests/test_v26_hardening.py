@@ -498,6 +498,45 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
             self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
 
+    def _turn_waiting_l2_into_interrupted_l1(self,out,case):
+        ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';events=load_events(ledger)
+        last_review=max(i for i,e in enumerate(events) if e.get('event_type')=='REVIEW_COMPLETED' and e.get('payload',{}).get('level')=='L1')
+        kept=events[:last_review+1]
+        ledger.write_text(''.join(json.dumps(e,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n' for e in kept),encoding='utf-8')
+        case_ledger.write_anchor(ledger,anchor,case,kept)
+        for name in ('case-record.json','review-cycle.json','review-budget.json'):
+            (out/name).unlink(missing_ok=True)
+
+    def test_interrupted_completed_l1_is_reused_instead_of_rerun(self):
+        r,base=self._repo();case='BUDGET-INTERRUPTED-REUSE';out=r/'campaign-interrupted-reuse';ev=adapter(r,base)
+        with tempfile.TemporaryDirectory() as td:
+            counter=Path(td)/'count.txt';worker=Path(td)/'counting_major.py'
+            worker.write_text("import pathlib,subprocess,sys\np=pathlib.Path("+repr(str(counter))+")\nn=int(p.read_text()) if p.exists() else 0\np.write_text(str(n+1))\ncp=subprocess.run([sys.executable,"+repr(str(ROOT/'tools/mock_reviewer.py'))+",'--mode','major'],input=sys.stdin.read(),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\nsys.stdout.write(cp.stdout);sys.stderr.write(cp.stderr);raise SystemExit(cp.returncode)\n")
+            l1cmd=json.dumps([sys.executable,str(worker)])
+            args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',l1cmd,'--disable-random-audit']
+            first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr);self.assertEqual(counter.read_text(),'1')
+            self._turn_waiting_l2_into_interrupted_l1(out,case)
+            hist=campaign_history(out,case);self.assertEqual(hist[-1]['state'],'INTERRUPTED_REVIEW');self.assertEqual(hist[-1]['attempt_index'],1)
+            second=subprocess.run(args+['--retry','--l2-cmd-json',cmdjson('major')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(second.returncode,0,second.stderr)
+            d2=Path(second.stdout.strip());budget=json.loads((d2/'review-budget.json').read_text())
+            self.assertEqual(counter.read_text(),'1');self.assertEqual(budget['attempt_index'],1);self.assertEqual(budget['reused_agent_stages'],1);self.assertEqual(budget['executed_agent_stages'],1)
+
+    def test_interrupted_review_on_old_head_still_consumes_attempt_when_head_changes(self):
+        r,base=self._repo();case='BUDGET-INTERRUPTED-HEAD';out=r/'campaign-interrupted-head';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
+        first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(first.returncode,0,first.stderr)
+        self._turn_waiting_l2_into_interrupted_l1(out,case)
+        (r/'a.py').write_text('x=3\n');run(['git','add','a.py'],cwd=r);run(['git','commit','-qm','new remediation after interrupted review'],cwd=r);ev2=adapter(r,base)
+        retry=[str(ev2) if x==str(ev) else x for x in args]+['--retry','--l2-cmd-json',cmdjson('major')]
+        second=subprocess.run(retry,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(second.returncode,0,second.stderr)
+        d2=Path(second.stdout.strip());self.assertEqual(json.loads((d2/'review-budget.json').read_text())['attempt_index'],2)
+
+    def test_closed_attempt_missing_case_record_fails_closed(self):
+        r,base=self._repo();case='BUDGET-CLOSED-NO-CASE';out=r/'campaign-closed-no-case';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='nit',out=out);(out/'case-record.json').unlink()
+        cp=self._retry(r,base,case,out,ev,l1='pass')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('closed campaign attempt missing case-record',cp.stderr+cp.stdout)
+
     def test_higher_authority_clearance_removes_lower_stage_material_from_budget(self):
         r,base=self._repo();case='BUDGET-CLEARED';out=r/'campaign-cleared';ev=adapter(r,base)
         args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),
