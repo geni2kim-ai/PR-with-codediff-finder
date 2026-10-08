@@ -26,6 +26,10 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - privacy-sensitive 원본을 재배포하지 않고 pre/post SHA-256 equality를 증명하는 digest-only mutation receipt 도구/스키마 추가 (`authority_effect=NONE`).
 - mutation receipt 출력이 원본/spec/pre-snapshot을 덮어쓰는 경로를 fail-closed로 차단하고 receipt write를 atomic replace로 처리.
 - receipt semantic validator를 추가하고 top-level/item 필드를 exact allowlist로 제한해 path/content 같은 추가 필드를 digest 재계산으로 숨기는 우회를 차단.
+- `MANIFEST.sha256`을 `.git` 없는 추출 패키지에서 직접 검증하는 filesystem 모드 추가; missing/extra/hash mismatch와 unsafe POSIX 경로를 fail-closed.
+- PR/manual package를 clean extraction한 뒤 manifest 검증과 canonical full validation을 다시 실행하도록 release gate 강화.
+- exact HEAD + ZIP SHA-256 + manifest SHA-256 + entry count를 묶는 외부 source-package receipt 추가 (`authority_effect=NONE`).
+- source-package receipt semantic validator를 schema와 동일한 package-name/type 계약으로 맞춤.
 
 ## 호환성
 
