@@ -33,6 +33,7 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`를 manifest/package 생성 전에 거부하는 package hygiene gate 추가.
 - `git archive --format=zip` clean-extract에서 일부 vendor text blob hash가 달라지는 문제를 검출하여, exact Git blob bytes를 직접 ZIP에 기록하는 package builder로 교체.
 - CRLF/LF 혼합 blob의 archive/extract byte preservation 회귀 테스트 추가.
+- ENFORCED runtime replay 회귀 테스트가 random L2 audit에 따라 간헐적으로 `WAITING_L2`가 되던 테스트 결합을 제거하고 L2 worker를 명시해 replay assertion을 안정화.
 
 ## 호환성
 
