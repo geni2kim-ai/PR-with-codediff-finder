@@ -498,6 +498,18 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
             self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
 
+    def test_hmac_shadow_resume_reuses_completed_lower_stage(self):
+        r,base=self._repo();case='BUDGET-HMAC-RESUME';out=r/'campaign-hmac-resume';ev=adapter(r,base)
+        with tempfile.TemporaryDirectory() as td:
+            counter=Path(td)/'count.txt';worker=Path(td)/'counting_major.py'
+            worker.write_text("import pathlib,subprocess,sys\np=pathlib.Path("+repr(str(counter))+")\nn=int(p.read_text()) if p.exists() else 0\np.write_text(str(n+1))\ncp=subprocess.run([sys.executable,"+repr(str(ROOT/'tools/mock_reviewer.py'))+",'--mode','major'],input=sys.stdin.read(),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)\nsys.stdout.write(cp.stdout);sys.stderr.write(cp.stderr);raise SystemExit(cp.returncode)\n")
+            l1cmd=json.dumps([sys.executable,str(worker)]);env={**os.environ,'MAESTRO_LEDGER_HMAC_KEY':'shadow-ledger-key'}
+            args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',l1cmd,'--disable-random-audit']
+            first=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env=env);self.assertEqual(first.returncode,0,first.stderr);self.assertEqual(counter.read_text(),'1')
+            second=subprocess.run(args+['--retry','--l2-cmd-json',cmdjson('major')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env=env);self.assertEqual(second.returncode,0,second.stderr)
+            d2=Path(second.stdout.strip());budget=json.loads((d2/'review-budget.json').read_text())
+            self.assertEqual(counter.read_text(),'1');self.assertEqual(budget['reused_agent_stages'],1);self.assertEqual(budget['attempt_index'],1)
+
     def _turn_waiting_l2_into_interrupted_l1(self,out,case):
         ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';events=load_events(ledger)
         last_review=max(i for i,e in enumerate(events) if e.get('event_type')=='REVIEW_COMPLETED' and e.get('payload',{}).get('level')=='L1')
