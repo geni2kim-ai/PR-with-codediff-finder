@@ -498,6 +498,40 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
             self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
 
+    def test_concurrent_campaign_execution_is_rejected_before_review(self):
+        r,base=self._repo();case='BUDGET-CONCURRENT';out=r/'campaign-concurrent';ev=adapter(r,base)
+        lock_target=out.parent/(out.name+'.campaign-control')
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        with case_ledger.ledger_lock(lock_target,timeout=1.0):
+            cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('review campaign already active',cp.stderr+cp.stdout)
+        self.assertFalse((out/'case-events.jsonl').exists())
+
+    def test_attempt_directory_gap_fails_closed(self):
+        r,base=self._repo();case='BUDGET-GAP';out=r/'campaign-gap';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        (out/'attempt-0002').mkdir()
+        cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('attempt layout invalid',cp.stderr+cp.stdout)
+
+    def test_duplicate_replayed_attempt_ledger_fails_closed(self):
+        r,base=self._repo();case='BUDGET-DUPLEDGER';out=r/'campaign-dupledger';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        dup=out/'attempt-0001';dup.mkdir()
+        for name in ('case-events.jsonl','case-events.anchor.json','case-record.json'):
+            shutil.copy2(out/name,dup/name)
+        cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('duplicate/replayed campaign ledger identity',cp.stderr+cp.stdout)
+
+    def test_symlinked_attempt_directory_is_rejected(self):
+        if os.name=='nt':self.skipTest('symlink privilege/platform variance on Windows')
+        r,base=self._repo();case='BUDGET-SYMLINK';out=r/'campaign-symlink';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        target=r/'external-attempt';target.mkdir()
+        (out/'attempt-0001').symlink_to(target,target_is_directory=True)
+        cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('symlinked immutable attempt directory is forbidden',cp.stderr+cp.stdout)
+
     def test_hmac_shadow_resume_reuses_completed_lower_stage(self):
         r,base=self._repo();case='BUDGET-HMAC-RESUME';out=r/'campaign-hmac-resume';ev=adapter(r,base)
         with tempfile.TemporaryDirectory() as td:
