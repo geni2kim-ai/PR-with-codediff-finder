@@ -357,3 +357,54 @@ worker invocation ceiling을 ledger의 `REVIEW_COMPLETED`와 `REVIEW_FAILED`만�
 
 회귀 테스트에서 HMAC anchor를 사용한 동일 HEAD resume가 L1 worker를 두 번째로 호출하지 않고 `reused_agent_stages=1`, `attempt_index=1`을 유지하는지 고정했다.
 
+### 14. 동일 campaign 동시 retry가 worker ceiling을 병렬로 초과할 수 있는 문제
+
+campaign-wide worker ceiling을 강화한 뒤 동시 실행을 시뮬레이션했다.
+
+반례:
+1. 동일 output root에서 두 프로세스가 거의 동시에 `--retry`
+2. 두 프로세스 모두 같은 historical worker count를 읽음
+3. 각자 "아직 ceiling 미만"이라고 판단
+4. 서로 다른 reviewer를 동시에 시작
+5. 개별 ledger는 정상이어도 campaign 전체 실제 호출 수가 ceiling을 초과할 수 있음
+
+보완:
+- campaign root마다 별도의 single-writer lock을 획득한 뒤 history/budget 판정을 시작한다.
+- 같은 root에서 다른 review cycle이 이미 실행 중이면 reviewer를 하나도 시작하지 않고 즉시 거부한다.
+- dead owner PID의 lock은 기존 ledger lock 복구 규칙과 동일하게 회수된다.
+- lock은 campaign root 바깥 sibling control path에 두어 첫 attempt의 "empty output-dir" 의미를 훼손하지 않는다.
+
+### 15. attempt 디렉터리 복제/삭제/재배열로 campaign history가 왜곡되는 문제
+
+각 attempt 내부 ledger/anchor가 유효해도 campaign history는 디렉터리 집합 자체를 신뢰하고 있었다.
+
+반례 A — 복제:
+- 완료/중단 attempt 디렉터리를 그대로 복사하여 `attempt-000N`으로 추가
+- 같은 worker invocation이 여러 번 계산되어 false worker exhaustion/HUMAN escalation 가능
+
+반례 B — 중간 삭제:
+- `attempt-0001`, `attempt-0002`, `attempt-0003` 중 하나를 삭제
+- 기존 allocator는 가장 작은 빈 번호를 다시 사용하여 삭제 흔적을 덮을 수 있음
+
+반례 C — symlink:
+- `attempt-000N`을 외부 경로 또는 다른 attempt로 symlink
+- campaign scanner가 immutable local attempt가 아닌 경로를 읽을 수 있음
+
+보완:
+- retry 디렉터리는 전역적으로 `attempt-0001..N`의 연속 sequence여야 한다.
+- 번호 공백이 있으면 새 attempt 생성 전에 fail-closed 한다.
+- allocator는 검증된 마지막 번호 다음 값만 사용한다.
+- `attempt-*`가 symlink 또는 directory가 아닌 entry이면 거부한다.
+- active case의 ledger identity(`ledger_sha256 + final event hash + seq`)가 history에서 중복되면 replay/copy로 보고 거부한다.
+- shared output root의 다른 case는 기존처럼 자기 case ID로 검증한 후 active campaign 계산에서는 제외한다.
+
+추가 회귀:
+- 동일 campaign lock을 다른 프로세스가 보유한 동안 새 cycle 시작 차단
+- attempt sequence gap 차단
+- 동일 ledger를 복사한 replay attempt 차단
+- POSIX symlinked attempt 차단
+
+남는 제한:
+- **가장 마지막 attempt 디렉터리 하나만 완전히 삭제**하고 더 높은 번호의 디렉터리가 전혀 없는 경우에는 디렉터리 sequence만으로 과거 tail 존재를 증명할 수 없다. 이 문제를 완전히 막으려면 campaign root 밖의 독립 append-only campaign journal/owner storage가 필요하다.
+- SHADOW에서는 이를 운영 무결성 NOTE로 남기며, 현재 단계에서 외부 persistent authority까지 추가하여 다시 대규모 구조 변경 루프를 만들지는 않는다.
+
