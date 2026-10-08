@@ -273,3 +273,24 @@ worker-time ceiling을 강제한 뒤 failure path를 다시 시뮬레이션했�
 
 이제 **source를 고쳐 다시 검토하는 반복**과 **reviewer 실행 자체의 일시 실패를 재시도하는 반복**이 서로 다른 budget으로 관리된다. 전자는 3 remediation attempts, 후자는 campaign-wide worker invocation ceiling으로 각각 제한된다.
 
+### 9. 강화된 history 검증이 다른 case의 정상 retry를 막는 호환성 회귀
+
+campaign history를 ledger/anchor 기반으로 강화한 뒤 canonical regression에서 기존 v2.4 테스트가 실제 실패했다.
+
+재현:
+1. 동일 output root에 case A의 BLOCKED cycle 존재
+2. 같은 root에 case B를 `--retry`로 새 immutable attempt 생성
+3. history scanner가 case A ledger를 case B의 ID로 검증
+4. case ID mismatch로 case B 시작 자체가 차단
+
+보안 강화 과정에서 생긴 실제 회귀였으며, 기존 동작상 output root가 반드시 단일 case 전용이라는 보장은 없었다.
+
+보완:
+- 각 ledger는 먼저 자기 event들의 case ID가 하나로 일관되는지 확인한다.
+- ledger hash chain과 anchor는 그 ledger 자신의 case ID 기준으로 검증한다.
+- 검증이 끝난 뒤 active `case_id`와 다른 정상 case ledger는 현재 campaign history에서 제외한다.
+- ledger 내부에 case ID가 섞였거나 누락된 경우는 계속 fail-closed 한다.
+- active case의 ledger/case-record 불일치는 계속 오류다.
+
+이 수정으로 **shared immutable output root의 case isolation**을 유지하면서, 다른 case를 현재 campaign 이력으로 잘못 해석하는 회귀를 제거했다. 기존 `test_reviewer_failure_is_audited_and_retry_gets_new_attempt`가 이 경계를 다시 검증한다.
+
