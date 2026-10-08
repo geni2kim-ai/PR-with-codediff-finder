@@ -46,6 +46,7 @@ A Git-blob manifest PASS is not treated as proof that a distributed ZIP is compl
 - rejects extra, missing, changed or path-ambiguous entries;
 - reruns canonical full validation from the extracted tree;
 - emits a separate source-package receipt binding exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count.
+- rejects tracked pytest/Python cache artifacts before manifest generation so generated test state is not sealed as source-of-record.
 
 The package receipt is an integrity/binding record with `authority_effect=NONE`; it is not an external signature or promotion authority.
 
