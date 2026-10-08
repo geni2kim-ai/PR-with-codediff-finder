@@ -18,6 +18,7 @@ from runtime_attestation import create as create_runtime_attestation, validate a
 from textdiff_adapter import weakening_signals,canonical_source_sha256
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 import human_decision_attestation
+from route_case import reasons_for
 from human_decision_attestation import create as create_human_attestation,validate as validate_human_attestation,consume_nonce as consume_human_nonce
 
 
@@ -375,6 +376,9 @@ class FindingTriageTests(unittest.TestCase):
         schema=json.loads((ROOT/'schemas/review-notes.schema.json').read_text(encoding='utf-8'))
         self.assertEqual(list(Draft202012Validator(schema).iter_errors(notes)),[])
         self.assertEqual([x['severity'] for x in notes['items']],['nit'])
+        case=json.loads((out/'case-record.json').read_text())
+        self.assertEqual(case['review_trail'][0]['material_finding_count'],0)
+        self.assertEqual(case['review_trail'][0]['note_only_finding_count'],1)
 
     def test_minor_reviewer_escalation_is_suppressed_when_risk_is_baseline(self):
         r,base=self._repo();out=cycle(r,adapter(r,base),base,'TRIAGE-MINOR',l1='minor-escalate',l2='pass')
@@ -397,6 +401,13 @@ class FindingTriageTests(unittest.TestCase):
         self.assertEqual(notes['items'],[])
         self.assertEqual(cyc['gate_conclusion'],'failure')
 
+
+    def test_note_only_l1_vs_l2_pass_is_not_downstream_disagreement(self):
+        case={'labels':[],'review_trail':[
+            {'level':'L1','verdict':'FINDINGS','material_finding_count':0,'note_only_finding_count':1},
+            {'level':'L2','verdict':'PASS','material_finding_count':0,'note_only_finding_count':0},
+        ],'failure_families':[]}
+        self.assertNotIn('L1_L2_DISAGREEMENT',reasons_for(case))
 
     def test_triage_configuration_cannot_downgrade_major_or_blocker(self):
         hostile={'finding_triage':{'note_only_severities':['minor','nit','major','blocker']},
