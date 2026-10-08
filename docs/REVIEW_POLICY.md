@@ -53,7 +53,7 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - Lower-stage material findings cleared by the highest completed machine authority stage do not remain remediation-budget findings when campaign history is reloaded.
 - The review budget never lowers deterministic authority floors.
 
-With the current 180-second worker timeout, three levels per attempt and three attempts give a hard worker-time ceiling of 1,620 seconds (27 minutes) before external/HUMAN work. Typical paths are materially lower because NOTE_ONLY uses L1 only and major uses L1+L2.
+With the current 180-second worker timeout, three levels per attempt and three attempts give a hard worker-time ceiling of 1,620 seconds (27 minutes) before external/HUMAN work. This ceiling is enforced from ledger-observed real reviewer invocations across completed and interrupted/resumed directories; reused stages do not consume it, while `REVIEW_FAILED` and newly executed stages do. The tenth reviewer invocation is not started. Typical paths are materially lower because NOTE_ONLY uses L1 only and major uses L1+L2.
 
 
 ### Incomplete authority-path resume
