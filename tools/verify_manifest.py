@@ -76,7 +76,11 @@ def filesystem_errors(manifest='MANIFEST.sha256',filesystem_root=None):
     root=Path(filesystem_root or ROOT).resolve()
     manifest_path=Path(manifest)
     if not manifest_path.is_absolute():manifest_path=root/manifest_path
-    m=manifest_entries(manifest_path);actual=_filesystem_entries(root);e=[]
+    if manifest_path.is_symlink():raise ValueError('package manifest must not be a symlink')
+    resolved_manifest=manifest_path.resolve()
+    if resolved_manifest!=root and root not in resolved_manifest.parents:raise ValueError('package manifest must be inside filesystem root')
+    if not resolved_manifest.is_file():raise ValueError('package manifest missing')
+    m=manifest_entries(resolved_manifest);actual=_filesystem_entries(root);e=[]
     for p in sorted(set(actual)-set(m)):e.append(f'unmanifested package file: {p}')
     for p in sorted(set(m)-set(actual)):e.append(f'manifested package file missing: {p}')
     for p,expected in sorted(m.items()):
