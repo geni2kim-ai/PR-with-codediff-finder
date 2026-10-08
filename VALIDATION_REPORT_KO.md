@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **129 PASS / 71 isolated groups**
+- 합계: **134 PASS / 76 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 129 PASS (groups=71, sequential)`
+- `harness isolated tests: 134 PASS (groups=76, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -106,3 +106,13 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 **HARDENED SHADOW CANDIDATE.**
 
 v2.7 코어 source HEAD의 canonical full validation은 PASS했다. 최종 package는 committed manifest가 closeout HEAD와 일치하고 PR/manual full validation이 성공하여 동일 HEAD의 ZIP artifact가 생성된 뒤에만 validated package로 취급한다. 테스트 PASS만으로 merge, HUMAN 승인 또는 ENFORCED production 승격을 자체 승인하지 않는다.
+
+
+## v2.7 finding-triage / anti-loop 후속
+
+- `minor/nit`는 NOTE_ONLY로 분류되어 `review-notes.json`에 기록되고 같은 closeout에서 자동 수정하지 않는다.
+- NOTE_ONLY reviewer escalation은 baseline risk일 때 억제되며, low-confidence/novel/test-integrity signals도 NOTE_ONLY finding 자체만으로 authority를 올리지 않는다.
+- NOTE_ONLY L1 FINDINGS와 L2 PASS는 material disagreement가 아니며 downstream `route_case`에서도 다시 adversarial escalation으로 살아나지 않는다.
+- `major`는 코드 하드플로어로 최소 L2, `blocker`는 최소 ADVERSARIAL을 요구하며 config로 하향할 수 없다.
+- protected-path/risk/deterministic floors와 random audit는 finding triage와 독립적으로 유지된다.
+- 최신 code-bearing validation: **134 PASS / 76 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
