@@ -24,6 +24,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertIn('hardening/v2.7',text)
         self.assertNotIn('refs/heads/hardening/v2.6',text)
         self.assertIn('Build validated v2.7 source package',text)
+        self.assertIn('Verify clean-extracted v2.7 package',text)
+        self.assertIn('source_package_receipt.py create',text)
         self.assertIn('v2.7-source-package',text)
         self.assertGreaterEqual(text.count("github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'"),3)
 
