@@ -485,6 +485,15 @@ def reusable_stage_result(previous_dir,level,current_task,mode):
     if old_task.get('reviewer_contract')!=current_task.get('reviewer_contract'):return None
     if _task_ref_hashes(old_task)!=_task_ref_hashes(current_task):return None
     if validate_stage(result,current_task):return None
+    ledger=previous_dir/'case-events.jsonl';anchor=previous_dir/'case-events.anchor.json'
+    if not ledger.is_file() or not anchor.is_file():return None
+    try:
+        events=load_events(ledger)
+        if validate_events(events,old_task.get('case_id')):return None
+        if validate_anchor(ledger,anchor,events,old_task.get('case_id')):return None
+    except Exception:return None
+    completed=[e for e in events if e.get('event_type')=='REVIEW_COMPLETED' and e.get('payload',{}).get('level')==level and e.get('payload',{}).get('result_digest')==result.get('result_digest')]
+    if not completed:return None
     return result
 
 def cycle_gate(state,required,achieved,stage,esc_cfg=None):
