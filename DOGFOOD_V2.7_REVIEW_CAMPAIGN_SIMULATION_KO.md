@@ -147,3 +147,62 @@ severity 자체가 잘못 선택되는 상황도 추가로 시뮬레이션했다
 1. NOTE_ONLY는 수정/retry하지 않는다.
 2. material 수정은 한 batch/새 HEAD로 묶고 같은 material repeat는 HUMAN으로 끊는다.
 3. 수정이 아니라 상위 authority worker의 늦은 가용성 때문에 재개하는 경우, 안전하게 검증 가능한 lower stage는 다시 실행하지 않는다.
+
+## Leonardo 장기 backdata 시뮬레이션
+
+단기 anti-loop가 장기 학습에서 역효과를 내는지 추가 시뮬레이션했다.
+
+### NOTE_ONLY raw verdict 오염
+
+시나리오:
+- L1: `FINDINGS`, 내용은 NOTE_ONLY 1건
+- L2: `PASS`
+
+기존 calibration은 raw verdict가 다르다는 이유로 L1/L2 reversal 및 L1 불일치로 셌다.
+
+보완 후:
+- L1 material state = PASS
+- L2 material state = PASS
+- reversal 없음
+- NOTE는 `note_only_rate`에만 반영
+
+### HUMAN vocabulary 오염
+
+시나리오:
+- machine reviewer: PASS/FINDINGS
+- HUMAN: CONFIRMED/REJECTED
+
+보완 후:
+- machine agreement는 최고 machine review까지만 material-state 기준으로 비교.
+- HUMAN은 parent review confirmation/rejection으로 별도 통계.
+
+### broad failure-family false repeat
+
+시나리오:
+- attempt 1: `CORRECTNESS` / `src/a.py`
+- attempt 2: 새로운 `CORRECTNESS` / `src/b.py`
+
+기존 family-only key라면 같은 문제 반복으로 오인할 수 있었다.
+
+보완 후:
+- repeat identity = failure family + axis + path digest.
+- 같은 family의 다른 파일 결함은 다른 key.
+- 같은 path/family/axis에서 wording만 달라져도 같은 key.
+
+### 반복 NOTE → standard evolution
+
+같은 NOTE가 여러 case에서 반복되어도 source auto-fix를 다시 시작하지 않는다.
+
+대신:
+- case별 occurrence를 deduplicate해 집계;
+- 기본 3 cases 이상이면 recurring NOTE signal로 calibration report에 노출;
+- 자동 standard 생성/승격 없음;
+- 재현/상위 adjudication/HUMAN+CODEOWNER 절차 유지.
+
+실행 회귀:
+- `LeonardoCalibrationTests.test_calibration_treats_note_only_as_material_pass`: PASS
+- `...test_calibration_separates_human_confirmation_from_machine_verdict_vocabulary`: PASS
+- `...test_material_finding_key_distinguishes_same_family_on_different_paths`: PASS
+- `...test_recurring_note_candidate_is_case_frequency_not_stage_frequency`: PASS
+
+code-bearing canonical validation: **145 PASS / 87 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.

@@ -6,6 +6,7 @@ large_diff:
   hard_changed_lines: 10000
 calibration:
   review_every_runs: 500
+  recurring_note_min_occurrences: 3
   metrics:
   - missed_blocker_major_rate
   - precision

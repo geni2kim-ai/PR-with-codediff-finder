@@ -84,3 +84,10 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - `review-budget.json`에 `reused_agent_stages`를 분리하고 실제 신규 worker만 `executed_agent_stages`/timeout budget에 계산.
 - observable L1 counting regression으로 WAITING_L2 resume 시 L1 호출이 1회로 유지됨을 확인.
 - 최신 harness **141 PASS / 83 groups** 확인.
+
+- Leonardo calibration을 raw PASS/FINDINGS 문자열이 아닌 material finding state 기준으로 변경하여 NOTE_ONLY가 L1/L2 disagreement/오답으로 학습되는 문제 수정.
+- HUMAN CONFIRMED/REJECTED를 machine PASS/FINDINGS와 직접 비교하지 않고 parent review confirmation/rejection으로 분리.
+- material repeat key를 broad failure-family 단독에서 failure-family + axis + path identity로 좁혀 서로 다른 결함의 false HUMAN escalation 방지.
+- case record에 NOTE_ONLY key/family, major/blocker count, review campaign summary를 보존하여 Leonardo 장기 backdata 지표 강화.
+- recurring NOTE를 case-frequency 기준으로 집계하고 기본 3 cases부터 standard/check **proposal signal**로만 노출; 자동 수정/자동 표준 승격은 금지.
+- Leonardo calibration regressions 4건 추가; code-bearing harness **145 PASS / 87 groups** 확인.

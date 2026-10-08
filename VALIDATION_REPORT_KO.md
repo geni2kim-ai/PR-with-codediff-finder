@@ -185,3 +185,23 @@ Latest canonical code-bearing result:
 - TextDiffChecker **144 PASS / 1 GUI skip**
 - DIFF-FALSE-EXACT PASS
 - `ALL VALIDATIONS PASS (FULL)`
+
+## Leonardo material-aware calibration 후속
+
+추가 시뮬레이션에서 anti-loop와 장기 calibration 사이의 의미 불일치를 점검했다.
+
+발견 및 보완:
+1. NOTE_ONLY-only `FINDINGS`가 L2 PASS와 raw verdict가 다르다는 이유로 reversal로 집계되던 구조를 material-state 비교로 변경.
+2. HUMAN `CONFIRMED/REJECTED`를 machine `PASS/FINDINGS`와 직접 비교하던 calibration 해석을 제거하고 parent confirmation/rejection으로 분리.
+3. `failure_family` 단독 반복 key가 서로 다른 파일의 동일 family 결함을 같은 문제로 오인할 수 있어 family+axis+path identity로 좁힘.
+4. case record에 note key/family, major/blocker count와 review campaign summary를 남겨 `note_only_rate`, `major_l2_downgrade_rate`, `automated_attempts_p95`, `same_material_repeat_rate`, `review_budget_human_escalation_rate`를 실제 backdata에서 계산할 수 있게 함.
+5. 반복 NOTE는 3 case 이상에서 proposal signal로 표시하되 자동 수정/standard 승격 권한은 만들지 않음.
+
+회귀:
+- Leonardo calibration tests 4건 PASS.
+- code-bearing canonical harness: **145 PASS / 87 isolated groups**.
+- vendored TextDiffChecker: **144 PASS / 1 GUI skip**.
+- `ALL VALIDATIONS PASS (FULL)`.
+
+남은 NOTE:
+- final case record는 campaign summary를 보존하지만 이전 remediation attempt의 전체 model/provenance trail을 하나로 재봉인하지 않는다. campaign-level 시간/반복 지표에는 영향이 없지만 과거 attempt의 세부 model-by-model calibration 완전성은 추후 구조 개선 후보다.
