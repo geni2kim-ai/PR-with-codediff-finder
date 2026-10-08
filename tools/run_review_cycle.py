@@ -370,9 +370,10 @@ def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repea
     stop_reason='SAME_MATERIAL_FINDING_REPEAT' if repeated else ('AUTOMATED_ATTEMPT_LIMIT' if exhausted else ('NO_MATERIAL_FINDINGS' if not current else None))
     return {'repeated_material_keys':repeated,'attempt_limit_reached':exhausted,'automated_remediation_retry_allowed':retry_allowed,'stop_reason':stop_reason}
 
-def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds):
+def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds,reused_count=0):
+    executed=max(0,len(stage_rows)-int(reused_count))
     obj={'schema_version':'2.7','kind':'review-budget','case_id':case_id,'authority_effect':'ESCALATION_ONLY','attempt_index':attempt_index,'max_automated_attempts':max_attempts,'same_material_finding_repeat_limit':repeat_limit,
-         'executed_agent_stages':len(stage_rows),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':len(stage_rows)*timeout_seconds,
+         'executed_agent_stages':executed,'reused_agent_stages':int(reused_count),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':executed*timeout_seconds,
          'campaign_worker_timeout_ceiling_seconds':max_attempts*3*timeout_seconds,'current_material_finding_keys':sorted(set(current_keys)),
          'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_remediation_retry_allowed':evaluation['automated_remediation_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
     obj['budget_digest']=object_digest(obj,'budget_digest');return obj
@@ -594,7 +595,7 @@ def main():
         if evidence['summary']['files_changed']>=limits_cfg['large_diff']['hard_files'] or evidence['summary']['changed_lines']>=limits_cfg['large_diff']['hard_changed_lines']:sig['sensor_failed_invariant']=True;sig['hard_large_diff']=True
         if evidence['summary']['quality_class']=='HEURISTIC' and (hits['adversarial_floor'] or hits['human_floor'] or hits['governance']):sig['sensor_heuristic_high_risk']=True
         required,reasons=derive_required_level(base_model,hits,sig,esc_cfg,sensor_cfg)
-        l1cmd=parse_cmd(ns.l1_cmd_json);l2cmd=parse_cmd(ns.l2_cmd_json);advcmd=parse_cmd(ns.adversarial_cmd_json);stage_rows=[];families=set();labels=set();state=None;achieved='SENSOR';current_stage=None
+        l1cmd=parse_cmd(ns.l1_cmd_json);l2cmd=parse_cmd(ns.l2_cmd_json);advcmd=parse_cmd(ns.adversarial_cmd_json);stage_rows=[];reused_levels=set();families=set();labels=set();state=None;achieved='SENSOR';current_stage=None
         if hits['governance']:labels.add('governance')
         if mode=='SHADOW':labels.add('shadow_only')
         resume_dir=None
@@ -603,7 +604,7 @@ def main():
         def record_stage(level,task,r,filename,reused=False):
             nonlocal achieved,current_stage
             write_json(out/filename,r);stage_rows.append((level,task,r,filename));notes=review_notes_obj(stage_rows,esc_cfg);write_json(out/'review-notes.json',notes);note_count=sum(1 for x in r.get('findings',[]) if finding_disposition(x,esc_cfg)=='NOTE_ONLY');material_count=len(material_findings(r,esc_cfg));labels.add('note_only_findings_present') if note_count else None;labels.add('agent_review_findings_present') if material_count else None
-            if reused:labels.add('lower_stage_reused')
+            if reused:labels.add('lower_stage_reused');reused_levels.add(level)
             ev('REVIEW_COMPLETED',{'level':level,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence'],'note_only_findings':note_count,'agent_review_findings':material_count,'reused_from_previous_attempt':bool(reused)});achieved=level;current_stage=r;return r
         def do_worker(level,cmd,task,filename):
             try:r=run_worker(cmd,task,cfg)
@@ -676,7 +677,7 @@ def main():
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT');labels.add('review_budget_same_material_repeat')
         elif state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['attempt_limit_reached']:
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_AUTOMATED_ATTEMPT_LIMIT');labels.add('review_budget_attempt_limit')
-        budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']));write_json(out/'review-budget.json',budget)
+        budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']),len(reused_levels));write_json(out/'review-budget.json',budget)
         case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg);write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
         if cerr:terminal_block('CASE_RECORD_INVALID','; '.join(cerr),'HARNESS',required,achieved,stage_rows,labels,families,reasons,current_stage);return
         if state in {'WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED'}:ev('ESCALATION_REQUIRED',{'state':state,'required_level':required,'reasons':sorted(set(reasons))})

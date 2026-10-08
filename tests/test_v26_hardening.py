@@ -483,6 +483,7 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             attempt=Path(second.stdout.strip());cyc=json.loads((attempt/'review-cycle.json').read_text());casej=json.loads((attempt/'case-record.json').read_text())
             self.assertEqual(counter.read_text(),'1')
             self.assertEqual(cyc['state'],'COMPLETE');self.assertIn('lower_stage_reused',casej['labels'])
+            budget=json.loads((attempt/'review-budget.json').read_text());self.assertEqual(budget['reused_agent_stages'],1);self.assertEqual(budget['executed_agent_stages'],1);self.assertEqual(budget['current_attempt_worker_timeout_budget_seconds'],180)
             events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
             self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
 
