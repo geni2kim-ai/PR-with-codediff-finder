@@ -12,7 +12,7 @@ from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_case_bundle import errors as case_bundle_errors
-from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock
+from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
 from queue_policy import choose_queue
@@ -373,13 +373,16 @@ def validate_attempt_layout(root):
 
 def campaign_history(root,case_id,hmac_key=None):
     root=Path(root);dirs=[]
-    if (root/'case-record.json').is_file() or (root/'case-events.jsonl').is_file():dirs.append(root)
+    root_ledger=root/'case-events.jsonl'
+    if (root/'case-record.json').is_file() or root_ledger.is_file() or pending_append_path(root_ledger).is_file():dirs.append(root)
     if root.is_dir():
-        dirs.extend(p for p in validate_attempt_layout(root) if (p/'case-record.json').is_file() or (p/'case-events.jsonl').is_file())
+        dirs.extend(p for p in validate_attempt_layout(root) if (p/'case-record.json').is_file() or (p/'case-events.jsonl').is_file() or pending_append_path(p/'case-events.jsonl').is_file())
     out=[];derived_attempt=0;previous=None;seen_ledger_identities=set()
     for d in dirs:
         try:
             ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json'
+            if pending_append_path(ledger).is_file():
+                recover_pending_append_if_present(ledger,anchor,hmac_key)
             if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
             try:anchor_obj=json.loads(anchor.read_text())
             except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
