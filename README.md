@@ -215,6 +215,16 @@ Validated candidate results:
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.
 
+## v2.7 self-dogfood closeout
+
+The v2.7 candidate is dogfooded through downstream routing/recovery as well as the review cycle itself. The latest dogfood batch reproduced and fixed:
+- live-policy TOCTOU between completed review and routing;
+- live standards/spec/test TOCTOU between review and adversarial packet creation;
+- corrupted immutable case-bank recovery requeue;
+- a compatibility regression introduced by the first frozen-input fix.
+
+Each reproduced failure is retained as an executable regression. Meaningful hardening batches now require dogfood + same-candidate remediation before closeout.
+
 ## Validated source package
 
 The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` directly from the exact Git blob bytes of the validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds. CI then extracts the ZIP, verifies the extracted filesystem against `MANIFEST.sha256` without Git metadata, reruns canonical full validation from that extracted tree, creates `PR-with-codediff-finder-v2.7.receipt.json`, verifies the receipt, and uploads the ZIP + receipt together as the `v2.7-source-package` artifact. The receipt binds exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; `authority_effect` remains `NONE`.
