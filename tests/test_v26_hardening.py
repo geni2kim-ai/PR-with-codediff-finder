@@ -2,6 +2,7 @@ from __future__ import annotations
 import copy, hashlib, json, os, subprocess, sys, tempfile, time, unittest
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
+from jsonschema import Draft202012Validator
 
 ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
@@ -371,6 +372,8 @@ class FindingTriageTests(unittest.TestCase):
         self.assertFalse((out/'l2-review.json').exists())
         self.assertFalse(notes['auto_fix'])
         self.assertEqual(notes['authority_effect'],'NONE')
+        schema=json.loads((ROOT/'schemas/review-notes.schema.json').read_text(encoding='utf-8'))
+        self.assertEqual(list(Draft202012Validator(schema).iter_errors(notes)),[])
         self.assertEqual([x['severity'] for x in notes['items']],['nit'])
 
     def test_minor_reviewer_escalation_is_suppressed_when_risk_is_baseline(self):
