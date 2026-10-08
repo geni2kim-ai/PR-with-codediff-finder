@@ -22,6 +22,8 @@ Leonardo/Davinchi calibration / regression / standards loop
 ## v2.7 hardening highlights
 
 - **Privacy-safe mutation receipts**: `tools/mutation_receipt.py` emits logical name + pre/post SHA-256 + equality only, without source paths/content, and fixes `authority_effect=NONE`.
+- **Clean-extract source-package verification**: `verify_manifest.py --filesystem-root` verifies the delivered tree without `.git`, rejects missing/extra/tampered files and unsafe manifest paths, and CI reruns canonical validation from the extracted ZIP.
+- **External source-package receipt**: the distributed ZIP is bound to exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count with `authority_effect=NONE`.
 - **Latest-HEAD review is a repository default**: every review/resume refreshes the current committed HEAD; changes invalidate earlier closeout until the post-fix HEAD is reviewed again.
 - **Crash-safe ledger append recovery**: an authenticated journal binds the exact pre-append ledger bytes, hash chain and next event so a crash between event fsync and anchor replacement can recover idempotently.
 - **Dead-lock recovery**: ledger locks record owner PID and are reclaimed immediately when the owner process no longer exists.
@@ -151,7 +153,7 @@ The cycle becomes stale if HEAD or the trusted base ref/merge-base changes befor
 
 ## HUMAN decision
 
-`record_human_decision.py` no longer accepts an unauthenticated self-declaration. The current HEAD, anchored cycle and an external HMAC-backed human-decision attestation must agree. The one-time nonce cache is external authority state: configure one shared cache outside the mutable case bundle and do not vary it per invocation.
+`record_human_decision.py` no longer accepts an unauthenticated self-declaration. The current HEAD, anchored cycle and an external HMAC-backed human-decision attestation must agree. The replay cache is external authority state: configure one shared cache outside the mutable case bundle and do not vary it per invocation. It prevents reuse of the same signed attestation token; it is not claimed as a global nonce registry across differently signed contexts.
 
 ```bash
 export MAESTRO_HUMAN_DECISION_REPLAY_DIR=/secure/maestro/human-replay-cache
@@ -214,7 +216,7 @@ See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RE
 
 ## Validated source package
 
-The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` from the exact validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds, then uploads it as the `v2.7-source-package` artifact. The committed `MANIFEST.sha256` remains the package-integrity index.
+The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` from the exact validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds. CI then extracts the ZIP, verifies the extracted filesystem against `MANIFEST.sha256` without Git metadata, reruns canonical full validation from that extracted tree, creates `PR-with-codediff-finder-v2.7.receipt.json`, verifies the receipt, and uploads the ZIP + receipt together as the `v2.7-source-package` artifact. The receipt binds exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; `authority_effect` remains `NONE`.
 
 ## Deployment status
 
