@@ -248,6 +248,14 @@
           "worker_command_digest": {
             "type": "string",
             "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "material_finding_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "note_only_finding_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
