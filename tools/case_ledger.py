@@ -163,6 +163,29 @@ def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
     Path(tx_path).unlink(missing_ok=True)
     return ev
 
+def pending_append_case_id(ledger):
+    tx_path=pending_append_path(ledger)
+    if not tx_path.is_file():return None
+    try:tx=json.loads(tx_path.read_text(encoding='utf-8'))
+    except Exception as exc:raise ValueError(f'append transaction unreadable: {type(exc).__name__}') from exc
+    # Classification is intentionally authentication-neutral. It validates the
+    # self-contained transaction/event structure so an unrelated case can be
+    # skipped without requiring that case's HMAC key. Active-case recovery still
+    # performs the full HMAC/pre-ledger checks in _recover_pending_append().
+    core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
+    if tx.get('transaction_digest')!=object_digest(core):raise ValueError('append transaction digest mismatch')
+    ev=tx.get('event')
+    if not isinstance(ev,dict):raise ValueError('append transaction event missing')
+    cid=tx.get('case_id')
+    if not isinstance(cid,str) or not cid:raise ValueError('append transaction case_id missing')
+    if ev.get('case_id')!=cid:raise ValueError('append transaction case_id mismatch')
+    if ev.get('event_hash')!=object_digest(ev,'event_hash'):raise ValueError('append transaction event hash mismatch')
+    try:pre_seq=int(tx.get('pre_seq',-1))
+    except Exception as exc:raise ValueError('append transaction pre_seq invalid') from exc
+    if ev.get('seq')!=pre_seq+1:raise ValueError('append transaction seq mismatch')
+    if ev.get('prev_hash')!=tx.get('pre_event_hash'):raise ValueError('append transaction prev_hash mismatch')
+    return cid
+
 def recover_pending_append_if_present(ledger,anchor_path=None,hmac_key=None):
     p=Path(ledger);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
     if not tx_path.exists():return False
