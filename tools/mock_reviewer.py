@@ -15,6 +15,8 @@ def main():
     risk={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'}
     if ns.mode=='major': findings=[finding()];verdict='FINDINGS'
     elif ns.mode=='minor': findings=[finding(severity='minor',family='MOCK-MINOR')];verdict='FINDINGS'
+    elif ns.mode=='nit': findings=[finding(severity='nit',family='MOCK-NIT',axis='standards')];verdict='FINDINGS'
+    elif ns.mode=='minor-escalate': findings=[finding(severity='minor',family='MOCK-MINOR',axis='standards')];verdict='FINDINGS';requested=True;target='L2'
     elif ns.mode=='low': confidence='low'
     elif ns.mode=='novel': findings=[finding(family='NOVEL-MOCK')];verdict='FINDINGS';novel=True;requested=True;target='ADVERSARIAL'
     elif ns.mode=='block': verdict='BLOCKED'
