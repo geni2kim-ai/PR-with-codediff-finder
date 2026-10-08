@@ -479,3 +479,31 @@ append transaction 경계를 다시 시뮬레이션했다.
 
 이 변경은 shared root의 병렬성을 실제 **authority isolation**까지 확장한다. 다른 case의 정상적인 보안 설정 차이가 현재 case의 reviewer 실행이나 budget을 막지 않는다.
 
+### 18. cross-case isolation이 HMAC-protected active history의 relabel 우회가 될 수 있는 문제
+
+section 17 보완을 다시 공격적으로 검토했다.
+
+초기 격리안은 ledger의 unkeyed schema/hash chain과 case ID가 정상이고 active case와 다르면 HMAC 검증 전에 skip할 수 있었다. 이 방식만으로는 다음 공격 경계가 생긴다.
+
+반례:
+1. active case A의 ledger/anchor는 HMAC-protected
+2. 공격자가 ledger의 `case_id`를 B로 바꾸고 모든 `prev_hash/event_hash`를 다시 계산
+3. anchor의 case ID, final event hash, ledger SHA-256도 B 기준으로 수정
+4. secret HMAC은 계산할 수 없어 기존 값이 남음
+5. HMAC 검증보다 먼저 "B는 unrelated"라고 skip하면 A의 과거 worker/remediation budget이 사라져 보일 수 있음
+
+보완:
+- active execution이 `MAESTRO_LEDGER_HMAC_KEY`를 제공하면 해당 shared output root를 하나의 HMAC trust domain으로 취급한다.
+- unrelated ledger라도 pending transaction이 없으면 anchor를 같은 key로 검증한 후에만 skip한다.
+- unrelated pending transaction도 같은 key의 HMAC이 필수이며 `pending_append_case_id(..., require_hmac=True)`에서 인증한다.
+- 따라서 서로 다른 HMAC key를 사용하는 case들을 하나의 keyed shared root에 섞는 구성은 fail-closed 한다.
+- active HMAC authority가 없는 SHADOW 실행에서는 unrelated HMAC의 key 자체를 요구하지 않되, ledger hash chain, anchor core fields, transaction digest/event hash/case-ID consistency는 계속 검증한다.
+
+회귀:
+- HMAC case A + no-key SHADOW case B: structurally valid A를 budget에서 제외하고 B 정상 완료
+- active key B가 있는데 root의 case A가 다른 key A를 사용: HMAC mismatch로 reviewer 시작 전 차단
+- HMAC-protected case A의 ledger+anchor를 case B로 relabel하고 unkeyed hash를 모두 재계산: 남아 있는 HMAC 불일치로 history reset 차단
+- unrelated pending transaction은 active HMAC trust domain에서는 동일 key가 아니면 skip되지 않음
+
+이 보완으로 multi-case throughput 최적화가 HMAC의 anti-tamper 성질을 약화시키지 않도록 경계를 다시 닫았다.
+
