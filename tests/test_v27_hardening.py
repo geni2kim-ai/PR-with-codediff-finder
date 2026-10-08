@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,sys,tempfile,unittest
+import json,subprocess,sys,tempfile,unittest,zipfile
 from pathlib import Path
 from jsonschema import Draft202012Validator
 
@@ -14,6 +14,7 @@ from mutation_receipt import capture as capture_mutation_receipt,finalize as fin
 from verify_manifest import filesystem_errors
 from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
 from verify_package_hygiene import generated_paths
+from build_source_package import build as build_source_package
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -36,6 +37,24 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertIn('Always review the latest committed code',text)
         self.assertIn('post-fix latest HEAD',text)
         self.assertIn('previous conclusion is **STALE**',text)
+
+    def test_source_package_builder_preserves_exact_git_blob_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo=Path(td)/'repo';repo.mkdir()
+            def git(*args):
+                cp=subprocess.run(['git','-C',str(repo),*args],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+                self.assertEqual(cp.returncode,0,cp.stderr)
+                return cp.stdout.strip()
+            git('init','-q');git('config','user.email','test@example.invalid');git('config','user.name','Test')
+            raw=b'line1\r\nline2\nline3\r\n'
+            (repo/'vendor.txt').write_bytes(raw)
+            (repo/'MANIFEST.sha256').write_text(__import__('hashlib').sha256(raw).hexdigest()+'  ./vendor.txt\n',encoding='utf-8')
+            git('add','.');git('commit','-qm','fixture')
+            out=Path(td)/'pkg.zip'
+            self.assertEqual(build_source_package(repo,'HEAD',out,'pkg/'),2)
+            with zipfile.ZipFile(out) as zf:
+                self.assertEqual(zf.read('pkg/vendor.txt'),raw)
+                self.assertEqual(zf.read('pkg/MANIFEST.sha256'),(repo/'MANIFEST.sha256').read_bytes())
 
     def test_package_hygiene_rejects_generated_cache_artifacts(self):
         bad=generated_paths([
