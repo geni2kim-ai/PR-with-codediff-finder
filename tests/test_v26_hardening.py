@@ -468,6 +468,33 @@ class V26CodexFollowupTests(unittest.TestCase):
         packet=json.loads(Path(cp.stdout.strip()).read_text());frozen=Path(packet['refs']['deterministic_policy']).parent/'policy'/'reviewer-routing.yml'
         self.assertEqual(yaml.safe_load(frozen.read_text())['reviewers']['L1']['node_id'],'L1-override')
 
+    def test_route_case_uses_cycle_frozen_policy_after_live_policy_changes(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        out=cycle(r,adapter(r,base),base,'ROUTE-FROZEN-POLICY');root=r/'routing'
+        policy=ROOT/'policy/protected-paths.yml';original=policy.read_bytes()
+        try:
+            policy.write_bytes(original+b'\n# live policy changed after completed review\n')
+            cp=subprocess.run([sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        finally:
+            policy.write_bytes(original)
+        self.assertEqual(cp.returncode,0,cp.stderr)
+        packet=json.loads(Path(cp.stdout.strip()).read_text());policy_dir=Path(packet['refs']['deterministic_policy']).parent/'policy'
+        self.assertEqual((policy_dir/'protected-paths.yml').read_bytes(),(out/'effective-policy/protected-paths.yml').read_bytes())
+
+    def test_route_case_uses_cycle_frozen_trusted_inputs_after_live_mutation(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup)
+        (r/'a.py').write_text('x=1\n');(r/'std.md').write_text('STANDARD-ORIGINAL\n');(r/'spec.md').write_text('SPEC-ORIGINAL\n');(r/'test.json').write_text('{"status":"pass","version":1}\n');base=commit(r,'base')
+        (r/'a.py').write_text('x=2\n');commit(r,'head')
+        out=cycle(r,adapter(r,base),base,'ROUTE-FROZEN-INPUTS',standards=[r/'std.md'],spec=r/'spec.md',tests=[r/'test.json'])
+        (r/'std.md').write_text('STANDARD-MUTATED\n');(r/'spec.md').write_text('SPEC-MUTATED\n');(r/'test.json').write_text('{"status":"fail","version":2}\n')
+        root=r/'routing';cp=subprocess.run([sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json'),'--standards-ref',str(r/'std.md'),'--spec-ref',str(r/'spec.md'),'--test-ref',str(r/'test.json')],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertEqual(cp.returncode,0,cp.stderr)
+        packet=json.loads(Path(cp.stdout.strip()).read_text())
+        self.assertEqual(Path(packet['refs']['trusted_standards'][0]).read_text(),'STANDARD-ORIGINAL\n')
+        self.assertEqual(Path(packet['refs']['spec_ref']).read_text(),'SPEC-ORIGINAL\n')
+        self.assertEqual(Path(packet['refs']['test_results'][0]).read_text(),'{"status":"pass","version":1}\n')
+        self.assertNotEqual(packet['digests']['trusted_standards'][0],sha256_file(r/'std.md'))
+
     def test_outcome_and_incident_transactions_recover_after_ledger_append(self):
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TX-RECOVER')
         casep=out/'case-record.json';ledger=out/'case-events.jsonl';original=json.loads(casep.read_text())
