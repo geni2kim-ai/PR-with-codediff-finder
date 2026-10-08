@@ -37,6 +37,18 @@ An existing immutable case directory is recoverable only when the current case r
 
 Standards, spec and test result files are copied into the cycle output before reviewer execution. Policy files are copied into `effective-policy/`. All later task provenance, routing, sensor recomputation and evidence validation consume those frozen copies.
 
+### Source-package delivery boundary
+
+A Git-blob manifest PASS is not treated as proof that a distributed ZIP is complete. PR/manual packaging now:
+- creates the ZIP from the exact validated HEAD;
+- extracts the ZIP into a clean directory;
+- verifies the extracted tree against `MANIFEST.sha256` without relying on `.git`;
+- rejects extra, missing, changed or path-ambiguous entries;
+- reruns canonical full validation from the extracted tree;
+- emits a separate source-package receipt binding exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count.
+
+The package receipt is an integrity/binding record with `authority_effect=NONE`; it is not an external signature or promotion authority.
+
 ## Review invariant
 
 The repository-level default is **Latest-HEAD review**. A previous PASS cannot authorize a newer HEAD.
