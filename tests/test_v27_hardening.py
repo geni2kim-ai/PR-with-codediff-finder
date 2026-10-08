@@ -77,6 +77,10 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertTrue(any('unmanifested package file: extra.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
             (root/'extra.txt').unlink();(root/'sub'/'b.txt').unlink()
             self.assertTrue(any('manifested package file missing: sub/b.txt' in x for x in filesystem_errors(filesystem_root=root)[0]))
+            (root/'MANIFEST.sha256').write_text(f"{hashlib.sha256(payload).hexdigest()}  ../a.txt\n",encoding='utf-8')
+            with self.assertRaises(ValueError):filesystem_errors(filesystem_root=root)
+            (root/'MANIFEST.sha256').write_text(f"{hashlib.sha256(payload).hexdigest()}  .\\a.txt\n",encoding='utf-8')
+            with self.assertRaises(ValueError):filesystem_errors(filesystem_root=root)
 
     def test_source_package_receipt_binds_zip_manifest_and_head(self):
         with tempfile.TemporaryDirectory() as td:
