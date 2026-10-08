@@ -11,6 +11,11 @@ finding_triage:
   agent_review_severities:
   - major
   - blocker
+  force_agent_review_failure_families:
+  - SECURITY-CRITICAL
+  - DATA-CORRUPTION
+  force_agent_review_failure_family_prefixes:
+  - GOVERNANCE
   suppress_note_only_reviewer_escalation: true
   note_only_auto_fix: false
 L2_if_any:
