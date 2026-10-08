@@ -544,22 +544,30 @@ def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mo
     c['gate_conclusion']=cycle_gate(state,required,achieved,current_stage,esc_cfg);c['cycle_digest']=object_digest(c,'cycle_digest');return c
 
 def choose_out_dir(raw,retry):
-    root=Path(raw);root.mkdir(parents=True,exist_ok=True)
-    if not any(root.iterdir()):return root
-    if not retry:raise SystemExit('output-dir must be empty for a new immutable review cycle (use --retry to create a new attempt subdirectory)')
-    try:numbered=validate_attempt_layout(root)
-    except ValueError as exc:raise SystemExit('review campaign attempt layout invalid: '+str(exc))
-    n=(int(numbered[-1].name.split('-')[1])+1) if numbered else 1
-    out=root/f'attempt-{n:04d}';out.mkdir();return out
+    root=Path(raw).resolve();root.parent.mkdir(parents=True,exist_ok=True)
+    allocation_target=root.parent/(root.name+'.allocation-control')
+    try:
+        with ledger_lock(allocation_target,timeout=1.0):
+            root.mkdir(parents=True,exist_ok=True)
+            if not any(root.iterdir()):
+                (root/'.campaign-root-reserved').write_text('reserved\n',encoding='utf-8')
+                return root
+            if not retry:raise SystemExit('output-dir must be empty for a new immutable review cycle (use --retry to create a new attempt subdirectory)')
+            try:numbered=validate_attempt_layout(root)
+            except ValueError as exc:raise SystemExit('review campaign attempt layout invalid: '+str(exc))
+            n=(int(numbered[-1].name.split('-')[1])+1) if numbered else 1
+            out=root/f'attempt-{n:04d}';out.mkdir();return out
+    except TimeoutError:raise SystemExit('review campaign output allocation is busy; retry after the active allocator exits')
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--repo',required=True);ap.add_argument('--evidence',required=True);ap.add_argument('--expected-base',required=True);ap.add_argument('--case-id',required=True);ap.add_argument('--output-dir',required=True);ap.add_argument('--retry',action='store_true');ap.add_argument('--l1-cmd-json');ap.add_argument('--l2-cmd-json');ap.add_argument('--adversarial-cmd-json');ap.add_argument('--routing-policy',default=str(ROOT/'policy/reviewer-routing.yml'));ap.add_argument('--runtime-attestation');ap.add_argument('--standards-ref',action='append',default=[]);ap.add_argument('--spec-ref');ap.add_argument('--test-ref',action='append',default=[]);ap.add_argument('--disable-random-audit',action='store_true');ns=ap.parse_args()
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',ns.case_id):raise SystemExit('unsafe case_id')
     repo=Path(ns.repo).resolve();campaign_root=Path(ns.output_dir).resolve()
-    campaign_lock_target=campaign_root.parent/(campaign_root.name+'.campaign-control')
+    case_lock_token=sha256_bytes(ns.case_id.encode('utf-8'))[:16]
+    campaign_lock_target=campaign_root.parent/(campaign_root.name+'.case-'+case_lock_token+'-control')
     campaign_guard=ledger_lock(campaign_lock_target,timeout=1.0)
     try:campaign_guard.__enter__()
-    except TimeoutError:raise SystemExit('review campaign already active; concurrent execution is not allowed')
+    except TimeoutError:raise SystemExit('review campaign case already active; concurrent execution for the same case is not allowed')
     atexit.register(lambda g=campaign_guard:g.__exit__(None,None,None))
     try:validate_attempt_layout(campaign_root)
     except Exception as exc:raise SystemExit('review campaign attempt layout invalid: '+str(exc))
