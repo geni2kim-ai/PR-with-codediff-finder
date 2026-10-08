@@ -11,7 +11,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
-from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key
+from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys
 from calibration_report import material_state,summarize_cases
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
@@ -484,9 +484,36 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             attempt=Path(second.stdout.strip());cyc=json.loads((attempt/'review-cycle.json').read_text());casej=json.loads((attempt/'case-record.json').read_text())
             self.assertEqual(counter.read_text(),'1')
             self.assertEqual(cyc['state'],'COMPLETE');self.assertIn('lower_stage_reused',casej['labels'])
-            budget=json.loads((attempt/'review-budget.json').read_text());self.assertEqual(budget['reused_agent_stages'],1);self.assertEqual(budget['executed_agent_stages'],1);self.assertEqual(budget['current_attempt_worker_timeout_budget_seconds'],180)
+            budget=json.loads((attempt/'review-budget.json').read_text());self.assertEqual(budget['attempt_index'],1);self.assertEqual(budget['reused_agent_stages'],1);self.assertEqual(budget['executed_agent_stages'],1);self.assertEqual(budget['current_attempt_worker_timeout_budget_seconds'],180)
             events=load_events(attempt/'case-events.jsonl');l1_events=[e for e in events if e['event_type']=='REVIEW_COMPLETED' and e['payload'].get('level')=='L1']
             self.assertEqual(len(l1_events),1);self.assertTrue(l1_events[0]['payload'].get('reused_from_previous_attempt'))
+
+    def test_higher_authority_clearance_removes_lower_stage_material_from_budget(self):
+        r,base=self._repo();case='BUDGET-CLEARED';out=r/'campaign-cleared';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),
+              '--l1-cmd-json',cmdjson('major'),'--l2-cmd-json',cmdjson('pass'),'--adversarial-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp.returncode,0,cp.stderr)
+        budget=json.loads((out/'review-budget.json').read_text());cyc=json.loads((out/'review-cycle.json').read_text())
+        self.assertEqual(cyc['state'],'COMPLETE');self.assertEqual(cyc['gate_conclusion'],'success')
+        self.assertEqual(budget['current_material_finding_keys'],[]);self.assertEqual(budget['stop_reason'],'NO_MATERIAL_FINDINGS')
+        rows=[('L1',None,{'findings':[{'severity':'major','failure_family':'CORRECTNESS','axis':'correctness_security','path':'a.py'}]},None),
+              ('L2',None,{'findings':[]},None)]
+        self.assertEqual(authoritative_material_keys(rows,load_yaml(ROOT/'policy/escalation-policy.yml')),[])
+
+    def test_authority_path_resume_keeps_one_logical_attempt_through_adversarial(self):
+        r,base=self._repo();case='BUDGET-AUTH-RESUME';out=r/'campaign-auth-resume';ev=adapter(r,base)
+        first=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),
+               '--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
+        cp1=subprocess.run(first,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp1.returncode,0,cp1.stderr)
+        self.assertEqual(json.loads((out/'review-budget.json').read_text())['attempt_index'],1)
+        second=first+['--retry','--l2-cmd-json',cmdjson('pass')]
+        cp2=subprocess.run(second,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp2.returncode,0,cp2.stderr)
+        d2=Path(cp2.stdout.strip());self.assertEqual(json.loads((d2/'review-cycle.json').read_text())['state'],'ADVERSARIAL_REQUIRED')
+        self.assertEqual(json.loads((d2/'review-budget.json').read_text())['attempt_index'],1)
+        third=first+['--retry','--l2-cmd-json',cmdjson('pass'),'--adversarial-cmd-json',cmdjson('pass')]
+        cp3=subprocess.run(third,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp3.returncode,0,cp3.stderr)
+        d3=Path(cp3.stdout.strip());self.assertEqual(json.loads((d3/'review-cycle.json').read_text())['state'],'COMPLETE')
+        self.assertEqual(json.loads((d3/'review-budget.json').read_text())['attempt_index'],1)
 
     def test_same_material_finding_after_batched_fix_requires_human(self):
         r,base=self._repo();case='BUDGET-REPEAT';out=r/'campaign-repeat';ev=adapter(r,base)
