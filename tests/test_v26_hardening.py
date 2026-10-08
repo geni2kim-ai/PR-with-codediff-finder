@@ -515,6 +515,48 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         d3=Path(cp3.stdout.strip());self.assertEqual(json.loads((d3/'review-cycle.json').read_text())['state'],'COMPLETE')
         self.assertEqual(json.loads((d3/'review-budget.json').read_text())['attempt_index'],1)
 
+    def test_cleared_lower_stage_material_stays_closed_after_unrelated_new_head(self):
+        r,base=self._repo();case='BUDGET-CLEARED-CLOSED';out=r/'campaign-cleared-closed';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),
+              '--l1-cmd-json',cmdjson('major'),'--l2-cmd-json',cmdjson('pass'),'--adversarial-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp.returncode,0,cp.stderr)
+        hist=campaign_history(out,case);self.assertEqual(hist[-1]['material_count'],0);self.assertEqual(hist[-1]['material_keys'],[])
+        (r/'unrelated.txt').write_text('unrelated\n');run(['git','add','unrelated.txt'],cwd=r);run(['git','commit','-qm','unrelated followup'],cwd=r);ev2=adapter(r,base)
+        retry=args.copy();retry[retry.index(str(ev))+0]=str(ev2) if False else retry[retry.index('--evidence')+1]
+        retry=[str(ev2) if x==str(ev) else x for x in args]+['--retry']
+        cp2=subprocess.run(retry,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertNotEqual(cp2.returncode,0);self.assertIn('already closed without material findings',cp2.stderr+cp2.stdout)
+
+    def test_campaign_history_uses_anchored_state_not_mutable_review_cycle_file(self):
+        r,base=self._repo();case='BUDGET-STATE-ANCHOR';out=r/'campaign-state-anchor';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='nit',out=out)
+        cyc=json.loads((out/'review-cycle.json').read_text());cyc['state']='WAITING_L2';(out/'review-cycle.json').write_text(json.dumps(cyc))
+        hist=campaign_history(out,case);self.assertEqual(hist[-1]['state'],'COMPLETE')
+        cp=self._retry(r,base,case,out,ev,l1='pass',l2='pass')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('already closed without material findings',cp.stderr+cp.stdout)
+
+    def test_campaign_history_rejects_ledger_state_tamper(self):
+        r,base=self._repo();case='BUDGET-LEDGER-TAMPER';out=r/'campaign-ledger-tamper';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='nit',out=out)
+        ledger=out/'case-events.jsonl';rows=ledger.read_text().splitlines()
+        for i,row in enumerate(rows):
+            obj=json.loads(row)
+            if obj.get('event_type')=='CYCLE_CLOSED':
+                obj['payload']['state']='WAITING_L2';rows[i]=json.dumps(obj);break
+        ledger.write_text('\n'.join(rows)+'\n')
+        cp=self._retry(r,base,case,out,ev,l1='pass',l2='pass')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('review campaign history invalid',cp.stderr+cp.stdout)
+
+    def test_campaign_attempt_index_comes_from_anchored_history_not_case_metadata(self):
+        r,base=self._repo();case='BUDGET-ATTEMPT-ANCHOR';out=r/'campaign-attempt-anchor';ev=adapter(r,base)
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),
+              '--l1-cmd-json',cmdjson('major'),'--disable-random-audit']
+        cp1=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp1.returncode,0,cp1.stderr)
+        casej=json.loads((out/'case-record.json').read_text());casej['review_campaign']['attempt_index']=99;(out/'case-record.json').write_text(json.dumps(casej))
+        second=args+['--retry','--l2-cmd-json',cmdjson('major')]
+        cp2=subprocess.run(second,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp2.returncode,0,cp2.stderr)
+        d2=Path(cp2.stdout.strip());self.assertEqual(json.loads((d2/'review-budget.json').read_text())['attempt_index'],1)
+
     def test_same_material_finding_after_batched_fix_requires_human(self):
         r,base=self._repo();case='BUDGET-REPEAT';out=r/'campaign-repeat';ev=adapter(r,base)
         cycle(r,ev,base,case,l1='major',l2='major',out=out)
