@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:maestro:source-package-receipt:2.7",
+  "title": "Source package receipt v2.7",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","kind","authority_effect","head_sha","package_name","package_sha256","manifest_sha256","manifest_entries","clean_extract_verified","canonical_validation_passed","receipt_digest"],
+  "properties": {
+    "schema_version": {"const":"2.7"},
+    "kind": {"const":"source-package-receipt"},
+    "authority_effect": {"const":"NONE"},
+    "head_sha": {"type":"string","pattern":"^[0-9a-f]{40,64}$"},
+    "package_name": {"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"},
+    "package_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "manifest_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "manifest_entries": {"type":"integer","minimum":1},
+    "clean_extract_verified": {"const":true},
+    "canonical_validation_passed": {"const":true},
+    "receipt_digest": {"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}
