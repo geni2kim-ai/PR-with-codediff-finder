@@ -189,6 +189,11 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         level=max_level(level,'ADVERSARIAL');reasons.extend('ADVERSARIAL:'+x for x in sorted(active & adv))
     if active & human:
         level='HUMAN';reasons.extend('HUMAN:'+x for x in sorted(active & human))
+    # Finding-severity authority floors cannot be lowered by configuration.
+    if signals.get('major_candidate'):
+        level=max_level(level,'L2');reasons.append('L2_FLOOR:major_finding')
+    if signals.get('blocker_candidate'):
+        level=max_level(level,'ADVERSARIAL');reasons.append('ADVERSARIAL_FLOOR:blocker_finding')
     # Hard authority floor: configuration may add escalation but may not lower a HUMAN
     # requirement implied by protected paths or the deterministic risk matrix.
     risk=derive_risk(model,path_hits)
