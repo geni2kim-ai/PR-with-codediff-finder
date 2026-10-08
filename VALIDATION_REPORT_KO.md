@@ -4,7 +4,7 @@
 
 v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/PASS는 newer HEAD에 자동 승계하지 않는다. 수정 또는 작업 재개 시 현재 committed HEAD와 changed-file set을 다시 확인하고, 코드·정책·trusted refs·manifest가 바뀌면 최신 HEAD를 재검수한다.
 
-이번 v2.7 코드 경계의 기준 source HEAD는 `74abeeda337e3c76a1375c596b38d1e0928636ff`이다. 이 HEAD의 GitHub Actions Harness Full Validation **#223**에서 canonical full validation을 성공시켰다. 이후 closeout 단계의 문서/manifest 변경은 별도 PR 검증으로 다시 확인한다.
+이번 package-integrity 후속 검토의 기준 code-bearing source HEAD는 `9c2f0d04bbee5cfad92ad6b8373c4a6e7a0198c3`이다. 이 HEAD의 GitHub Actions Harness Full Validation **#270**에서 canonical full validation을 성공시켰다. 이후 closeout 문서/manifest 변경은 별도 PR clean-extract 검증으로 다시 확인한다.
 
 ## 결과 요약
 
@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **122 PASS / 68 isolated groups**
+- 합계: **124 PASS / 68 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -21,7 +21,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - `DIFF-FALSE-EXACT` fixture: **PASS**
 
 ### Manifest
-- source HEAD #223 push validation에서 generated manifest 적용 후 Git blob 검증: **PASS (229 entries)**
+- source HEAD #270 push validation에서 generated manifest 적용 후 Git blob 검증: **PASS (231 entries)**
 - PR/manual 경로는 committed `MANIFEST.sha256`이 generated manifest와 byte-for-byte 일치해야 다음 단계로 진행하는 fail-closed 구조를 유지한다.
 
 ### Schema / semantic examples
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 122 PASS (groups=68, sequential)`
+- `harness isolated tests: 124 PASS (groups=68, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -59,6 +59,17 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 11. receipt semantic validator는 exact top-level/item allowlist, equality consistency, `all_unchanged`, `receipt_digest`를 검증한다.
 12. repository working rules는 negative test가 의도한 failure branch까지 도달했는지 요구한다.
 13. freshness rejection과 single-use replay prevention을 구분하고, literal status flags를 measured evidence로 승격하지 않으며, cleanup claim은 실제 claimed path를 증명하도록 기본 지침에 반영했다.
+
+## v2.7 package-integrity 후속 재검증
+
+1. 기존 `verify_manifest.py`는 Git object만 검증해 `.git` 없는 배포 ZIP 자체를 직접 검증할 수 없었다.
+2. filesystem 검증 모드를 추가해 extracted tree의 missing/extra/hash mismatch를 fail-closed로 처리한다.
+3. manifest 경로는 POSIX 상대경로만 허용하고 traversal/backslash ambiguity를 거부한다.
+4. filesystem-root 검증에서 manifest는 verified root 내부의 regular file이어야 하며 symlink/out-of-root manifest를 허용하지 않는다.
+5. PR/manual release path에서 ZIP을 clean extraction한 뒤 filesystem manifest 검증과 canonical full validation을 다시 실행한다.
+6. source-package receipt는 exact HEAD, ZIP SHA-256, manifest SHA-256, manifest entry count 및 clean-extract/full-validation 상태를 묶는다.
+7. receipt semantic validator는 schema와 같은 exact field/name/type 규칙을 적용하고 `authority_effect=NONE`을 유지한다.
+8. HUMAN replay 문구는 구현보다 넓은 “global one-time nonce” 주장으로 읽히지 않도록 exact signed-attestation replay 범위로 정정했다.
 
 ## 최신 외부 feedback 대조
 
