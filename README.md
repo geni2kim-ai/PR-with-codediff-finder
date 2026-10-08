@@ -203,13 +203,14 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **100 PASS** across 51 isolated groups;
+- harness: **122 PASS** across 68 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
-- latest GitHub Actions canonical full validation: **SUCCESS** (Harness Full Validation #69);
+- v2.7 code-bearing pre-closeout GitHub Actions full validation: **SUCCESS** (Harness Full Validation #223, source HEAD `74abeeda337e3c76a1375c596b38d1e0928636ff`);
+- final manifest/PR packaging validation is required on the closeout HEAD before the package is treated as validated.
 
-See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.6_KO.md`.
+See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.
 
 ## Validated source package
 
