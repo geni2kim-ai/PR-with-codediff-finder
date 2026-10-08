@@ -103,6 +103,50 @@ class LedgerHardeningTests(unittest.TestCase):
             events=load_events(p);self.assertEqual(len(events),1);self.assertEqual(validate_anchor(p,a,events,'C',key,True),[])
 
 
+    def test_campaign_history_recovers_pending_authenticated_append(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);p=root/'case-events.jsonl';a=root/'case-events.anchor.json';key='ledger-key';txp=case_ledger.pending_append_path(p)
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    case_ledger.append_event(p,'CAMP-TX','CASE_OPENED',{'head_sha':'a'*40},hmac_key=key,key_id='k')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            self.assertTrue(txp.is_file());self.assertTrue(p.is_file());self.assertFalse(a.exists())
+            hist=campaign_history(root,'CAMP-TX',key)
+            self.assertEqual(len(hist),1);self.assertEqual(hist[0]['state'],'INTERRUPTED_EMPTY');self.assertEqual(hist[0]['head_sha'],'a'*40)
+            self.assertFalse(txp.exists());events=load_events(p);self.assertEqual(validate_anchor(p,a,events,'CAMP-TX',key,True),[])
+
+    def test_campaign_history_recovers_pending_append_when_ledger_write_never_landed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);p=root/'case-events.jsonl';a=root/'case-events.anchor.json';key='ledger-key';txp=case_ledger.pending_append_path(p)
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    case_ledger.append_event(p,'CAMP-TX-PREWRITE','CASE_OPENED',{'head_sha':'b'*40},hmac_key=key,key_id='k')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            self.assertTrue(txp.is_file());p.unlink();self.assertFalse(p.exists());self.assertFalse(a.exists())
+            hist=campaign_history(root,'CAMP-TX-PREWRITE',key)
+            self.assertEqual(len(hist),1);self.assertEqual(hist[0]['state'],'INTERRUPTED_EMPTY');self.assertEqual(hist[0]['head_sha'],'b'*40)
+            self.assertTrue(p.is_file());self.assertTrue(a.is_file());self.assertFalse(txp.exists())
+
+    def test_campaign_history_rejects_tampered_pending_append_transaction(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);p=root/'case-events.jsonl';key='ledger-key';txp=case_ledger.pending_append_path(p)
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    case_ledger.append_event(p,'CAMP-TX-TAMPER','CASE_OPENED',{'head_sha':'c'*40},hmac_key=key,key_id='k')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            tx=json.loads(txp.read_text());tx['event']['payload']['head_sha']='d'*40;txp.write_text(json.dumps(tx))
+            with self.assertRaisesRegex(ValueError,'append transaction digest mismatch'):
+                campaign_history(root,'CAMP-TX-TAMPER',key)
+
     def test_dead_ledger_lock_is_reclaimed_after_process_interruption(self):
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock');lock.write_text('2147483647')
