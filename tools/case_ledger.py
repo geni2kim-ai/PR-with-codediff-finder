@@ -175,6 +175,7 @@ def pending_append_case_id(ledger,hmac_key=None,require_hmac=False):
     core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
     if tx.get('transaction_digest')!=object_digest(core):raise ValueError('append transaction digest mismatch')
     mac=tx.get('hmac_sha256')
+    if mac and not hmac_key:raise ValueError('append transaction HMAC key unavailable')
     if require_hmac and not mac:raise ValueError('append transaction HMAC missing')
     if hmac_key and mac and not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):raise ValueError('append transaction HMAC mismatch')
     ev=tx.get('event')
