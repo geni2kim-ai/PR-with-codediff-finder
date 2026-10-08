@@ -381,30 +381,34 @@ def campaign_history(root,case_id,hmac_key=None):
     for d in dirs:
         try:
             ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json';tx_path=pending_append_path(ledger)
-            events=load_events(ledger) if ledger.is_file() else []
             event_case_id=None
-            if events:
-                errs=validate_events(events)
-                event_case_ids={e.get('case_id') for e in events}
-                if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
-                event_case_id=next(iter(event_case_ids))
-                if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
-                if tx_path.is_file():
-                    tx_case_id=pending_append_case_id(ledger,hmac_key,require_hmac=bool(hmac_key))
-                    if tx_case_id!=event_case_id:raise ValueError('pending append case_id disagrees with ledger case_id')
-                    if event_case_id!=case_id:continue
-                elif event_case_id!=case_id:
-                    if not anchor.is_file():raise ValueError('unrelated ledger anchor missing')
-                    try:unrelated_anchor=json.loads(anchor.read_text())
-                    except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-                    anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
-                    if not hmac_key:
-                        anchor_errs=[x for x in anchor_errs if x!='ledger HMAC key unavailable for existing HMAC anchor']
-                    if anchor_errs:raise ValueError('unrelated ledger invalid: '+'; '.join(anchor_errs[:8]))
-                    continue
-            elif tx_path.is_file():
-                event_case_id=pending_append_case_id(ledger,hmac_key,require_hmac=bool(hmac_key))
-                if event_case_id!=case_id:continue
+            try:
+                with ledger_lock(ledger,timeout=2.0):
+                    events=load_events(ledger) if ledger.is_file() else []
+                    if events:
+                        errs=validate_events(events)
+                        event_case_ids={e.get('case_id') for e in events}
+                        if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
+                        event_case_id=next(iter(event_case_ids))
+                        if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+                        if tx_path.is_file():
+                            tx_case_id=pending_append_case_id(ledger,hmac_key,require_hmac=bool(hmac_key))
+                            if tx_case_id!=event_case_id:raise ValueError('pending append case_id disagrees with ledger case_id')
+                            if event_case_id!=case_id:continue
+                        elif event_case_id!=case_id:
+                            if not anchor.is_file():raise ValueError('unrelated ledger anchor missing')
+                            try:unrelated_anchor=json.loads(anchor.read_text())
+                            except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
+                            anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
+                            if not hmac_key:
+                                anchor_errs=[x for x in anchor_errs if x!='ledger HMAC key unavailable for existing HMAC anchor']
+                            if anchor_errs:raise ValueError('unrelated ledger invalid: '+'; '.join(anchor_errs[:8]))
+                            continue
+                    elif tx_path.is_file():
+                        event_case_id=pending_append_case_id(ledger,hmac_key,require_hmac=bool(hmac_key))
+                        if event_case_id!=case_id:continue
+            except TimeoutError as exc:
+                raise ValueError('campaign ledger busy during consistent history snapshot') from exc
             if tx_path.is_file():
                 recover_pending_append_if_present(ledger,anchor,hmac_key)
             if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
