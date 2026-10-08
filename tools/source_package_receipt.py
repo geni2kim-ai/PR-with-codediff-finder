@@ -37,7 +37,7 @@ def validate(obj,package=None,manifest=None):
     if not isinstance(obj.get('package_name'),str) or not PACKAGE_NAME.fullmatch(obj['package_name']) or Path(obj['package_name']).name!=obj['package_name']:e.append('source package receipt package_name invalid')
     for k in ('package_sha256','manifest_sha256','receipt_digest'):
         if not HEX256.fullmatch(str(obj.get(k,''))):e.append(f'source package receipt {k} invalid')
-    if not isinstance(obj.get('manifest_entries'),int) or obj.get('manifest_entries',0)<1:e.append('source package receipt manifest_entries invalid')
+    if type(obj.get('manifest_entries')) is not int or obj.get('manifest_entries',0)<1:e.append('source package receipt manifest_entries invalid')
     if obj.get('clean_extract_verified') is not True:e.append('source package receipt clean_extract_verified must be true')
     if obj.get('canonical_validation_passed') is not True:e.append('source package receipt canonical_validation_passed must be true')
     if obj.get('receipt_digest')!=object_digest(obj,'receipt_digest'):e.append('source package receipt digest mismatch')
