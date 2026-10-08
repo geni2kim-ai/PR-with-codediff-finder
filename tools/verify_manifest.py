@@ -1,6 +1,6 @@
 from __future__ import annotations
 import argparse,hashlib,os,re,stat,subprocess
-from pathlib import Path
+from pathlib import Path,PurePosixPath
 
 ROOT=Path(__file__).resolve().parents[1]
 SHA256_RE=re.compile(r'^[0-9a-fA-F]{64}$')
@@ -17,10 +17,10 @@ def git_paths(ref):
 
 def _safe_rel(rel):
     raw=rel.removeprefix('./')
-    p=Path(raw)
-    if not raw or p.is_absolute() or any(x in {'','..'} for x in p.parts):
+    if not raw or '\\' in raw or '\x00' in raw:
         raise ValueError(f'unsafe manifest path: {rel}')
-    if raw.replace('\\','/').startswith('../'):
+    p=PurePosixPath(raw)
+    if p.is_absolute() or any(x in {'','.','..'} for x in p.parts):
         raise ValueError(f'unsafe manifest path: {rel}')
     return p.as_posix()
 
