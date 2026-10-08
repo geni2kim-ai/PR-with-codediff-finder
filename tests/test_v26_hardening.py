@@ -495,6 +495,16 @@ class V26CodexFollowupTests(unittest.TestCase):
         self.assertEqual(Path(packet['refs']['test_results'][0]).read_text(),'{"status":"pass","version":1}\n')
         self.assertNotEqual(packet['digests']['trusted_standards'][0],sha256_file(r/'std.md'))
 
+    def test_route_case_recovery_rejects_corrupted_case_bank_refs(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        out=cycle(r,adapter(r,base),base,'ROUTE-RECOVERY-INTEGRITY');root=r/'routing'
+        args=[sys.executable,str(TOOLS/'route_case.py'),'--case',str(out/'case-record.json'),'--evidence',str(out/'textdiff-evidence.json'),'--ledger',str(out/'case-events.jsonl'),'--root',str(root),'--l1-ref',str(out/'l1-review.json')]
+        first=run(args);packet_path=Path(first.stdout.strip());cb=root/'case-bank'/'ROUTE-RECOVERY-INTEGRITY'
+        (cb/'l1-review.json').write_text('{"corrupted":true}\n')
+        packet_path.unlink()
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('case-bank L1 review invalid',cp.stderr+cp.stdout);self.assertFalse(packet_path.exists())
+
     def test_outcome_and_incident_transactions_recover_after_ledger_append(self):
         td,r,_=gitrepo();self.addCleanup(td.cleanup);(r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head');out=cycle(r,adapter(r,base),base,'TX-RECOVER')
         casep=out/'case-record.json';ledger=out/'case-events.jsonl';original=json.loads(casep.read_text())
