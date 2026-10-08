@@ -11,7 +11,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
-from run_review_cycle import audit_sample,worker_command_digest
+from run_review_cycle import audit_sample,worker_command_digest,finding_disposition
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
 from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation
@@ -396,6 +396,19 @@ class FindingTriageTests(unittest.TestCase):
         self.assertFalse((out/'adversarial-review.json').exists())
         self.assertEqual(notes['items'],[])
         self.assertEqual(cyc['gate_conclusion'],'failure')
+
+
+    def test_triage_configuration_cannot_downgrade_major_or_blocker(self):
+        hostile={'finding_triage':{'note_only_severities':['minor','nit','major','blocker']},
+                 'L2_if_any':[],'ADVERSARIAL_if_any':[],'HUMAN_if_any':[]}
+        self.assertEqual(finding_disposition({'severity':'major'},hostile),'AGENT_REVIEW_REQUIRED')
+        self.assertEqual(finding_disposition({'severity':'blocker'},hostile),'BLOCKING')
+        protected=load_yaml(ROOT/'policy/protected-paths.yml');hits=classify_paths([],protected,include_self_protection=False)
+        model={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'}
+        level,reasons=derive_required_level(model,hits,{'major_candidate':True},hostile,{'textdiff':{}})
+        self.assertEqual(level,'L2');self.assertIn('L2_FLOOR:major_finding',reasons)
+        level2,reasons2=derive_required_level(model,hits,{'blocker_candidate':True},hostile,{'textdiff':{}})
+        self.assertEqual(level2,'ADVERSARIAL');self.assertIn('ADVERSARIAL_FLOOR:blocker_finding',reasons2)
 
 
 class V26FollowupRegressionTests(unittest.TestCase):
