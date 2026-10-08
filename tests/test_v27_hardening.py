@@ -97,6 +97,9 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             pkg.write_bytes(b'zip-bytes');leaked=json.loads(json.dumps(receipt));leaked['path']='secret';leaked['receipt_digest']=''
             leaked['receipt_digest']=__import__('common').object_digest(leaked,'receipt_digest')
             self.assertIn('source package receipt fields mismatch',validate_package_receipt(leaked,pkg,manifest))
+            bad_name=json.loads(json.dumps(receipt));bad_name['package_name']='..\\pkg.zip';bad_name['receipt_digest']=''
+            bad_name['receipt_digest']=__import__('common').object_digest(bad_name,'receipt_digest')
+            self.assertIn('source package receipt package_name invalid',validate_package_receipt(bad_name))
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
