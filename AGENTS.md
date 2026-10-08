@@ -18,6 +18,7 @@ These rules are the default instructions for work in this repository.
 12. Cleanup claims must prove the relevant path: timeout/kill execution, bounded wait, before/after process existence and residual child-tree state when process cleanup is material.
 13. Do not self-authorize merge, HUMAN approval, or ENFORCED promotion merely because local or CI tests pass. External promotion gates remain separate.
 14. Review reports must record the exact reviewed HEAD SHA and identify any NOT_RUN external/E2E checks.
+15. For meaningful hardening/recovery changes, dogfood the affected end-to-end path before closeout. Reproduced dogfood failures must be fixed in the same candidate and preserved as regression tests; a dogfood report alone is not closure.
 
 ## Review priority
 
