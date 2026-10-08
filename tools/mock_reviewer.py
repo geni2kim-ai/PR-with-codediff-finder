@@ -17,6 +17,8 @@ def main():
     elif ns.mode=='minor': findings=[finding(severity='minor',family='MOCK-MINOR')];verdict='FINDINGS'
     elif ns.mode=='nit': findings=[finding(severity='nit',family='MOCK-NIT',axis='standards')];verdict='FINDINGS'
     elif ns.mode=='minor-escalate': findings=[finding(severity='minor',family='MOCK-MINOR',axis='standards')];verdict='FINDINGS';requested=True;target='L2'
+    elif ns.mode=='critical-minor': findings=[finding(severity='minor',family='SECURITY-CRITICAL',axis='correctness_security')];verdict='FINDINGS'
+    elif ns.mode=='test-integrity-minor': findings=[finding(severity='minor',family='MOCK-TEST-INTEGRITY',axis='test_integrity')];verdict='FINDINGS'
     elif ns.mode=='low': confidence='low'
     elif ns.mode=='novel': findings=[finding(family='NOVEL-MOCK')];verdict='FINDINGS';novel=True;requested=True;target='ADVERSARIAL'
     elif ns.mode=='block': verdict='BLOCKED'

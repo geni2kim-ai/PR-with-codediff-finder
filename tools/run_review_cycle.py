@@ -279,10 +279,11 @@ def run_worker(cmd,task,cfg):
 def finding_disposition(f,esc_cfg=None):
     triage=(esc_cfg or {}).get('finding_triage',{})
     note=set(triage.get('note_only_severities',['minor','nit'])) & {'minor','nit'}
-    severity=f.get('severity');family=str(f.get('failure_family') or '')
+    severity=f.get('severity');family=str(f.get('failure_family') or '');axis=str(f.get('axis') or '')
     forced_exact={'SECURITY-CRITICAL','DATA-CORRUPTION'}|set(triage.get('force_agent_review_failure_families',[]))
     forced_prefix={'GOVERNANCE'}|set(triage.get('force_agent_review_failure_family_prefixes',[]))
-    if family in forced_exact or any(family.startswith(x) for x in forced_prefix if x):
+    forced_axes={'test_integrity'}|set(triage.get('force_agent_review_axes',[]))
+    if axis in forced_axes or family in forced_exact or any(family.startswith(x) for x in forced_prefix if x):
         return 'BLOCKING' if severity=='blocker' else 'AGENT_REVIEW_REQUIRED'
     if severity in note:return 'NOTE_ONLY'
     if severity=='blocker':return 'BLOCKING'
@@ -299,6 +300,7 @@ def stage_signals(r,esc_cfg=None):
     material=material_findings(r,esc_cfg);ff={f.get('failure_family') for f in material if f.get('failure_family')}
     only_notes=bool(r.get('findings')) and not material
     return {'reviewer_confidence':'high' if only_notes else r['confidence'],
+            'agent_review_candidate':any(finding_disposition(f,esc_cfg)=='AGENT_REVIEW_REQUIRED' for f in r.get('findings',[])),
             'major_candidate':any(f['severity']=='major' for f in material),
             'blocker_candidate':any(f['severity']=='blocker' for f in material),
             'novel_failure_family':bool(r['escalation']['novel_failure_family']),
@@ -375,17 +377,15 @@ def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows
          'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_remediation_retry_allowed':evaluation['automated_remediation_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
     obj['budget_digest']=object_digest(obj,'budget_digest');return obj
 
-def cycle_gate(state,required,achieved,stage):
+def cycle_gate(state,required,achieved,stage,esc_cfg=None):
     if state=='STALE':return 'cancelled'
     if state=='HUMAN_CONFIRMED':return 'success'
     if state=='HUMAN_REJECTED':return 'failure'
     if state in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED','BLOCKED'}:return 'action_required'
     if not stage:return 'action_required'
     if stage['verdict']=='BLOCKED':return 'action_required'
-    sev={f['severity'] for f in stage['findings']}
-    if sev & {'blocker','major'}:return 'failure'
+    if material_findings(stage,esc_cfg):return 'failure'
     if LEVELS.index(achieved)<LEVELS.index(required):return 'action_required'
-    if sev & {'minor','nit'}:return 'success'
     return 'success'
 
 def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
@@ -398,9 +398,9 @@ def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
 
-def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage=None):
+def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage=None,esc_cfg=None):
     c={'schema_version':'2.4','case_id':case_id,'binding':binding,'sensor':{'evidence_digest':evidence.get('output_digest',ZERO),'quality_class':evidence.get('summary',{}).get('quality_class','NOT_APPLICABLE'),'trusted_for_gate':bool(evidence.get('trust',{}).get('trusted_for_gate'))},'stages':stages,'required_level':required,'achieved_level':achieved,'state':state,'gate_conclusion':'','escalation_reasons':sorted(set(reasons)),'current_head_verified':state!='STALE','execution_mode':mode,'gate_effective':mode=='ENFORCED','evidence_git_verified':git_ok,'evidence_recomputed_verified':recomputed_ok,'worktree_clean_verified':worktree_ok,'ledger_anchor_verified':ledger_ok,'cycle_digest':''}
-    c['gate_conclusion']=cycle_gate(state,required,achieved,current_stage);c['cycle_digest']=object_digest(c,'cycle_digest');return c
+    c['gate_conclusion']=cycle_gate(state,required,achieved,current_stage,esc_cfg);c['cycle_digest']=object_digest(c,'cycle_digest');return c
 
 def choose_out_dir(raw,retry):
     root=Path(raw);root.mkdir(parents=True,exist_ok=True)
@@ -470,7 +470,7 @@ def main():
             case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg);write_json(out/'case-record.json',case)
         if ledger_failures:reasons.append('LEDGER_WRITE_FAILED');ledger_ok=False
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]
-        cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,'BLOCKED',reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage);write_json(out/'review-cycle.json',cyc)
+        cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,'BLOCKED',reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage,esc_cfg);write_json(out/'review-cycle.json',cyc)
         try:ev('CYCLE_CLOSED',{'state':'BLOCKED','cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
         except Exception as exc:ledger_failures.append('CYCLE_CLOSED:'+type(exc).__name__+':'+str(exc)[:300])
         if ledger_failures:
@@ -492,7 +492,7 @@ def main():
             ev('SENSOR_REJECTED',{'reasons':structural[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(structural));return
         if evidence.get('binding',{}).get('head_sha')!=head:
             write_json(out/'textdiff-evidence.json',evidence);ev('SENSOR_REJECTED',{'reasons':['HEAD_MISMATCH']})
-            cyc=cycle_obj(ns.case_id,binding,evidence,[],'L1','SENSOR','STALE',['HEAD_MISMATCH'],mode,False,False,worktree_ok,False,None);write_json(out/'review-cycle.json',cyc);ev('CYCLE_CLOSED',{'state':'STALE','cycle_digest':cyc['cycle_digest'],'gate_conclusion':'cancelled'});print(out);return
+            cyc=cycle_obj(ns.case_id,binding,evidence,[],'L1','SENSOR','STALE',['HEAD_MISMATCH'],mode,False,False,worktree_ok,False,None,esc_cfg);write_json(out/'review-cycle.json',cyc);ev('CYCLE_CLOSED',{'state':'STALE','cycle_digest':cyc['cycle_digest'],'gate_conclusion':'cancelled'});print(out);return
         errs=evidence_errors(evidence,effective_policy_dir/'protected-paths.yml',repo,ns.expected_base,sensor_policy_path=effective_policy_dir/'sensor-policy.yml')
         if errs:
             ev('SENSOR_REJECTED',{'reasons':errs[:20]});terminal_block('EVIDENCE_REJECTED','; '.join(errs));return
@@ -632,7 +632,7 @@ def main():
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]
         from case_ledger import load_events,validate_anchor
         ledger_ok=not validate_anchor(ledger,anchor,load_events(ledger),ns.case_id,ledger_key,require_hmac=(mode=='ENFORCED'))
-        cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage);write_json(out/'review-cycle.json',cyc)
+        cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,state,reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage,esc_cfg);write_json(out/'review-cycle.json',cyc)
         ev('CYCLE_CLOSED',{'state':state,'cycle_digest':cyc['cycle_digest'],'gate_conclusion':cyc['gate_conclusion']})
         if state=='ADVERSARIAL_REQUIRED':
             q=choose_queue(reasons,labels,None,families);packet={'schema_version':'2.4','case_id':case['case_id'],'binding':case['binding'],'queue':q,'escalation_reasons':sorted(set(reasons or ['POLICY_ESCALATION'])),

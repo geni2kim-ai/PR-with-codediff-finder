@@ -402,6 +402,16 @@ class FindingTriageTests(unittest.TestCase):
         self.assertEqual(cyc['gate_conclusion'],'failure')
 
 
+    def test_semantic_override_minor_requires_l2_and_cannot_gate_success_when_confirmed(self):
+        for mode in ('critical-minor','test-integrity-minor'):
+            with self.subTest(mode=mode):
+                r,base=self._repo();out=cycle(r,adapter(r,base),base,'TRIAGE-'+mode.upper(),l1=mode,l2=mode)
+                cyc=json.loads((out/'review-cycle.json').read_text())
+                self.assertEqual(cyc['required_level'],'L2')
+                self.assertEqual(cyc['achieved_level'],'L2')
+                self.assertEqual(cyc['gate_conclusion'],'failure')
+                self.assertTrue((out/'l2-review.json').is_file())
+
     def test_note_only_l1_vs_l2_pass_is_not_downstream_disagreement(self):
         case={'labels':[],'review_trail':[
             {'level':'L1','verdict':'FINDINGS','material_finding_count':0,'note_only_finding_count':1},
@@ -416,6 +426,7 @@ class FindingTriageTests(unittest.TestCase):
         self.assertEqual(finding_disposition({'severity':'blocker'},hostile),'BLOCKING')
         self.assertEqual(finding_disposition({'severity':'minor','failure_family':'SECURITY-CRITICAL'},hostile),'AGENT_REVIEW_REQUIRED')
         self.assertEqual(finding_disposition({'severity':'nit','failure_family':'GOVERNANCE-TAMPERING'},hostile),'AGENT_REVIEW_REQUIRED')
+        self.assertEqual(finding_disposition({'severity':'minor','axis':'test_integrity'},hostile),'AGENT_REVIEW_REQUIRED')
         novel={'confidence':'high','findings':[{'severity':'minor','failure_family':'NOVEL-X','axis':'standards'}],
                'escalation':{'novel_failure_family':True}}
         self.assertTrue(stage_signals(novel,hostile)[0]['novel_failure_family'])

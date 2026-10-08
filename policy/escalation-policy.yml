@@ -16,10 +16,13 @@ finding_triage:
   - DATA-CORRUPTION
   force_agent_review_failure_family_prefixes:
   - GOVERNANCE
+  force_agent_review_axes:
+  - test_integrity
   suppress_note_only_reviewer_escalation: true
   note_only_auto_fix: false
 L2_if_any:
 - reviewer_confidence_low_or_medium
+- agent_review_finding
 - major_candidate
 - moderate_reversibility
 - service_or_larger_blast_radius

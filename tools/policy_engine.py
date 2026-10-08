@@ -125,6 +125,7 @@ def max_level(a,b): return LEVELS[max(LEVELS.index(a), LEVELS.index(b))]
 def active_escalation_signals(model, path_hits, signals):
     active=set()
     if signals.get('reviewer_confidence') in {'low','medium'}: active.add('reviewer_confidence_low_or_medium')
+    if signals.get('agent_review_candidate'): active.add('agent_review_finding')
     if signals.get('major_candidate'): active.add('major_candidate')
     if model['reversibility']=='MODERATE': active.add('moderate_reversibility')
     if model['blast_radius']!='LOCAL': active.add('service_or_larger_blast_radius')
@@ -169,7 +170,7 @@ def active_escalation_signals(model, path_hits, signals):
 def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor_cfg=None):
     if escalation_cfg is None:
         escalation_cfg={
-          'L2_if_any':['reviewer_confidence_low_or_medium','major_candidate','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
+          'L2_if_any':['reviewer_confidence_low_or_medium','agent_review_finding','major_candidate','moderate_reversibility','service_or_larger_blast_radius','soft_large_diff','protected_path_human_floor','test_integrity_finding','supply_chain_change'],
           'ADVERSARIAL_if_any':['l1_l2_disagreement','novel_failure_family','deterministic_reviewer_conflict','blocker_candidate','security_surface_high_or_critical','protected_path_adversarial_floor','unexplained_spec_change_after_pr_open','reviewer_policy_tampering'],
           'HUMAN_if_any':['governance_change','hard_reversibility','data_sensitivity_pii_or_secret','availability_critical','destructive_migration','public_contract_break','payment_or_irreversible_external_side_effect','ruleset_or_codeowners_change','adversarial_unresolved']
         }
@@ -189,7 +190,9 @@ def derive_required_level(model, path_hits, signals, escalation_cfg=None, sensor
         level=max_level(level,'ADVERSARIAL');reasons.extend('ADVERSARIAL:'+x for x in sorted(active & adv))
     if active & human:
         level='HUMAN';reasons.extend('HUMAN:'+x for x in sorted(active & human))
-    # Finding-severity authority floors cannot be lowered by configuration.
+    # Finding/action authority floors cannot be lowered by configuration.
+    if signals.get('agent_review_candidate'):
+        level=max_level(level,'L2');reasons.append('L2_FLOOR:agent_review_finding')
     if signals.get('major_candidate'):
         level=max_level(level,'L2');reasons.append('L2_FLOOR:major_finding')
     if signals.get('blocker_candidate'):
