@@ -12,6 +12,7 @@ import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key
+from calibration_report import material_state,summarize_cases
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
 from runtime_attestation import create as create_runtime_attestation, validate as validate_runtime_attestation
@@ -509,6 +510,40 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertEqual(cyc['state'],'COMPLETE');self.assertEqual(cyc['gate_conclusion'],'success');self.assertEqual(budget['stop_reason'],'NO_MATERIAL_FINDINGS');self.assertFalse(budget['automated_remediation_retry_allowed'])
         cp2=self._retry(r,base,case,out,ev2,l1='pass')
         self.assertNotEqual(cp2.returncode,0);self.assertIn('already closed without material findings',cp2.stderr+cp2.stdout)
+
+
+class LeonardoCalibrationTests(unittest.TestCase):
+    def _row(self,level,verdict,review_id,material=0,notes=0,major=0,note_key=None,note_family=None,parent=None):
+        return {'review_id':review_id,'parent_review_id':parent,'level':level,'node_id':'node','model':None if level=='HUMAN' else {'family':'mock','version':'1'},'verdict':verdict,'confidence':'not_applicable' if level=='HUMAN' else 'high',
+                'result_digest':'a'*64,'reviewed_head_sha':'b'*40,'evidence_digest':'c'*64,'input_digest':'d'*64,'prompt_digest':'e'*64,'skill_digest':'f'*64,'policy_digest':'1'*64,'standards_digest':'2'*64,'worker_command_digest':'3'*64,
+                'independent_context':level!='L1','requested_level':level,'achieved_level':level,'timestamp':None,'finding_families':[],'material_finding_keys':[],'note_only_finding_families':[note_family] if note_family else [],
+                'note_only_finding_keys':[note_key] if note_key else [],'material_finding_count':material,'note_only_finding_count':notes,'major_finding_count':major,'blocker_finding_count':0}
+
+    def test_material_finding_key_distinguishes_same_family_on_different_paths(self):
+        a={'failure_family':'CORRECTNESS','axis':'correctness_security','path':'src/a.py'}
+        b={'failure_family':'CORRECTNESS','axis':'correctness_security','path':'src/b.py'}
+        self.assertNotEqual(material_finding_key(a),material_finding_key(b))
+        self.assertEqual(material_finding_key(a),material_finding_key(dict(a,claim='different wording')))
+
+    def test_calibration_treats_note_only_as_material_pass(self):
+        l1=self._row('L1','FINDINGS','L1',notes=1,note_key='note-x',note_family='STYLE');l2=self._row('L2','PASS','L2')
+        case={'review_trail':[l1,l2],'labels':[],'outcome':{'post_merge_status':'clean'},'review_campaign':{'attempt_index':1,'stop_reason':'NO_MATERIAL_FINDINGS'}}
+        s=summarize_cases([case],{'recurring_note_min_occurrences':2})
+        self.assertEqual(material_state(l1),'PASS');self.assertEqual(s['per_level']['L1']['agree_final'],1);self.assertNotIn('L1_TO_L2',s['reversals']);self.assertEqual(s['leonardo_metrics']['note_only_rate'],1.0)
+
+    def test_calibration_separates_human_confirmation_from_machine_verdict_vocabulary(self):
+        l1=self._row('L1','FINDINGS','L1',material=1,major=1);l2=self._row('L2','PASS','L2');human=self._row('HUMAN','REJECTED','H1',parent='L2')
+        case={'review_trail':[l1,l2,human],'labels':[],'outcome':{'post_merge_status':'clean'},'review_campaign':{'attempt_index':2,'stop_reason':'SAME_MATERIAL_FINDING_REPEAT'}}
+        s=summarize_cases([case],{'recurring_note_min_occurrences':2})
+        self.assertEqual(s['reversals']['L1_TO_L2'],1);self.assertEqual(s['human_decisions']['rejected_parent'],1);self.assertEqual(s['leonardo_metrics']['major_l2_downgrade_rate'],1.0);self.assertEqual(s['leonardo_metrics']['automated_attempts_p95'],2);self.assertEqual(s['leonardo_metrics']['same_material_repeat_rate'],1.0)
+
+    def test_recurring_note_candidate_is_case_frequency_not_stage_frequency(self):
+        cases=[]
+        for i in range(2):
+            l1=self._row('L1','FINDINGS',f'L1-{i}',notes=1,note_key='note-repeat',note_family='STYLE');l2=self._row('L2','PASS',f'L2-{i}',notes=1,note_key='note-repeat',note_family='STYLE')
+            cases.append({'review_trail':[l1,l2],'labels':[],'outcome':{'post_merge_status':'clean'}})
+        s=summarize_cases(cases,{'recurring_note_min_occurrences':2})
+        self.assertEqual(s['leonardo_metrics']['recurring_note_keys'],[{'key':'note-repeat','case_occurrences':2}]);self.assertEqual(s['leonardo_metrics']['recurring_note_families'],[{'failure_family':'STYLE','case_occurrences':2}])
 
 
 class V26FollowupRegressionTests(unittest.TestCase):

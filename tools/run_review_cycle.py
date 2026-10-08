@@ -332,9 +332,11 @@ def review_notes_obj(stage_rows,esc_cfg=None):
     return obj
 
 def material_finding_key(f):
-    family=str(f.get('failure_family') or '').strip()
-    if family:return 'family:'+family
-    basis={'axis':f.get('axis'),'path':f.get('path'),'claim':f.get('claim'),'recommendation':f.get('recommendation')}
+    # Bind the semantic family to its review axis/path. Family-only keys are too
+    # broad and can falsely classify a different defect as the same repeated issue.
+    basis={'failure_family':str(f.get('failure_family') or '').strip() or None,
+           'axis':str(f.get('axis') or '').strip() or None,
+           'path':str(f.get('path') or '').strip() or None}
     return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
 
 def campaign_history(root,case_id):
@@ -430,7 +432,9 @@ def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     for level,task,r,ref in stage_rows:
         material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY']
         ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f) for f in material})
-        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'material_finding_count':len(material),'note_only_finding_count':len(notes)})
+        note_ff=sorted({f.get('failure_family') for f in notes if f.get('failure_family')});note_keys=sorted({material_finding_key(f) for f in notes})
+        major_count=sum(f.get('severity')=='major' for f in material);blocker_count=sum(f.get('severity')=='blocker' for f in material)
+        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
@@ -678,7 +682,9 @@ def main():
         elif state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['attempt_limit_reached']:
             required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_AUTOMATED_ATTEMPT_LIMIT');labels.add('review_budget_attempt_limit')
         budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']),len(reused_levels));write_json(out/'review-budget.json',budget)
-        case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg);write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
+        case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg)
+        case['review_campaign']={'attempt_index':budget['attempt_index'],'max_automated_attempts':budget['max_automated_attempts'],'stop_reason':budget['stop_reason'],'automated_remediation_retry_allowed':budget['automated_remediation_retry_allowed'],'executed_agent_stages':budget['executed_agent_stages'],'reused_agent_stages':budget['reused_agent_stages'],'current_attempt_worker_timeout_budget_seconds':budget['current_attempt_worker_timeout_budget_seconds'],'repeated_material_finding_keys':budget['repeated_material_finding_keys']}
+        write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
         if cerr:terminal_block('CASE_RECORD_INVALID','; '.join(cerr),'HARNESS',required,achieved,stage_rows,labels,families,reasons,current_stage);return
         if state in {'WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED'}:ev('ESCALATION_REQUIRED',{'state':state,'required_level':required,'reasons':sorted(set(reasons))})
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]

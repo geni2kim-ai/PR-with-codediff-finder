@@ -264,6 +264,29 @@
               "minLength": 1
             },
             "uniqueItems": true
+          },
+          "note_only_finding_families": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "note_only_finding_keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "major_finding_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "blocker_finding_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -342,6 +365,68 @@
         },
         "retention_note": {
           "type": "string"
+        }
+      }
+    },
+    "review_campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_index",
+        "max_automated_attempts",
+        "stop_reason",
+        "automated_remediation_retry_allowed",
+        "executed_agent_stages",
+        "reused_agent_stages",
+        "current_attempt_worker_timeout_budget_seconds",
+        "repeated_material_finding_keys"
+      ],
+      "properties": {
+        "attempt_index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_automated_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "stop_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SAME_MATERIAL_FINDING_REPEAT",
+            "AUTOMATED_ATTEMPT_LIMIT",
+            "NO_MATERIAL_FINDINGS",
+            null
+          ]
+        },
+        "automated_remediation_retry_allowed": {
+          "type": "boolean"
+        },
+        "executed_agent_stages": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "reused_agent_stages": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "current_attempt_worker_timeout_budget_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repeated_material_finding_keys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       }
     }
