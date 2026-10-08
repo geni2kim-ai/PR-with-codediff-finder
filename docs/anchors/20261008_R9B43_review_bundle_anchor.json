@@ -1,0 +1,23 @@
+{
+  "schema_version": "SYNAPSE-R9B43-EXTERNAL-ANCHOR-1",
+  "published_at_utc": "2026-10-08",
+  "artifact_name": "R9B43_review_bundle.zip",
+  "sha256": "f040b1f81780ac233335b3d769782fa3a6e868afde611b3350c77ef50461e778",
+  "size_bytes": 32916,
+  "entry_count": 17,
+  "review_manifest_sha256": "76b10143d6a1bbba336f88260993b89f9e990ad22543711cfa2cc78ef69c4fe2",
+  "accepted_run_id": "c052c51c78944864a2cee9af70fa2dba",
+  "source_return_zip_sha256": "e6e3d6d677ab56f8b6cf7d314905d8e51dbb4ae75976ac0bbd1bf911c74ab1d1",
+  "independent_reverification": {
+    "zip_crc": "PASS",
+    "review_manifest": "16/16_MATCH",
+    "offline_verifier": "R9B4_OFFLINE_ARTIFACT_SET_BOUND"
+  },
+  "binding_semantics": "PRIVACY_TRANSFORMED_REBOUND_REVIEW_SET_NOT_ORIGINAL_RUNTIME_BYTES",
+  "authentication_result": "MEASURED_NOT_AUTHENTICATED",
+  "stable_node_id": "UNBOUND",
+  "authorization_status": "NOT_AUTHORIZED",
+  "authority_effect": "NONE",
+  "r9c_status": "BLOCKED_PENDING_INDEPENDENT_HUMAN_REVIEW",
+  "note": "This anchor is published separately from the sealed review ZIP and is not inserted back into that ZIP."
+}
