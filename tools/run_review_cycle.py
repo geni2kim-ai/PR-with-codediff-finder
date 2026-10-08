@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,json,os,re,signal,shutil,subprocess,sys,tempfile,time
+import argparse,atexit,hashlib,hmac,json,os,re,signal,shutil,subprocess,sys,tempfile,time
 from datetime import datetime,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
