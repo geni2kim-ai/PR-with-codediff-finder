@@ -51,3 +51,20 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - The review budget never lowers deterministic authority floors.
 
 With the current 180-second worker timeout, three levels per attempt and three attempts give a hard worker-time ceiling of 1,620 seconds (27 minutes) before external/HUMAN work. Typical paths are materially lower because NOTE_ONLY uses L1 only and major uses L1+L2.
+
+
+### Incomplete authority-path resume
+
+A retry that completes an unfinished authority path is not a remediation retry.
+
+In SHADOW, a previous L1/L2 stage may be reused only when:
+- the reviewed HEAD and case binding are unchanged;
+- the prior task/result pair still validates;
+- evidence and semantic digests match;
+- reviewer node/model/prompt/skill/policy/standards/worker-command provenance matches;
+- changed paths, security boundary, limits and lower-layer result digests match;
+- trusted policy/standards/spec/test files have the same bytes.
+
+If any comparison fails, the stage is executed again. ENFORCED does not reuse stages because external runtime/fresh-session authority must be demonstrated for the current run.
+
+A reused stage is recorded as `reused_from_previous_attempt=true`; `review-budget.json` separates `reused_agent_stages` from actually `executed_agent_stages`.

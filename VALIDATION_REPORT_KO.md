@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **140 PASS / 82 isolated groups**
+- 합계: **141 PASS / 83 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 140 PASS (groups=82, sequential)`
+- `harness isolated tests: 141 PASS (groups=83, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -115,7 +115,7 @@ v2.7 코어 source HEAD의 canonical full validation은 PASS했다. 최종 packa
 - NOTE_ONLY L1 FINDINGS와 L2 PASS는 material disagreement가 아니며 downstream `route_case`에서도 다시 adversarial escalation으로 살아나지 않는다.
 - `major`는 코드 하드플로어로 최소 L2, `blocker`는 최소 ADVERSARIAL을 요구하며 config로 하향할 수 없다.
 - protected-path/risk/deterministic floors와 random audit는 finding triage와 독립적으로 유지된다.
-- 최신 code-bearing validation: **140 PASS / 82 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+- 최신 code-bearing validation: **141 PASS / 83 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
 
 
 ## v2.7 coding/review campaign simulation follow-up
@@ -131,7 +131,7 @@ Executable simulations were added for the development loop itself.
 - `review-budget.json` records attempt/stage/time ceiling and remediation retry eligibility.
 
 Latest code-bearing validation after these changes:
-- harness: **140 PASS / 82 isolated groups**
+- harness: **141 PASS / 83 isolated groups**
 - vendored TextDiffChecker: **144 PASS / 1 GUI skip**
 - DIFF-FALSE-EXACT: PASS
 - canonical result: `ALL VALIDATIONS PASS (FULL)`
@@ -163,7 +163,25 @@ Executable regression:
 - `test_semantic_override_minor_requires_l2_and_cannot_gate_success_when_confirmed`: PASS for both critical-minor and test-integrity-minor.
 
 Latest code-bearing validation:
-- harness: **140 PASS / 82 isolated groups**
+- harness: **141 PASS / 83 isolated groups**
 - vendored TextDiffChecker: **144 PASS / 1 GUI skip**
 - DIFF-FALSE-EXACT: PASS
+- `ALL VALIDATIONS PASS (FULL)`
+
+
+## unfinished authority-path resume optimization
+
+The coding-time simulation found that an unfinished `WAITING_L2` retry previously re-executed L1 even though the HEAD and review inputs had not changed.
+
+v2.7 now reuses a lower-stage result in SHADOW only when the previous task/result pair validates and all bounded provenance/input checks remain compatible. ENFORCED deliberately does not reuse this path.
+
+Regression:
+- `test_waiting_l2_resume_reuses_compatible_l1_in_shadow`: PASS.
+- The observable L1 worker executes once across the initial WAITING_L2 attempt and the resume attempt.
+- The resumed attempt records `reused_agent_stages=1`, `executed_agent_stages=1`, and a 180-second current worker timeout budget because only L2 is newly invoked.
+
+Latest canonical code-bearing result:
+- **141 PASS / 83 isolated groups**
+- TextDiffChecker **144 PASS / 1 GUI skip**
+- DIFF-FALSE-EXACT PASS
 - `ALL VALIDATIONS PASS (FULL)`

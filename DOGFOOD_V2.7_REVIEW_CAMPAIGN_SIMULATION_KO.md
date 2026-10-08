@@ -122,3 +122,28 @@ severity 자체가 잘못 선택되는 상황도 추가로 시뮬레이션했다
 따라서 현재 등급 체계의 핵심은 **severity label + semantic override + action disposition**이다. 4단계 severity를 더 세분화하는 것보다, 의미상 중요한 축/가족을 독립 authority signal로 유지하는 것이 오분류 비용과 반복시간을 동시에 줄인다.
 
 최신 canonical 결과: **140 PASS / 82 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+
+
+## 미완료 상위검토 재개 시간 최적화
+
+추가 시뮬레이션에서 `L1 완료 → L2 worker 부재 → WAITING_L2 → L2 연결 후 retry`를 재현했다.
+
+기존 방식:
+- retry 시 L1을 다시 실행한 뒤 L2를 실행.
+- 같은 코드/같은 evidence를 다시 보는 데 최대 180초의 L1 worker budget이 중복될 수 있음.
+
+보완 방식:
+- SHADOW에서 exact same HEAD이고 prior task/result가 유효하며 evidence, reviewer provenance, policy/standards, changed paths, trusted refs가 동일할 때만 L1을 재사용.
+- 새 attempt에서는 L2만 실제 실행.
+- ENFORCED는 runtime/fresh-session authority 때문에 재사용하지 않음.
+
+실측 회귀:
+- counting L1 worker의 호출 횟수는 initial + resume 전체에서 **1회**.
+- resume budget: `reused_agent_stages=1`, `executed_agent_stages=1`.
+- 추가 worker timeout budget은 L2 **180초**만 계산.
+- 전체 canonical: **141 PASS / 83 isolated groups**.
+
+따라서 반복시간 제어는 세 층으로 구성된다:
+1. NOTE_ONLY는 수정/retry하지 않는다.
+2. material 수정은 한 batch/새 HEAD로 묶고 같은 material repeat는 HUMAN으로 끊는다.
+3. 수정이 아니라 상위 authority worker의 늦은 가용성 때문에 재개하는 경우, 안전하게 검증 가능한 lower stage는 다시 실행하지 않는다.

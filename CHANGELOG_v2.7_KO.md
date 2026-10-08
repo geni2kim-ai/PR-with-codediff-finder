@@ -78,3 +78,9 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - `test_integrity`를 force-agent-review axis로 고정하고, final gate를 raw major/blocker가 아닌 material finding 기준으로 변경.
 - `SECURITY-CRITICAL`/test-integrity를 minor로 잘못 표기한 통합 시나리오에서도 L2 실행 + gate failure를 확인.
 - 최신 harness **140 PASS / 82 groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+
+- WAITING_L2/ADVERSARIAL_REQUIRED 재개 최적화: SHADOW 동일 HEAD에서 검증된 lower-stage task/result와 evidence/policy/provenance/trusted-ref bytes가 모두 호환되면 lower agent 재호출 없이 재사용.
+- ENFORCED는 runtime/fresh-session 권한 때문에 lower-stage 재사용 금지.
+- `review-budget.json`에 `reused_agent_stages`를 분리하고 실제 신규 worker만 `executed_agent_stages`/timeout budget에 계산.
+- observable L1 counting regression으로 WAITING_L2 resume 시 L1 호출이 1회로 유지됨을 확인.
+- 최신 harness **141 PASS / 83 groups** 확인.

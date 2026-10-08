@@ -42,3 +42,7 @@ Exercise loop control as part of dogfood:
 17. Unchanged-HEAD retry scenario: a completed material attempt must reject `--retry` until HEAD changes.
 18. Different-material scenario: new material families may consume the remaining attempt budget, but the campaign must stop after the third worker-bearing attempt.
 19. Record agent-stage count and timeout ceiling in `review-budget.json`; distinguish review-worker time from CI/package validation time.
+
+20. SHADOW WAITING_L2 resume: make L1 observable, stop at WAITING_L2, then retry with L2 available. Confirm the prior L1 result is provenance-compatible, reused once, and the L1 worker is not executed again.
+21. Confirm `review-budget.json` counts a reused lower stage separately and charges timeout budget only for newly executed workers.
+22. Change any reusable-stage binding/provenance/trusted-ref input and confirm reuse is rejected rather than silently accepted.
