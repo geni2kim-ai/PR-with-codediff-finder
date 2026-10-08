@@ -571,6 +571,29 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertEqual(json.loads((bdir/'review-cycle.json').read_text())['state'],'COMPLETE')
         hist=campaign_history(out,case_b);self.assertEqual(len(hist),1);self.assertEqual(hist[0]['attempt_index'],1)
 
+    def test_shared_root_with_active_hmac_authority_rejects_different_unrelated_key(self):
+        r,base=self._repo();out=r/'campaign-shared-hmac-authority';ev=adapter(r,base)
+        case_a='SHARED-HMAC-AUTH-A';case_b='SHARED-HMAC-AUTH-B'
+        args_a=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case_a,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp_a=subprocess.run(args_a,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env={**os.environ,'MAESTRO_LEDGER_HMAC_KEY':'root-key-a'})
+        self.assertEqual(cp_a.returncode,0,cp_a.stderr)
+        args_b=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case_b,'--output-dir',str(out),'--retry','--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp_b=subprocess.run(args_b,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env={**os.environ,'MAESTRO_LEDGER_HMAC_KEY':'root-key-b'})
+        self.assertNotEqual(cp_b.returncode,0);self.assertIn('HMAC mismatch',cp_b.stderr+cp_b.stdout)
+        self.assertFalse((out/'attempt-0001'/'case-events.jsonl').exists())
+
+    def test_hmac_active_case_cannot_be_relabelled_as_unrelated_to_reset_history(self):
+        r,base=self._repo();out=r/'campaign-hmac-relabel';ev=adapter(r,base);case='HMAC-RELABEL-A';key='relabel-key'
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env={**os.environ,'MAESTRO_LEDGER_HMAC_KEY':key});self.assertEqual(cp.returncode,0,cp.stderr)
+        ledger=out/'case-events.jsonl';anchorp=out/'case-events.anchor.json';events=load_events(ledger);prev='0'*64
+        for e in events:
+            e['case_id']='HMAC-RELABEL-B';e['prev_hash']=prev;e['event_hash']='';e['event_hash']=object_digest(e,'event_hash');prev=e['event_hash']
+        ledger.write_text(''.join(json.dumps(e,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n' for e in events),encoding='utf-8')
+        a=json.loads(anchorp.read_text());a['case_id']='HMAC-RELABEL-B';a['seq']=len(events);a['event_hash']=events[-1]['event_hash'];a['ledger_sha256']=sha256_file(ledger);anchorp.write_text(json.dumps(a))
+        with self.assertRaisesRegex(ValueError,'HMAC mismatch'):
+            campaign_history(out,case,key)
+
     def test_unrelated_pending_hmac_transaction_is_not_recovered_or_blocking(self):
         r,base=self._repo();out=r/'campaign-shared-pending';out.mkdir();ev=adapter(r,base)
         ledger=out/'case-events.jsonl';anchorp=out/'case-events.anchor.json';txp=case_ledger.pending_append_path(ledger)
