@@ -132,3 +132,47 @@ v2.7의 즉시 리뷰 루프뿐 아니라 Leonardo의 장기 학습 루프도 **
 
 이 보완은 권위 단계를 낮추지 않는다. 목적은 **검토 단계 완성**과 **실제 소스 보완 반복**을 분리하여, 불필요한 반복 시간과 false HUMAN escalation을 줄이는 것이다.
 
+## 추가 Leonardo 시뮬레이션 — historical campaign state / retry integrity
+
+앞선 authority-path 보완을 다시 역방향으로 시뮬레이션한 결과 두 가지 경계 문제가 추가로 확인되었다.
+
+### 3. 상위 authority에서 해소된 finding이 history 재로딩 시 다시 material로 부활
+
+직전 보완에서 현재 attempt의 budget 계산은 최고 완료 machine authority 단계만 보도록 수정했지만, 다음 실행에서 과거 attempt를 읽는 `campaign_history()`는 여전히 모든 review trail의 material count/key를 합산하고 있었다.
+
+반례:
+1. L1 = major
+2. L2 = PASS
+3. Adversarial = PASS
+4. 현재 attempt는 `NO_MATERIAL_FINDINGS`로 정상 종료
+5. 이후 무관한 새 HEAD가 생긴 뒤 `--retry`
+
+기존 history 재로딩에서는 L1 major가 다시 material로 계산되어 닫힌 campaign을 remediation 가능 상태처럼 취급할 수 있었다.
+
+보완:
+- 과거 이력의 material 상태도 최고 완료 machine authority 단계 기준으로 계산한다.
+- 신규 v2.7 close event에는 `current_material_finding_keys`를 ledger에 함께 기록한다.
+- 이후 retry에서는 ledger에 앵커된 authoritative key가 있으면 그것을 우선 사용한다.
+- 따라서 상위 review에서 해소된 lower-stage finding은 현재 attempt뿐 아니라 이후 재실행에서도 다시 살아나지 않는다.
+
+### 4. mutable history metadata가 retry/HUMAN 경계를 바꿀 수 있는 문제
+
+기존 `campaign_history()`는 `case-record.json`의 campaign metadata와 `review-cycle.json`의 state를 직접 읽었다. 두 파일의 해당 필드는 retry 판단에 사용되면서도 그 값 자체를 campaign ledger의 close event에서 다시 확인하지 않았다.
+
+보완:
+- 과거 case bundle과 ledger/anchor를 먼저 검증하고, 불일치 시 retry를 fail-closed 한다.
+- historical state는 ledger의 `CYCLE_CLOSED.payload.state`에서 읽는다.
+- historical HEAD는 ledger의 `CASE_OPENED.payload.head_sha`에서 읽는다.
+- logical attempt index는 validated history의 HEAD/state 전이를 통해 독립적으로 재계산한다.
+- 신규 `CYCLE_CLOSED`에는 `attempt_index`, `current_material_finding_keys`, `review_budget_digest`를 함께 기록한다.
+- case metadata의 `attempt_index` 또는 review-cycle state만 바꾸어서는 retry budget을 변경할 수 없다.
+- ledger event를 직접 변조하면 hash/anchor 검증에서 history 자체가 거부된다.
+
+추가 회귀:
+- higher-authority clearance 후 무관한 새 HEAD가 생겨도 closed campaign이 재개되지 않음
+- mutable review-cycle state 변조가 anchored state를 덮어쓰지 못함
+- CYCLE_CLOSED ledger state 변조는 history invalid로 fail-closed
+- case-record campaign attempt_index 변조가 logical attempt budget을 바꾸지 못함
+
+SHADOW의 unkeyed anchor는 self-consistency 보장 범위이고 외부 공격자에 대한 독립 authority를 의미하지 않는다. ENFORCED에서는 기존 HMAC key 요구를 그대로 사용한다.
+
