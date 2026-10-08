@@ -163,17 +163,20 @@ def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
     Path(tx_path).unlink(missing_ok=True)
     return ev
 
-def pending_append_case_id(ledger):
+def pending_append_case_id(ledger,hmac_key=None,require_hmac=False):
     tx_path=pending_append_path(ledger)
     if not tx_path.is_file():return None
     try:tx=json.loads(tx_path.read_text(encoding='utf-8'))
     except Exception as exc:raise ValueError(f'append transaction unreadable: {type(exc).__name__}') from exc
-    # Classification is intentionally authentication-neutral. It validates the
-    # self-contained transaction/event structure so an unrelated case can be
-    # skipped without requiring that case's HMAC key. Active-case recovery still
-    # performs the full HMAC/pre-ledger checks in _recover_pending_append().
+    # Classification validates the self-contained transaction/event structure.
+    # If the active campaign supplies HMAC authority, a shared root is treated as
+    # one HMAC trust domain so relabeling an active transaction cannot turn it
+    # into an unauthenticated "unrelated" record.
     core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
     if tx.get('transaction_digest')!=object_digest(core):raise ValueError('append transaction digest mismatch')
+    mac=tx.get('hmac_sha256')
+    if require_hmac and not mac:raise ValueError('append transaction HMAC missing')
+    if hmac_key and mac and not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):raise ValueError('append transaction HMAC mismatch')
     ev=tx.get('event')
     if not isinstance(ev,dict):raise ValueError('append transaction event missing')
     cid=tx.get('case_id')
