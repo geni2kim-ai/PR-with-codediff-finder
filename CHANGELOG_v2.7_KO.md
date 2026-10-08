@@ -44,3 +44,8 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 ## 권한 상태
 
 v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/HUMAN/ENFORCED 승격 권한을 대신하지 않는다.
+
+- self-dogfood 후속: route 단계가 live policy를 다시 읽던 문제를 제거하고 cycle `effective-policy/` snapshot에 고정.
+- self-dogfood 후속: review 후 standards/spec/test 원본 변조가 adversarial packet에 반영되던 TOCTOU를 제거하고 `trusted-inputs/`를 downstream authority로 사용.
+- self-dogfood 후속: 손상된 immutable case-bank를 recovery가 재검증 없이 requeue하던 경로를 fail-closed.
+- frozen-input 우선 처리에서 route-only refs 호환성이 깨진 회귀를 기존 테스트로 발견해 타입별 fallback으로 보완.
