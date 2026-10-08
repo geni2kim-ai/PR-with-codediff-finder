@@ -76,6 +76,55 @@ def _atomic_queue_write(path,obj):
         return
     try:os.write(fd,data);os.fsync(fd)
     finally:os.close(fd)
+def _case_bank_ref(cb,raw,label):
+    if not raw:raise SystemExit(f'case-bank {label} ref missing')
+    root=Path(cb).resolve();p=Path(raw).resolve()
+    if root!=p and root not in p.parents:raise SystemExit(f'case-bank {label} ref escapes immutable bundle')
+    if not p.is_file():raise SystemExit(f'case-bank {label} file missing')
+    return p
+
+def _validate_case_bank_refs(cb,packet,expected_case):
+    refs=packet.get('refs',{});digests=packet.get('digests',{})
+    evidence_path=_case_bank_ref(cb,refs.get('textdiff_evidence'),'evidence')
+    try:evidence=json.loads(evidence_path.read_text())
+    except Exception as exc:raise SystemExit(f'case-bank evidence unreadable: {type(exc).__name__}')
+    expected_evidence=digests.get('textdiff_evidence')
+    if evidence.get('output_digest')!=expected_evidence or object_digest(evidence,'output_digest')!=expected_evidence:
+        raise SystemExit('case-bank evidence digest mismatch')
+    if expected_evidence!=expected_case.get('sensor',{}).get('evidence_digest'):
+        raise SystemExit('case-bank evidence/case digest mismatch')
+
+    policy_path=_case_bank_ref(cb,refs.get('deterministic_policy'),'deterministic policy')
+    if sha256_file(policy_path)!=digests.get('deterministic_policy'):raise SystemExit('case-bank deterministic policy digest mismatch')
+
+    for level,ref_key,digest_key in (('L1','l1_review','l1_review'),('L2','l2_review','l2_review')):
+        raw=refs.get(ref_key);expected=digests.get(digest_key)
+        if raw is None and expected is None:continue
+        review_path=_case_bank_ref(cb,raw,f'{level} review')
+        try:review=json.loads(review_path.read_text())
+        except Exception as exc:raise SystemExit(f'case-bank {level} review unreadable: {type(exc).__name__}')
+        errs=validate_stage_result(review)
+        if errs:raise SystemExit(f'case-bank {level} review invalid: '+'; '.join(errs))
+        if review.get('result_digest')!=expected or object_digest(review,'result_digest')!=expected:
+            raise SystemExit(f'case-bank {level} review digest mismatch')
+
+    for ref_key,digest_key,label in (('trusted_standards','trusted_standards','standard'),('test_results','test_results','test result')):
+        raw_refs=refs.get(ref_key) or [];expected=digests.get(digest_key) or []
+        if len(raw_refs)!=len(expected):raise SystemExit(f'case-bank {label} ref/digest count mismatch')
+        for i,(raw,digest_value) in enumerate(zip(raw_refs,expected),1):
+            p=_case_bank_ref(cb,raw,f'{label} {i}')
+            if sha256_file(p)!=digest_value:raise SystemExit(f'case-bank {label} {i} digest mismatch')
+
+    raw_spec=refs.get('spec_ref');spec_digest=digests.get('spec_ref')
+    if raw_spec is None and spec_digest is not None:raise SystemExit('case-bank spec ref missing')
+    if raw_spec is not None:
+        p=_case_bank_ref(cb,raw_spec,'spec')
+        if not spec_digest or sha256_file(p)!=spec_digest:raise SystemExit('case-bank spec digest mismatch')
+
+    ledger=Path(cb)/'case-events.jsonl';anchor=Path(cb)/'case-events.anchor.json'
+    bundle_errs=bundle_errors(expected_case,ledger,anchor,False,os.environ.get('MAESTRO_LEDGER_HMAC_KEY'))
+    if bundle_errs:raise SystemExit('invalid recovered case-bank bundle: '+'; '.join(bundle_errs))
+
 def _recover_completed_case_bank(cb,root,schema,expected_case):
     stored_case_path=cb/'case-record.json';packet_path=cb/'adversarial-packet.json'
     if not stored_case_path.is_file() or not packet_path.is_file():raise SystemExit(f'incomplete immutable case-bank target requires manual quarantine: {cb}')
@@ -87,6 +136,7 @@ def _recover_completed_case_bank(cb,root,schema,expected_case):
         raise SystemExit('stored adversarial packet binding does not match immutable case record')
     if packet.get('digests',{}).get('textdiff_evidence')!=expected_case.get('sensor',{}).get('evidence_digest'):
         raise SystemExit('stored adversarial packet evidence digest does not match immutable case record')
+    _validate_case_bank_refs(cb,packet,expected_case)
     target=root/'adversarial_queue'/packet['queue']/f"{packet['case_id']}.json";_atomic_queue_write(target,packet);print(target);return True
 def _copy(src,dst):
     dst=Path(dst);dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dst)
