@@ -74,11 +74,42 @@ jobs:
         if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
         run: git archive --format=zip --prefix=PR-with-codediff-finder-v2.7/ -o PR-with-codediff-finder-v2.7.zip HEAD
 
+      - name: Verify clean-extracted v2.7 package
+        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
+        shell: bash
+        run: |
+          rm -rf package-check
+          mkdir package-check
+          python -m zipfile -e PR-with-codediff-finder-v2.7.zip package-check
+          python tools/verify_manifest.py --filesystem-root package-check/PR-with-codediff-finder-v2.7
+          (
+            cd package-check/PR-with-codediff-finder-v2.7
+            python tools/run_validation.py --full --test-timeout 120
+          )
+
+      - name: Create and verify v2.7 package receipt
+        if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
+        shell: bash
+        run: |
+          python tools/source_package_receipt.py create \
+            --package PR-with-codediff-finder-v2.7.zip \
+            --manifest package-check/PR-with-codediff-finder-v2.7/MANIFEST.sha256 \
+            --head-sha "$(git rev-parse HEAD)" \
+            --clean-extract-verified \
+            --canonical-validation-passed \
+            --output PR-with-codediff-finder-v2.7.receipt.json
+          python tools/source_package_receipt.py validate \
+            --receipt PR-with-codediff-finder-v2.7.receipt.json \
+            --package PR-with-codediff-finder-v2.7.zip \
+            --manifest package-check/PR-with-codediff-finder-v2.7/MANIFEST.sha256
+
       - name: Upload validated v2.7 source package
         if: github.event_name != 'push' || github.ref != 'refs/heads/hardening/v2.7'
         uses: actions/upload-artifact@v4
         with:
           name: v2.7-source-package
-          path: PR-with-codediff-finder-v2.7.zip
+          path: |
+            PR-with-codediff-finder-v2.7.zip
+            PR-with-codediff-finder-v2.7.receipt.json
           if-no-files-found: error
           retention-days: 7
