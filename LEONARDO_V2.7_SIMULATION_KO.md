@@ -176,3 +176,20 @@ v2.7의 즉시 리뷰 루프뿐 아니라 Leonardo의 장기 학습 루프도 **
 
 SHADOW의 unkeyed anchor는 self-consistency 보장 범위이고 외부 공격자에 대한 독립 authority를 의미하지 않는다. ENFORCED에서는 기존 HMAC key 요구를 그대로 사용한다.
 
+### 5. WAITING_L1이 실제 reviewer 실행 없이 remediation budget을 소모
+
+추가 시간축 시뮬레이션:
+1. L1 worker 미지정 → `WAITING_L1`
+2. 동일 HEAD 재개, worker 아직 미지정 → 다시 `WAITING_L1`
+3. 이후 L1 worker가 준비되어 정상 리뷰 시작
+
+기존에는 각 resume가 새 logical attempt로 계산되어 reviewer가 한 번도 실행되지 않았는데도 자동 remediation 한도에 접근할 수 있었다.
+
+보완:
+- 동일 HEAD의 `WAITING_L1`도 `WAITING_L2`, `ADVERSARIAL_REQUIRED`와 동일하게 unfinished authority-path resume로 취급한다.
+- output directory는 immutable하게 계속 분리하지만 `attempt_index`는 증가하지 않는다.
+- 여러 번 WAITING_L1 상태를 거친 뒤 처음 L1 reviewer가 실행되어도 logical attempt는 1을 유지한다.
+- HEAD가 바뀌거나 완료된 material remediation을 다시 검토하는 경우에는 기존 규칙대로 새 attempt가 된다.
+
+회귀 테스트에서 WAITING_L1을 두 번 연속 재개한 뒤 L1 PASS로 완료하는 전체 흐름이 `attempt_index=1`을 유지하는지 고정했다.
+
