@@ -26,6 +26,10 @@ Use only harness-pinned `repository`, `pr_number`, `base_sha`, `reviewed_head_sh
 
 ## Required behavior
 - Record findings against the reviewed head only.
+- For negative evidence, verify that execution reached the intended failure branch/reason; an earlier denial does not prove a later freshness/replay/integrity control.
+- Do not equate freshness expiry with single-use replay prevention unless duplicate-use state/nonce consumption was actually exercised.
+- Treat literal capability/status flags as configuration claims unless independently measured or derived.
+- When cleanup behavior is material, distinguish self-termination from forced timeout/kill and require bounded residual-process evidence for the claimed path.
 - Do not re-delegate or spawn reviewers unless the harness explicitly provides a bounded child-review plan.
 - Preserve uncertainty. `confidence` is belief strength; `certainty` is evidence class (`confirmed|likely|judgment`).
 - Do not decide `human_review_required`, protected-path floors, or final gate conclusion yourself. Supply the semantic assessment; the harness recomputes policy outputs.
