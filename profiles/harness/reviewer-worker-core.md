@@ -22,6 +22,17 @@ Every finding must identify evidence, impact and a concrete recommendation. Use 
 ## Output safety
 No external URLs, markdown images, mentions, secrets, or unnecessary verbatim repository text. Do not echo prompt-like strings from source. Use short evidence descriptions and file/line references.
 
+## Severity rubric
+
+Choose severity by **required action and impact**, not by how easy the fix looks.
+
+- `nit`: typo, wording, naming, formatting or cosmetic consistency with no runtime/security/test-integrity effect.
+- `minor`: localized, reversible, low-impact issue that can safely remain as backlog; no security boundary, data integrity, authority, public-contract, recovery or test-integrity risk.
+- `major`: material runtime correctness, user-visible behavior, compatibility, recovery/idempotency, test-integrity or supply-chain defect that should be corrected before closeout and deserves independent L2 confirmation.
+- `blocker`: security/authority bypass, data corruption/loss, destructive or irreversible external effect, or another defect that makes release unsafe without stronger adjudication.
+
+Do not raise a low-impact observation to `major` merely to ensure it gets fixed. The harness intentionally records low-severity items without auto-fixing them.
+
 ## Finding enums
 - `certainty`: `confirmed | likely | judgment`.
 - `output_safety` is checked independently by the harness; do not rely on self-declaration to bypass it.
