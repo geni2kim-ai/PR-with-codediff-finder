@@ -21,6 +21,7 @@
 | 17 | source-package receipt semantic validator가 schema보다 느슨한 package-name/int 타입을 허용할 수 있음 | exact package-name regex + bool-as-int 차단 + negative regression | 해결 |
 | 18 | generated pytest/Python cache가 Git에 추적되면 `git archive`와 manifest가 그대로 봉인할 수 있음 (R9B.4.1 generalization) | package hygiene gate로 `.pytest_cache`/`__pycache__`/`*.pyc`/`*.pyo` tracked artifact를 manifest 생성 전 차단 | 해결 |
 | 19 | `git archive --format=zip` 결과를 clean-extract했을 때 vendor text files가 Git blob manifest와 byte-level mismatch | archive 변환 경로를 제거하고 `git show HEAD:path` exact blob bytes를 직접 ZIP에 기록하는 builder로 교체 + mixed-newline regression | 해결 |
+| 20 | runtime replay 회귀 테스트가 ENFORCED random L2 audit에 우연히 걸리면 L2 worker 부재로 `WAITING_L2`가 되어 replay 검증 전에 간헐 실패 | replay fixture에 L2 PASS worker를 제공해 random-audit routing과 replay assertion을 분리 | 해결 |
 
 ## v2.7 검수 원칙
 
