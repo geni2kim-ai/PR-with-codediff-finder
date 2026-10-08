@@ -205,11 +205,11 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **122 PASS** across 68 isolated groups;
+- harness: **124 PASS** across 68 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
-- v2.7 code-bearing pre-closeout GitHub Actions full validation: **SUCCESS** (Harness Full Validation #223, source HEAD `74abeeda337e3c76a1375c596b38d1e0928636ff`);
+- v2.7 package-integrity follow-up code-bearing validation: **SUCCESS** (Harness Full Validation #270, source HEAD `9c2f0d04bbee5cfad92ad6b8373c4a6e7a0198c3`);
 - final manifest/PR packaging validation is required on the closeout HEAD before the package is treated as validated.
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.
@@ -217,6 +217,18 @@ See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RE
 ## Validated source package
 
 The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` from the exact validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds. CI then extracts the ZIP, verifies the extracted filesystem against `MANIFEST.sha256` without Git metadata, reruns canonical full validation from that extracted tree, creates `PR-with-codediff-finder-v2.7.receipt.json`, verifies the receipt, and uploads the ZIP + receipt together as the `v2.7-source-package` artifact. The receipt binds exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; `authority_effect` remains `NONE`.
+
+After download/extraction, the package tree can be checked without a Git repository:
+
+```bash
+python tools/verify_manifest.py --filesystem-root /path/to/PR-with-codediff-finder-v2.7
+
+python tools/source_package_receipt.py validate \
+  --receipt /path/to/PR-with-codediff-finder-v2.7.receipt.json \
+  --package /path/to/PR-with-codediff-finder-v2.7.zip \
+  --manifest /path/to/PR-with-codediff-finder-v2.7/MANIFEST.sha256
+```
+
 
 ## Deployment status
 
