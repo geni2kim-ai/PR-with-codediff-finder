@@ -73,3 +73,8 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - repository 내부 output-dir에서 이전 attempt 산출물을 dirty worktree로 오인해 retry가 막히던 문제를 campaign-root ignore로 수정.
 - campaign calibration 지표(`note_only_rate`, `major_l2_downgrade_rate`, `automated_attempts_p95`, `same_material_repeat_rate`, `review_budget_human_escalation_rate`) 추가.
 - review campaign 보완 후 canonical harness **139 PASS / 81 groups** 확인.
+
+- severity 오분류 안전장치 보완: semantic `AGENT_REVIEW_REQUIRED` finding은 raw severity와 무관하게 최소 L2 hard floor 적용.
+- `test_integrity`를 force-agent-review axis로 고정하고, final gate를 raw major/blocker가 아닌 material finding 기준으로 변경.
+- `SECURITY-CRITICAL`/test-integrity를 minor로 잘못 표기한 통합 시나리오에서도 L2 실행 + gate failure를 확인.
+- 최신 harness **140 PASS / 82 groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.

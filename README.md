@@ -206,12 +206,12 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **139 PASS** across 81 isolated groups;
+- harness: **140 PASS** across 82 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
 - v2.7 package-integrity follow-up code-bearing validation: **SUCCESS** (Harness Full Validation #270, source HEAD `9c2f0d04bbee5cfad92ad6b8373c4a6e7a0198c3`);
-- latest review-campaign code-bearing validation: **139 PASS / 81 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, DIFF-FALSE-EXACT PASS, full validation PASS;
+- latest review-campaign code-bearing validation: **140 PASS / 82 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, DIFF-FALSE-EXACT PASS, full validation PASS;
 - final manifest/PR packaging validation is required on the closeout HEAD before the package is treated as validated.
 
 See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RESOLUTION_V2.7_KO.md`.
@@ -239,6 +239,7 @@ Finding triage prevents low-value fixes; the review campaign budget prevents rep
 - The same material finding key repeating on the second completed material attempt forces HUMAN/owner adjudication.
 - At most 3 automated attempts are allowed for one campaign.
 - `review-budget.json` records attempt number, executed agent stages, per-stage timeout, campaign timeout ceiling, repeated material keys and whether another automated remediation retry is allowed.
+- semantic importance is independent of the textual severity label: a low-severity `SECURITY-CRITICAL`, `DATA-CORRUPTION`, `GOVERNANCE*` or test-integrity finding still requires agent review, and the gate evaluates material disposition rather than raw severity.
 
 At the current 180-second reviewer timeout, typical upper bounds are approximately: NOTE_ONLY 3 minutes of worker budget; one major review plus one clean post-fix L1 re-review 9 minutes; a repeated major stops after about 12 minutes of worker timeout budget. The absolute three-attempt/three-stage ceiling is 27 minutes before HUMAN/owner handling. CI/package time is additional, so remediation changes should be batched into one HEAD rather than pushed one by one.
 

@@ -93,3 +93,32 @@ v2.7 소스를 실제로 코딩하고 리뷰/수정하는 상황을 가정해, f
 - `review_budget_human_escalation_rate`
 
 특히 `major_l2_downgrade_rate`가 높으면 L1이 사소한 문제를 major로 과대평가하는 신호이고, `same_material_repeat_rate`가 높으면 fix 품질이나 finding 설명 품질을 먼저 개선해야 한다.
+
+
+## 등급 오분류 시뮬레이션 후속
+
+severity 자체가 잘못 선택되는 상황도 추가로 시뮬레이션했다.
+
+### SECURITY-CRITICAL인데 minor로 표기
+
+기존 중간 구현:
+- NOTE_ONLY로는 떨어지지 않았지만, 단순 `minor` severity 때문에 L2 강제가 완전히 보장되지 않았고 final gate도 raw severity를 보아 성공 처리될 여지가 있었다.
+
+보완:
+- semantic disposition이 `AGENT_REVIEW_REQUIRED`이면 severity와 무관하게 최소 L2.
+- final gate는 major/blocker 문자열이 아니라 material finding 존재 여부로 실패 처리.
+
+### test_integrity인데 minor로 표기
+
+보완:
+- `test_integrity` axis를 force-agent-review axis로 고정.
+- minor/nit로 잘못 표기되어도 L2를 실행하고 material finding으로 처리.
+
+실행 테스트:
+- `critical-minor`: L1 → L2, required=L2, gate=failure.
+- `test-integrity-minor`: L1 → L2, required=L2, gate=failure.
+- 통합 회귀 `test_semantic_override_minor_requires_l2_and_cannot_gate_success_when_confirmed`: PASS.
+
+따라서 현재 등급 체계의 핵심은 **severity label + semantic override + action disposition**이다. 4단계 severity를 더 세분화하는 것보다, 의미상 중요한 축/가족을 독립 authority signal로 유지하는 것이 오분류 비용과 반복시간을 동시에 줄인다.
+
+최신 canonical 결과: **140 PASS / 82 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.

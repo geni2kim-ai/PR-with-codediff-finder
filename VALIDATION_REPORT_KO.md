@@ -13,7 +13,7 @@ v2.7부터 저장소 기본 지침은 **Latest-HEAD review**다. 이전 리뷰/P
 - v2.3 subprocess-sensitive 테스트는 기존 hard isolation 유지
 - v2.6 hardening 테스트는 method isolation 유지
 - v2.7 release/integrity 테스트 포함
-- 합계: **139 PASS / 81 isolated groups**
+- 합계: **140 PASS / 82 isolated groups**
 
 ### TextDiffChecker
 - vendored regression: **144 PASS**
@@ -39,7 +39,7 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - standard candidate
 
 ### Canonical result
-- `harness isolated tests: 139 PASS (groups=81, sequential)`
+- `harness isolated tests: 140 PASS (groups=82, sequential)`
 - `Ran 144 tests ... OK (skipped=1)`
 - `vendored TextDiffChecker regressions + DIFF-FALSE-EXACT fixture: PASS`
 - `ALL VALIDATIONS PASS (FULL)`
@@ -115,7 +115,7 @@ v2.7 코어 source HEAD의 canonical full validation은 PASS했다. 최종 packa
 - NOTE_ONLY L1 FINDINGS와 L2 PASS는 material disagreement가 아니며 downstream `route_case`에서도 다시 adversarial escalation으로 살아나지 않는다.
 - `major`는 코드 하드플로어로 최소 L2, `blocker`는 최소 ADVERSARIAL을 요구하며 config로 하향할 수 없다.
 - protected-path/risk/deterministic floors와 random audit는 finding triage와 독립적으로 유지된다.
-- 최신 code-bearing validation: **139 PASS / 81 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
+- 최신 code-bearing validation: **140 PASS / 82 isolated groups**, TextDiffChecker **144 PASS / 1 GUI skip**, full validation PASS.
 
 
 ## v2.7 coding/review campaign simulation follow-up
@@ -131,7 +131,7 @@ Executable simulations were added for the development loop itself.
 - `review-budget.json` records attempt/stage/time ceiling and remediation retry eligibility.
 
 Latest code-bearing validation after these changes:
-- harness: **139 PASS / 81 isolated groups**
+- harness: **140 PASS / 82 isolated groups**
 - vendored TextDiffChecker: **144 PASS / 1 GUI skip**
 - DIFF-FALSE-EXACT: PASS
 - canonical result: `ALL VALIDATIONS PASS (FULL)`
@@ -143,3 +143,27 @@ Time-model conclusion with the current 180-second reviewer timeout:
 - absolute campaign ceiling: 3 attempts × 3 stages × 180 seconds = 1,620 seconds before HUMAN/owner handling.
 
 This bound is for reviewer workers only; CI/package validation remains additional, so the repository rules now require one remediation batch/HEAD rather than one HEAD per finding.
+
+
+## semantic-importance severity review
+
+The latest-HEAD review found one grading inconsistency after the campaign simulation:
+
+- A finding such as `SECURITY-CRITICAL` could be marked `minor` by a reviewer.
+- The earlier triage prevented it from becoming NOTE_ONLY, but the authority calculation did not independently guarantee L2 for every semantically material low-severity finding.
+- The final gate also still inspected raw major/blocker severity, which could have allowed a semantically material minor finding to produce success after review.
+
+Remediation:
+- every `AGENT_REVIEW_REQUIRED` disposition now creates an `agent_review_candidate` signal with a non-downgradable L2 floor;
+- `test_integrity` is a force-agent-review axis even when the model labels it minor/nit;
+- the final gate uses `material_findings(...)`, not raw severity alone;
+- `SECURITY-CRITICAL`, `DATA-CORRUPTION`, `GOVERNANCE*`, test-integrity and novel/deterministic authority signals therefore cannot be made cheap merely by a severity-label mistake.
+
+Executable regression:
+- `test_semantic_override_minor_requires_l2_and_cannot_gate_success_when_confirmed`: PASS for both critical-minor and test-integrity-minor.
+
+Latest code-bearing validation:
+- harness: **140 PASS / 82 isolated groups**
+- vendored TextDiffChecker: **144 PASS / 1 GUI skip**
+- DIFF-FALSE-EXACT: PASS
+- `ALL VALIDATIONS PASS (FULL)`
