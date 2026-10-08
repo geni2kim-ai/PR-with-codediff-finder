@@ -12,12 +12,13 @@ from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_case_bundle import errors as case_bundle_errors
-from case_ledger import append_event
+from case_ledger import append_event,load_events,validate_events,validate_anchor
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
 from queue_policy import choose_queue
 
 LEVELS=['SENSOR','L1','L2','ADVERSARIAL','HUMAN'];REVIEW_LEVELS=['L1','L2','ADVERSARIAL','HUMAN'];ZERO='0'*64
+CAMPAIGN_RESUMABLE_STATES={'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED','INTERRUPTED_EMPTY','INTERRUPTED_REVIEW'}
 
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 
@@ -353,39 +354,51 @@ def _trail_authoritative_material(case):
 
 def campaign_history(root,case_id,hmac_key=None):
     root=Path(root);dirs=[]
-    if (root/'case-record.json').is_file():dirs.append(root)
-    if root.is_dir():dirs.extend(sorted(p for p in root.glob('attempt-*') if p.is_dir() and (p/'case-record.json').is_file()))
+    if (root/'case-record.json').is_file() or (root/'case-events.jsonl').is_file():dirs.append(root)
+    if root.is_dir():
+        dirs.extend(sorted(p for p in root.glob('attempt-*') if p.is_dir() and ((p/'case-record.json').is_file() or (p/'case-events.jsonl').is_file())))
     out=[];derived_attempt=0;previous=None
     for d in dirs:
         try:
-            case=json.loads((d/'case-record.json').read_text())
-            if case.get('case_id')!=case_id:continue
             ledger=d/'case-events.jsonl';anchor=d/'case-events.anchor.json'
             if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
-            anchor_obj=json.loads(anchor.read_text())
-            errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
-            if errs:raise ValueError('case_bundle_invalid: '+'; '.join(errs[:8]))
-            from case_ledger import load_events
-            events=load_events(ledger);opened=[e for e in events if e.get('event_type')=='CASE_OPENED'];closed=[e for e in events if e.get('event_type')=='CYCLE_CLOSED']
-            if not opened or not closed:raise ValueError('campaign ledger missing CASE_OPENED/CYCLE_CLOSED')
+            try:anchor_obj=json.loads(anchor.read_text())
+            except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
+            events=load_events(ledger);errs=validate_events(events,case_id)
+            errs+=validate_anchor(ledger,anchor,events,case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
+            if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+            opened=[e for e in events if e.get('event_type')=='CASE_OPENED'];closed=[e for e in events if e.get('event_type')=='CYCLE_CLOSED'];completed=[e for e in events if e.get('event_type')=='REVIEW_COMPLETED']
+            if not opened:raise ValueError('campaign ledger missing CASE_OPENED')
             head_sha=opened[-1].get('payload',{}).get('head_sha')
-            payload=closed[-1].get('payload',{});state=payload.get('state')
-            if not state:raise ValueError('campaign CYCLE_CLOSED state missing')
-            anchored_keys=payload.get('current_material_finding_keys')
-            if anchored_keys is not None:
-                if not isinstance(anchored_keys,list) or not all(isinstance(x,str) and x for x in anchored_keys):raise ValueError('campaign material keys invalid')
-                keys=sorted(set(anchored_keys));material_count=len(keys)
+            case_path=d/'case-record.json';case=None
+            if case_path.is_file():
+                case=json.loads(case_path.read_text())
+                if case.get('case_id')!=case_id:raise ValueError('case_id mismatch')
+                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
+                if bundle_errs:raise ValueError('case_bundle_invalid: '+'; '.join(bundle_errs[:8]))
+            if closed:
+                if case is None:raise ValueError('closed campaign attempt missing case-record')
+                payload=closed[-1].get('payload',{});state=payload.get('state')
+                if not state:raise ValueError('campaign CYCLE_CLOSED state missing')
+                anchored_keys=payload.get('current_material_finding_keys')
+                if anchored_keys is not None:
+                    if not isinstance(anchored_keys,list) or not all(isinstance(x,str) and x for x in anchored_keys):raise ValueError('campaign material keys invalid')
+                    keys=sorted(set(anchored_keys));material_count=len(keys)
+                else:
+                    keys,material_count=_trail_authoritative_material(case)
             else:
-                keys,material_count=_trail_authoritative_material(case)
+                state='INTERRUPTED_REVIEW' if completed else 'INTERRUPTED_EMPTY'
+                keys,material_count=_trail_authoritative_material(case) if case is not None else ([],0)
             if previous is None:derived_attempt=1
-            elif not (previous.get('state') in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED'} and previous.get('head_sha')==head_sha):
+            elif not (previous.get('state') in CAMPAIGN_RESUMABLE_STATES and previous.get('head_sha')==head_sha):
                 derived_attempt+=1
-            anchored_attempt=payload.get('attempt_index')
-            if anchored_attempt is not None:
-                try:anchored_attempt=int(anchored_attempt)
-                except Exception:raise ValueError('campaign attempt_index invalid')
-                if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
-            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt})
+            if closed:
+                payload=closed[-1].get('payload',{});anchored_attempt=payload.get('attempt_index')
+                if anchored_attempt is not None:
+                    try:anchored_attempt=int(anchored_attempt)
+                    except Exception:raise ValueError('campaign attempt_index invalid')
+                    if anchored_attempt!=derived_attempt:raise ValueError(f'campaign attempt_index mismatch: anchored={anchored_attempt} derived={derived_attempt}')
+            out.append({'dir':str(d.resolve()),'head_sha':head_sha,'state':state,'material_count':material_count,'material_keys':keys,'attempt_index':derived_attempt,'review_completed_count':len(completed)})
             previous=out[-1]
         except Exception as exc:
             raise ValueError(f'{d}: {type(exc).__name__}: {exc}') from exc
@@ -511,7 +524,7 @@ def main():
         if bootstrap_campaign.get('stop_retry_after_note_only_closeout',True) and last.get('state')=='COMPLETE' and not last.get('material_count'):
             raise SystemExit('review campaign already closed without material findings; NOTE_ONLY items remain backlog and must not trigger retry')
         current_head=git_resolve(repo,'HEAD')
-        continuing_authority_path=last.get('state') in {'WAITING_L1','WAITING_L2','ADVERSARIAL_REQUIRED'} and current_head==last.get('head_sha')
+        continuing_authority_path=last.get('state') in CAMPAIGN_RESUMABLE_STATES and current_head==last.get('head_sha')
         if not continuing_authority_path and last_attempt_index>=max_attempts:
             raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
@@ -652,7 +665,7 @@ def main():
         if hits['governance']:labels.add('governance')
         if mode=='SHADOW':labels.add('shadow_only')
         resume_dir=None
-        if ns.retry and history and history[-1].get('head_sha')==head and history[-1].get('state') in {'WAITING_L2','ADVERSARIAL_REQUIRED'}:
+        if ns.retry and history and history[-1].get('head_sha')==head and history[-1].get('state') in CAMPAIGN_RESUMABLE_STATES:
             resume_dir=Path(history[-1]['dir'])
         def record_stage(level,task,r,filename,reused=False):
             nonlocal achieved,current_stage
