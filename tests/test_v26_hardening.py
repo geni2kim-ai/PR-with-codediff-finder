@@ -427,6 +427,61 @@ class FindingTriageTests(unittest.TestCase):
         self.assertEqual(level2,'ADVERSARIAL');self.assertIn('ADVERSARIAL_FLOOR:blocker_finding',reasons2)
 
 
+class ReviewCampaignBudgetTests(unittest.TestCase):
+    def _repo(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup)
+        (r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        return r,base
+
+    def _retry(self,r,base,case,out,ev,l1='pass',l2='pass',adv='pass'):
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--retry','--l1-cmd-json',cmdjson(l1),'--l2-cmd-json',cmdjson(l2),'--adversarial-cmd-json',cmdjson(adv),'--disable-random-audit']
+        return subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
+
+    def test_budget_evaluator_bounds_same_and_new_material_findings(self):
+        history=[{'state':'COMPLETE','material_keys':['family:MOCK-MAJOR']}]
+        same=evaluate_review_budget(history,['family:MOCK-MAJOR'],2,3,2)
+        self.assertEqual(same['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(same['automated_retry_allowed'])
+        new=evaluate_review_budget(history,['family:OTHER-MAJOR'],2,3,2)
+        self.assertIsNone(new['stop_reason']);self.assertTrue(new['automated_retry_allowed'])
+        final=evaluate_review_budget(history,['family:THIRD-MAJOR'],3,3,2)
+        self.assertEqual(final['stop_reason'],'AUTOMATED_ATTEMPT_LIMIT');self.assertFalse(final['automated_retry_allowed'])
+
+    def test_note_only_closeout_cannot_start_retry_loop(self):
+        r,base=self._repo();case='BUDGET-NOTE';out=r/'campaign-note';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='nit',out=out)
+        cp=self._retry(r,base,case,out,ev,l1='nit')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('NOTE_ONLY items remain backlog',cp.stderr+cp.stdout)
+
+    def test_material_retry_requires_changed_head(self):
+        r,base=self._repo();case='BUDGET-HEAD';out=r/'campaign-head';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        cp=self._retry(r,base,case,out,ev,l1='major',l2='major')
+        self.assertNotEqual(cp.returncode,0);self.assertIn('requires a new HEAD',cp.stderr+cp.stdout)
+
+    def test_same_material_finding_after_batched_fix_requires_human(self):
+        r,base=self._repo();case='BUDGET-REPEAT';out=r/'campaign-repeat';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        (r/'a.py').write_text('x=3\n');run(['git','add','a.py'],cwd=r);run(['git','commit','-qm','batched remediation'],cwd=r)
+        ev2=adapter(r,base);cp=self._retry(r,base,case,out,ev2,l1='major',l2='major')
+        self.assertEqual(cp.returncode,0,cp.stderr);attempt=Path(cp.stdout.strip())
+        cyc=json.loads((attempt/'review-cycle.json').read_text());budget=json.loads((attempt/'review-budget.json').read_text())
+        self.assertEqual(cyc['state'],'HUMAN_REQUIRED');self.assertIn('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT',cyc['escalation_reasons'])
+        self.assertEqual(budget['attempt_index'],2);self.assertEqual(budget['stop_reason'],'SAME_MATERIAL_FINDING_REPEAT');self.assertFalse(budget['automated_retry_allowed'])
+        schema=json.loads((ROOT/'schemas/review-budget.schema.json').read_text());self.assertEqual(list(Draft202012Validator(schema).iter_errors(budget)),[])
+        self.assertEqual(len(campaign_history(out,case)),2)
+
+    def test_one_batched_fix_then_pass_closes_campaign(self):
+        r,base=self._repo();case='BUDGET-FIXED';out=r/'campaign-fixed';ev=adapter(r,base)
+        cycle(r,ev,base,case,l1='major',l2='major',out=out)
+        (r/'a.py').write_text('x=3\n');run(['git','add','a.py'],cwd=r);run(['git','commit','-qm','batched remediation'],cwd=r)
+        ev2=adapter(r,base);cp=self._retry(r,base,case,out,ev2,l1='pass',l2='pass')
+        self.assertEqual(cp.returncode,0,cp.stderr);attempt=Path(cp.stdout.strip())
+        cyc=json.loads((attempt/'review-cycle.json').read_text());budget=json.loads((attempt/'review-budget.json').read_text())
+        self.assertEqual(cyc['state'],'COMPLETE');self.assertEqual(cyc['gate_conclusion'],'success');self.assertEqual(budget['stop_reason'],'NO_MATERIAL_FINDINGS');self.assertFalse(budget['automated_retry_allowed'])
+        cp2=self._retry(r,base,case,out,ev2,l1='pass')
+        self.assertNotEqual(cp2.returncode,0);self.assertIn('already closed without material findings',cp2.stderr+cp2.stdout)
+
+
 class V26FollowupRegressionTests(unittest.TestCase):
     def test_runtime_fresh_session_attestation_is_fail_closed_by_default(self):
         with tempfile.TemporaryDirectory() as td:
