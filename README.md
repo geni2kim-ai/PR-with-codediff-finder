@@ -206,7 +206,7 @@ python tools/run_validation.py --full
 
 Validated candidate results:
 
-- harness: **125 PASS** across 68 isolated groups;
+- harness: **126 PASS** across 68 isolated groups;
 - vendored TextDiffChecker: **144 PASS, 1 GUI skip** in this Linux environment;
 - DIFF-FALSE-EXACT fixture: PASS;
 - schema/semantic examples, review cycle, ledger anchor, case bundle, packet, adjudication and standard candidate: PASS;
@@ -217,7 +217,7 @@ See `VALIDATION_COMMANDS.md`, `VALIDATION_REPORT_KO.md`, and `EXTERNAL_REVIEW_RE
 
 ## Validated source package
 
-The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` from the exact validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds. CI then extracts the ZIP, verifies the extracted filesystem against `MANIFEST.sha256` without Git metadata, reruns canonical full validation from that extracted tree, creates `PR-with-codediff-finder-v2.7.receipt.json`, verifies the receipt, and uploads the ZIP + receipt together as the `v2.7-source-package` artifact. The receipt binds exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; `authority_effect` remains `NONE`.
+The GitHub Actions workflow creates `PR-with-codediff-finder-v2.7.zip` directly from the exact Git blob bytes of the validated `HEAD` only on PR/manual runs where the committed manifest has already been verified and canonical full validation succeeds. CI then extracts the ZIP, verifies the extracted filesystem against `MANIFEST.sha256` without Git metadata, reruns canonical full validation from that extracted tree, creates `PR-with-codediff-finder-v2.7.receipt.json`, verifies the receipt, and uploads the ZIP + receipt together as the `v2.7-source-package` artifact. The receipt binds exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; `authority_effect` remains `NONE`.
 
 After download/extraction, the package tree can be checked without a Git repository:
 
