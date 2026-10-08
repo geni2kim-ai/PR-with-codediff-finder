@@ -16,6 +16,11 @@ calibration:
 review:
   max_findings: 12
   max_nits: 2
+review_campaign:
+  max_automated_attempts: 3
+  same_material_finding_repeat_limit: 2
+  require_head_change_for_retry: true
+  stop_retry_after_note_only_closeout: true
 subagents:
   default_max_children: 0
   hard_max_children: 6
