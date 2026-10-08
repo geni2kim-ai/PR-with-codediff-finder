@@ -338,11 +338,11 @@ def cycle_gate(state,required,achieved,stage):
     if sev & {'minor','nit'}:return 'success'
     return 'success'
 
-def make_case(case_id,evidence,stage_rows,labels,families):
+def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     trail=[]
     for level,task,r,ref in stage_rows:
         ff=sorted({f.get('failure_family') for f in r['findings'] if f.get('failure_family')})
-        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r),'achieved_level':level,'timestamp':None,'finding_families':ff})
+        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
@@ -394,7 +394,7 @@ def main():
         try:ev('CYCLE_BLOCKED',{'stage':stage,'failure_kind':kind,'message_digest':sha256_bytes(safe.encode())})
         except Exception as exc:ledger_failures.append('CYCLE_BLOCKED:'+type(exc).__name__+':'+str(exc)[:300])
         if evidence:
-            case=make_case(ns.case_id,evidence,stage_rows,labels,families);write_json(out/'case-record.json',case)
+            case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg);write_json(out/'case-record.json',case)
         if ledger_failures:reasons.append('LEDGER_WRITE_FAILED');ledger_ok=False
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]
         cyc=cycle_obj(ns.case_id,binding,evidence,stages,required,achieved,'BLOCKED',reasons,mode,git_ok,recomputed_ok,worktree_ok,ledger_ok,current_stage);write_json(out/'review-cycle.json',cyc)
