@@ -49,6 +49,7 @@ The finding tier decides **who must review**; the campaign budget decides **how 
 - WAITING_L1 / WAITING_L2 / ADVERSARIAL_REQUIRED recovery may resume the same HEAD because it is completing an unfinished authority path, not retrying a completed remediation. WAITING_L1 has executed no reviewer yet and therefore does not consume a remediation attempt merely by being resumed.
 - A completed material review cannot be rerun on an unchanged HEAD.
 - Retry history is fail-closed: prior case/ledger/anchor integrity must validate before it can affect attempt count or resume state. Historical state comes from the anchored `CYCLE_CLOSED` event, and newer v2.7 events also bind logical attempt index plus authoritative material keys.
+- A crash/interruption before `CYCLE_CLOSED` does not discard already-completed reviewer work. If the partial ledger/anchor and prior task/result pair validate and the HEAD is unchanged, SHADOW may reuse the completed stage instead of invoking the reviewer again. If the HEAD changed after reviewer work completed, that interrupted reviewed attempt still counts toward the logical campaign attempt budget.
 - Lower-stage material findings cleared by the highest completed machine authority stage do not remain remediation-budget findings when campaign history is reloaded.
 - The review budget never lowers deterministic authority floors.
 
