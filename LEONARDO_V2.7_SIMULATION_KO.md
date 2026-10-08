@@ -369,10 +369,12 @@ campaign-wide worker ceiling을 강화한 뒤 동시 실행을 시뮬레이션�
 5. 개별 ledger는 정상이어도 campaign 전체 실제 호출 수가 ceiling을 초과할 수 있음
 
 보완:
-- campaign root마다 별도의 single-writer lock을 획득한 뒤 history/budget 판정을 시작한다.
-- 같은 root에서 다른 review cycle이 이미 실행 중이면 reviewer를 하나도 시작하지 않고 즉시 거부한다.
+- 동일 case ID에는 campaign 전체 동안 유지되는 single-writer lock을 적용한다.
+- 동일 case의 병렬 retry는 reviewer를 하나도 시작하지 않고 즉시 거부한다.
+- 서로 다른 case ID는 같은 output root를 공유해도 병렬 실행할 수 있다.
+- 전역 attempt 번호 충돌만 막기 위해 output directory 할당 구간에는 별도의 짧은 root allocation lock을 사용한다.
+- 최초 root allocation 시 reservation marker를 남겨 두 프로세스가 동시에 root 자체를 첫 attempt로 선택하지 못하게 한다.
 - dead owner PID의 lock은 기존 ledger lock 복구 규칙과 동일하게 회수된다.
-- lock은 campaign root 바깥 sibling control path에 두어 첫 attempt의 "empty output-dir" 의미를 훼손하지 않는다.
 
 ### 15. attempt 디렉터리 복제/삭제/재배열로 campaign history가 왜곡되는 문제
 
