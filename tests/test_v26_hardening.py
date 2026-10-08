@@ -500,12 +500,20 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
 
     def test_concurrent_campaign_execution_is_rejected_before_review(self):
         r,base=self._repo();case='BUDGET-CONCURRENT';out=r/'campaign-concurrent';ev=adapter(r,base)
-        lock_target=out.parent/(out.name+'.campaign-control')
+        token=sha256_bytes(case.encode('utf-8'))[:16];lock_target=out.parent/(out.name+'.case-'+token+'-control')
         args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
         with case_ledger.ledger_lock(lock_target,timeout=1.0):
             cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
-        self.assertNotEqual(cp.returncode,0);self.assertIn('review campaign already active',cp.stderr+cp.stdout)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('same case is not allowed',cp.stderr+cp.stdout)
         self.assertFalse((out/'case-events.jsonl').exists())
+
+    def test_different_case_lock_does_not_serialize_shared_output_root(self):
+        r,base=self._repo();out=r/'campaign-shared-lock';ev=adapter(r,base);held_case='LOCK-CASE-A';run_case='LOCK-CASE-B'
+        token=sha256_bytes(held_case.encode('utf-8'))[:16];lock_target=out.parent/(out.name+'.case-'+token+'-control')
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',run_case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        with case_ledger.ledger_lock(lock_target,timeout=1.0):
+            cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
+        self.assertEqual(cp.returncode,0,cp.stderr);self.assertTrue((out/'case-events.jsonl').is_file())
 
     def test_attempt_directory_gap_fails_closed(self):
         r,base=self._repo();case='BUDGET-GAP';out=r/'campaign-gap';ev=adapter(r,base)
