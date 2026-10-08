@@ -469,7 +469,7 @@ def _task_ref_hashes(task):
     if None in (policy,standards,tests):return None
     return {'policy':policy,'standards':standards,'spec':spec_hash,'tests':tests}
 
-def reusable_stage_result(previous_dir,level,current_task,mode):
+def reusable_stage_result(previous_dir,level,current_task,mode,hmac_key=None):
     if mode!='SHADOW' or previous_dir is None:return None
     previous_dir=Path(previous_dir);task_path=previous_dir/f'{level.lower()}-task.json';result_path=previous_dir/f'{level.lower()}-review.json'
     if not task_path.is_file() or not result_path.is_file():return None
@@ -490,7 +490,7 @@ def reusable_stage_result(previous_dir,level,current_task,mode):
     try:
         events=load_events(ledger)
         if validate_events(events,old_task.get('case_id')):return None
-        if validate_anchor(ledger,anchor,events,old_task.get('case_id')):return None
+        if validate_anchor(ledger,anchor,events,old_task.get('case_id'),hmac_key,require_hmac=bool(hmac_key)):return None
     except Exception:return None
     completed=[e for e in events if e.get('event_type')=='REVIEW_COMPLETED' and e.get('payload',{}).get('level')==level and e.get('payload',{}).get('result_digest')==result.get('result_digest')]
     if not completed:return None
@@ -715,7 +715,7 @@ def main():
                 ev('REVIEW_FAILED',{'level':level,'kind':exc.kind,'task_digest':task_digest,'message_digest':sha256_bytes(str(exc).encode())});terminal_block('REVIEW_'+exc.kind,str(exc),level,required,achieved,stage_rows,labels,families,reasons,current_stage);return None
             return record_stage(level,task,r,filename,False)
         def reuse_or_run(level,cmd,task,filename):
-            reused=reusable_stage_result(resume_dir,level,task,mode)
+            reused=reusable_stage_result(resume_dir,level,task,mode,ledger_key)
             if reused is not None:return record_stage(level,task,reused,filename,True)
             if not cmd:return None
             return do_worker(level,cmd,task,filename)
