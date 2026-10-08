@@ -329,6 +329,52 @@ def review_notes_obj(stage_rows,esc_cfg=None):
     obj['notes_digest']=object_digest(obj,'notes_digest')
     return obj
 
+def material_finding_key(f):
+    family=str(f.get('failure_family') or '').strip()
+    if family:return 'family:'+family
+    basis={'axis':f.get('axis'),'path':f.get('path'),'claim':f.get('claim'),'recommendation':f.get('recommendation')}
+    return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
+
+def campaign_history(root,case_id):
+    root=Path(root);dirs=[]
+    if (root/'case-record.json').is_file():dirs.append(root)
+    if root.is_dir():dirs.extend(sorted(p for p in root.glob('attempt-*') if p.is_dir() and (p/'case-record.json').is_file()))
+    out=[]
+    for d in dirs:
+        try:case=json.loads((d/'case-record.json').read_text())
+        except Exception:continue
+        if case.get('case_id')!=case_id:continue
+        keys=set();material_count=0
+        for row in case.get('review_trail',[]):
+            material_count+=int(row.get('material_finding_count',len(row.get('finding_families',[]))))
+            for key in row.get('material_finding_keys',[]):keys.add(str(key))
+            if 'material_finding_keys' not in row:
+                for fam in row.get('finding_families',[]):keys.add('family:'+str(fam))
+        state=None
+        try:state=json.loads((d/'review-cycle.json').read_text()).get('state')
+        except Exception:pass
+        out.append({'dir':str(d.resolve()),'head_sha':case.get('binding',{}).get('head_sha'),'state':state,'material_count':material_count,'material_keys':sorted(keys)})
+    return out
+
+def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repeat_limit):
+    seen={}
+    for row in history:
+        if row.get('state')!='COMPLETE':continue
+        for key in set(row.get('material_keys',[])):seen[key]=seen.get(key,0)+1
+    current=sorted(set(current_keys))
+    repeated=sorted(k for k in current if seen.get(k,0)+1>=repeat_limit)
+    exhausted=bool(current) and attempt_index>=max_attempts
+    retry_allowed=bool(current) and not repeated and not exhausted
+    stop_reason='SAME_MATERIAL_FINDING_REPEAT' if repeated else ('AUTOMATED_ATTEMPT_LIMIT' if exhausted else ('NO_MATERIAL_FINDINGS' if not current else None))
+    return {'repeated_material_keys':repeated,'attempt_limit_reached':exhausted,'automated_retry_allowed':retry_allowed,'stop_reason':stop_reason}
+
+def review_budget_obj(case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_keys,evaluation,timeout_seconds):
+    obj={'schema_version':'2.7','kind':'review-budget','case_id':case_id,'authority_effect':'ESCALATION_ONLY','attempt_index':attempt_index,'max_automated_attempts':max_attempts,'same_material_finding_repeat_limit':repeat_limit,
+         'executed_agent_stages':len(stage_rows),'per_stage_timeout_seconds':timeout_seconds,'current_attempt_worker_timeout_budget_seconds':len(stage_rows)*timeout_seconds,
+         'campaign_worker_timeout_ceiling_seconds':max_attempts*3*timeout_seconds,'current_material_finding_keys':sorted(set(current_keys)),
+         'repeated_material_finding_keys':evaluation['repeated_material_keys'],'automated_retry_allowed':evaluation['automated_retry_allowed'],'stop_reason':evaluation['stop_reason'],'budget_digest':''}
+    obj['budget_digest']=object_digest(obj,'budget_digest');return obj
+
 def cycle_gate(state,required,achieved,stage):
     if state=='STALE':return 'cancelled'
     if state=='HUMAN_CONFIRMED':return 'success'
@@ -346,8 +392,8 @@ def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     trail=[]
     for level,task,r,ref in stage_rows:
         material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY']
-        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')})
-        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_count':len(material),'note_only_finding_count':len(notes)})
+        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f) for f in material})
+        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'material_finding_count':len(material),'note_only_finding_count':len(notes)})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
@@ -367,7 +413,20 @@ def choose_out_dir(raw,retry):
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--repo',required=True);ap.add_argument('--evidence',required=True);ap.add_argument('--expected-base',required=True);ap.add_argument('--case-id',required=True);ap.add_argument('--output-dir',required=True);ap.add_argument('--retry',action='store_true');ap.add_argument('--l1-cmd-json');ap.add_argument('--l2-cmd-json');ap.add_argument('--adversarial-cmd-json');ap.add_argument('--routing-policy',default=str(ROOT/'policy/reviewer-routing.yml'));ap.add_argument('--runtime-attestation');ap.add_argument('--standards-ref',action='append',default=[]);ap.add_argument('--spec-ref');ap.add_argument('--test-ref',action='append',default=[]);ap.add_argument('--disable-random-audit',action='store_true');ns=ap.parse_args()
     if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',ns.case_id):raise SystemExit('unsafe case_id')
-    out=choose_out_dir(ns.output_dir,ns.retry);repo=Path(ns.repo).resolve();ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
+    repo=Path(ns.repo).resolve();campaign_root=Path(ns.output_dir);history=campaign_history(campaign_root,ns.case_id)
+    bootstrap_campaign=load_yaml(ROOT/'policy/limits.yml').get('review_campaign',{})
+    max_attempts=int(bootstrap_campaign.get('max_automated_attempts',3));repeat_limit=int(bootstrap_campaign.get('same_material_finding_repeat_limit',2))
+    if max_attempts<1 or max_attempts>5:raise SystemExit('review campaign max_automated_attempts must be between 1 and 5')
+    if repeat_limit<2 or repeat_limit>max_attempts:raise SystemExit('review campaign same_material_finding_repeat_limit must be between 2 and max_automated_attempts')
+    if ns.retry and history:
+        last=history[-1]
+        if last.get('state')=='HUMAN_REQUIRED':raise SystemExit('review campaign requires HUMAN decision; automated retry is not allowed')
+        if bootstrap_campaign.get('stop_retry_after_note_only_closeout',True) and last.get('state')=='COMPLETE' and not last.get('material_count'):
+            raise SystemExit('review campaign already closed without material findings; NOTE_ONLY items remain backlog and must not trigger retry')
+        if len(history)>=max_attempts:raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
+        if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
+            if git_resolve(repo,'HEAD')==last.get('head_sha'):raise SystemExit('material remediation retry requires a new HEAD; batch fixes before re-reviewing')
+    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=len(history)+1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
     routing_source=Path(ns.routing_policy).resolve()
     if not routing_source.is_file():raise SystemExit(f'routing policy missing: {routing_source}')
     effective_routing=out/'reviewer-routing.effective.yml';shutil.copy2(routing_source,effective_routing)
@@ -376,6 +435,9 @@ def main():
         if p.name!='reviewer-routing.yml':shutil.copy2(p,effective_policy_dir/p.name)
     shutil.copy2(effective_routing,effective_policy_dir/'reviewer-routing.yml')
     cfg=load_yaml(effective_routing);mode=str(cfg.get('mode','shadow')).upper();limits_cfg=load_yaml(effective_policy_dir/'limits.yml');esc_cfg=load_yaml(effective_policy_dir/'escalation-policy.yml');sensor_cfg=load_yaml(effective_policy_dir/'sensor-policy.yml');protected=load_yaml(effective_policy_dir/'protected-paths.yml')
+    frozen_campaign=limits_cfg.get('review_campaign',{})
+    if int(frozen_campaign.get('max_automated_attempts',3))!=max_attempts or int(frozen_campaign.get('same_material_finding_repeat_limit',2))!=repeat_limit:
+        raise SystemExit('review campaign limits changed during attempt setup')
     triage_cfg=esc_cfg.get('finding_triage',{})
     configured_notes=set(triage_cfg.get('note_only_severities',['minor','nit']))
     if configured_notes-{'minor','nit'}:raise SystemExit('finding_triage may not downgrade major/blocker to NOTE_ONLY')
@@ -557,7 +619,14 @@ def main():
         if not worktree_ok and state!='STALE':state='BLOCKED';reasons.append('WORKTREE_DIRTY_AFTER_REVIEW')
         executed_levels={level for level,_,_,_ in stage_rows}
         if any(lvl in executed_levels and not runtime_fresh_sessions.get(lvl,False) for lvl in ('L2','ADVERSARIAL')):labels.add('model_session_independence_unverified')
-        case=make_case(ns.case_id,evidence,stage_rows,labels,families);write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
+        current_material_keys=sorted({material_finding_key(f) for _,_,r,_ in stage_rows for f in material_findings(r,esc_cfg)})
+        budget_eval=evaluate_review_budget(history,current_material_keys,attempt_index,max_attempts,repeat_limit)
+        if state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['repeated_material_keys']:
+            required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_SAME_MATERIAL_FINDING_REPEAT');labels.add('review_budget_same_material_repeat')
+        elif state not in {'STALE','BLOCKED','HUMAN_REQUIRED'} and budget_eval['attempt_limit_reached']:
+            required='HUMAN';state='HUMAN_REQUIRED';reasons.append('REVIEW_BUDGET_AUTOMATED_ATTEMPT_LIMIT');labels.add('review_budget_attempt_limit')
+        budget=review_budget_obj(ns.case_id,attempt_index,max_attempts,repeat_limit,stage_rows,current_material_keys,budget_eval,int(cfg['runtime']['timeout_seconds']));write_json(out/'review-budget.json',budget)
+        case=make_case(ns.case_id,evidence,stage_rows,labels,families,esc_cfg);write_json(out/'case-record.json',case);cschema=json.loads((ROOT/'schemas/case-record.schema.json').read_text());cerr=[x.message for x in Draft202012Validator(cschema).iter_errors(case)]+case_semantic_errors(case)
         if cerr:terminal_block('CASE_RECORD_INVALID','; '.join(cerr),'HARNESS',required,achieved,stage_rows,labels,families,reasons,current_stage);return
         if state in {'WAITING_L2','ADVERSARIAL_REQUIRED','HUMAN_REQUIRED'}:ev('ESCALATION_REQUIRED',{'state':state,'required_level':required,'reasons':sorted(set(reasons))})
         stages=[{'level':level,'result_ref':ref,'result_digest':r['result_digest'],'verdict':r['verdict'],'confidence':r['confidence']} for level,t,r,ref in stage_rows]
