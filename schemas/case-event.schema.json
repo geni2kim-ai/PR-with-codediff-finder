@@ -32,6 +32,7 @@
         "SENSOR_ACCEPTED",
         "RUNTIME_ATTESTED",
         "SENSOR_REJECTED",
+        "REVIEW_STARTED",
         "REVIEW_COMPLETED",
         "ESCALATION_REQUIRED",
         "HUMAN_DECISION",
