@@ -522,7 +522,6 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45);self.assertEqual(cp.returncode,0,cp.stderr)
         hist=campaign_history(out,case);self.assertEqual(hist[-1]['material_count'],0);self.assertEqual(hist[-1]['material_keys'],[])
         (r/'unrelated.txt').write_text('unrelated\n');run(['git','add','unrelated.txt'],cwd=r);run(['git','commit','-qm','unrelated followup'],cwd=r);ev2=adapter(r,base)
-        retry=args.copy();retry[retry.index(str(ev))+0]=str(ev2) if False else retry[retry.index('--evidence')+1]
         retry=[str(ev2) if x==str(ev) else x for x in args]+['--retry']
         cp2=subprocess.run(retry,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45)
         self.assertNotEqual(cp2.returncode,0);self.assertIn('already closed without material findings',cp2.stderr+cp2.stdout)
