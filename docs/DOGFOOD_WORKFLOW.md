@@ -20,3 +20,13 @@ Backdata should distinguish:
 - model/prompt/policy/standard digests;
 - upper-authority adjudication;
 - eventual outcome/post-merge status.
+
+
+## v2.7 downstream/recovery dogfood additions
+
+For every meaningful hardening batch, also exercise the downstream boundary after the review itself:
+
+10. Mutate live policy after the cycle and verify routing uses the cycle's frozen `effective-policy/`.
+11. Mutate caller standards/spec/test after the cycle and verify routing uses the cycle's frozen `trusted-inputs/`.
+12. Corrupt or delete a referenced case-bank artifact and verify recovery refuses to requeue the immutable packet.
+13. Convert every reproduced dogfood failure into an executable regression before closeout.
