@@ -15,10 +15,13 @@ from verify_manifest import filesystem_errors
 from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
 from verify_package_hygiene import generated_paths
 from build_source_package import build as build_source_package
-from run_review_cycle import disagreement,material_finding_key
+from run_review_cycle import disagreement,material_finding_key,material_finding_signature
 from common import canonical_finding_path,object_digest
 from validate_stage_result import semantic_errors as stage_semantic_errors
 from sanitize_review_text import scan_stage_result
+from calibration_report import material_agrees
+from route_case import reasons_for
+from validate_case_record import semantic_errors as case_semantic_errors
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -172,6 +175,42 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertTrue(disagreement(review('src/a.py'),review('src/b.py')))
         self.assertFalse(disagreement(review('src/a.py'),review('./src/a.py')))
         self.assertTrue(disagreement(review('src/a.py'),review(r'src\\a.py'),changed_paths=['src/a.py',r'src\\a.py']))
+
+    def test_material_agreement_preserves_severity_and_duplicate_multiplicity(self):
+        def finding(severity='major'):
+            return {'severity':severity,'failure_family':'SECURITY-CRITICAL','axis':'correctness_security','path':'src/a.py'}
+        one={'verdict':'FINDINGS','findings':[finding()]}
+        two={'verdict':'FINDINGS','findings':[finding(),finding()]}
+        minor={'verdict':'FINDINGS','findings':[finding('minor')]}
+        self.assertTrue(disagreement(one,two,changed_paths=['src/a.py']))
+        self.assertTrue(disagreement(one,minor,changed_paths=['src/a.py']))
+        self.assertEqual(material_finding_key(finding()),material_finding_key(finding('minor')))
+        self.assertNotEqual(material_finding_signature(finding()),material_finding_signature(finding('minor')))
+
+    def test_calibration_and_route_use_persisted_material_signatures(self):
+        key=material_finding_key({'severity':'major','failure_family':'SECURITY-CRITICAL','axis':'correctness_security','path':'src/a.py'})
+        l1={'level':'L1','verdict':'FINDINGS','confidence':'high','material_finding_count':1,'material_finding_keys':[key],
+            'material_finding_signatures':['major|'+key]}
+        l2={'level':'L2','verdict':'FINDINGS','confidence':'high','material_finding_count':1,'material_finding_keys':[key],
+            'material_finding_signatures':['minor|'+key]}
+        self.assertFalse(material_agrees(l1,l2))
+        self.assertIn('L1_L2_DISAGREEMENT',reasons_for({'review_trail':[l1,l2],'labels':[],'failure_families':[]}))
+
+        # Pre-signature v2.7 records cannot recover severity mapping, but count
+        # still prevents a two-vs-one same-key omission from becoming agreement.
+        old_two=dict(l1);old_two.pop('material_finding_signatures');old_two['material_finding_count']=2
+        old_one=dict(l2);old_one.pop('material_finding_signatures');old_one['material_finding_count']=1
+        self.assertFalse(material_agrees(old_two,old_one))
+
+    def test_case_record_rejects_inconsistent_material_signatures(self):
+        key='finding:'+'a'*24
+        row={'review_id':'R1','parent_review_id':None,'level':'L1','model':{'family':'mock','version':'1'},'reviewed_head_sha':'b'*40,
+             'evidence_digest':'c'*64,'achieved_level':'L1','requested_level':'L1','independent_context':False,
+             'material_finding_count':2,'material_finding_keys':[key],'material_finding_signatures':['major|'+key],
+             'major_finding_count':1,'blocker_finding_count':0}
+        case={'binding':{'head_sha':'b'*40},'sensor':{'evidence_digest':'c'*64},'review_trail':[row],'labels':[]}
+        errs=case_semantic_errors(case)
+        self.assertTrue(any('material_finding_signatures count mismatch' in x for x in errs),errs)
 
     def test_material_finding_identity_preserves_exact_git_backslash_paths(self):
         base={'severity':'major','failure_family':'CORRECTNESS','axis':'correctness_security'}
