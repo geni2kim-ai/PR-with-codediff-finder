@@ -848,3 +848,52 @@ cross-host split-brain 방어를 유지한 채 운영 중 host identity drift를
 
 이 수정은 split-brain 허용 범위를 넓히지 않고, 정상적인 단일 식별자 변화에서만 availability를 회복한다.
 
+### 30. L1/L2가 같은 family/axis의 서로 다른 파일 결함을 각각 지적하면 disagreement가 사라지는 문제
+
+앞선 broad-family repeat 보완을 reviewer 간 교차판정 관점에서 다시 시뮬레이션했다.
+
+반례:
+1. L1: `src/a.py`의 `CORRECTNESS / correctness / major`
+2. L2: `src/b.py`의 `CORRECTNESS / correctness / major`
+3. 두 finding은 실제로 서로 다른 파일/결함
+4. 기존 `disagreement()`는 `severity + failure_family + axis`만 비교
+5. 두 set이 동일해져 `l1_l2_disagreement=false`
+6. 다른 adversarial 신호가 없으면 L2에서 종료 가능
+
+영향:
+- 서로 다른 결함을 두 reviewer가 각각 보고했는데도 “합의”로 오인할 수 있음
+- 필요한 adversarial adjudication이 생략될 수 있음
+- 특히 broad failure family가 많은 correctness/test 계열에서 authority path가 실제보다 짧아질 수 있음
+
+보완:
+- reviewer disagreement도 campaign repeat와 동일한 `material_finding_key()` identity를 사용
+- 비교 단위는 `severity + normalized(failure_family, axis, path)`
+- 같은 family/axis라도 path가 다르면 disagreement
+- 동일 path/identity라도 severity가 달라지면 기존처럼 disagreement 유지
+
+회귀:
+- same family/axis/severity + different path → disagreement=true
+- same defect + `src/a.py` vs `./src/a.py` → disagreement=false
+
+### 31. 경로 별칭으로 same-material repeat 제한을 우회할 수 있는 문제
+
+material repeat key의 path를 raw reviewer 문자열 그대로 사용하면 동일 파일도 표기 방식에 따라 다른 key가 된다.
+
+반례:
+1. attempt 1: `src/module.py`
+2. attempt 2: `./src/module.py`
+3. 또는 Windows-style `src\\module.py`
+4. 실제로는 같은 repository path인데 기존 key digest는 서로 다름
+5. same-material repeat limit가 동일 결함을 새 결함으로 인식하여 자동 보완 루프가 한 번 더 진행될 수 있음
+
+보완:
+- `material_finding_key()`에서 policy용 repository path normalization을 적용
+- `./` prefix 제거, slash separator 정규화, unsafe traversal은 fail-closed
+- Git object 조회용 exact path에는 이 정규화 값을 재사용하지 않음
+- disagreement와 repeat accounting이 동일한 정규화 identity를 공유
+
+회귀:
+- `src/module.py`, `./src/module.py`, `src\\module.py`가 같은 material finding key를 생성
+- 다른 실제 path는 계속 다른 identity로 유지
+
+이 두 보완은 review 단계를 무조건 늘리는 변경이 아니다. **서로 다른 결함은 disagreement로 분리하고, 같은 결함의 표기 차이는 하나로 합쳐** 불필요한 반복과 과소 에스컬레이션을 동시에 줄인다.
