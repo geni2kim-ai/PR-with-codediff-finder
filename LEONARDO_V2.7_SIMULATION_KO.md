@@ -1016,3 +1016,27 @@ Git exact path 보존을 다시 검증하면서 host-path 차단 순서의 반�
 - exact changed path인 literal `C:\\literal.py` → 허용
 
 따라서 path 검증은 host OS 문법을 Git identity 위에 덮어쓰지 않고, **task가 증명한 exact Git path를 우선**한다.
+
+### 37. 새 path-scope 계약이 내장 mock reviewer의 고정 경로를 실제 invalid result로 드러낸 회귀
+
+#35 보완 후 canonical full validation에서 다수 기존 review-cycle 테스트가 `REVIEW_INVALID_RESULT`로 실패했다.
+
+원인:
+- production contract는 finding path를 task `changed_paths`에 묶도록 강화됨
+- 그러나 `tools/mock_reviewer.py`는 과거부터 모든 finding에 고정 `src/example.py`를 사용
+- 대부분의 test fixture 실제 변경 path는 `a.py` 등 다른 경로
+- 따라서 새 validator가 mock output을 올바르게 범위 밖 finding으로 거부
+- downstream triage/budget/recovery 테스트가 본래 검증하려던 단계에 도달하기 전에 차단됨
+
+보완:
+- mock reviewer는 task의 첫 `changed_paths` 값을 finding path로 사용
+- changed path가 없는 synthetic task에만 기존 `src/example.py` fallback 유지
+- major/minor/nit/novel/security/test-integrity/unsafe-output mock mode 모두 동일 path binding 적용
+- production validator를 느슨하게 되돌리지 않음
+
+실행 결과가 보여준 의미:
+- 새 path-scope 검증은 실제로 enforcement되고 있었음
+- 실패는 policy false positive가 아니라 test double의 계약 불일치였음
+- mock도 production reviewer와 동일 output contract를 따르게 되어 회귀 테스트의 신뢰도가 오히려 높아짐
+
+이 항목은 보안 규칙을 테스트 때문에 완화하지 않고 **test double을 실제 계약에 맞추는 방향**으로 해결한다.
