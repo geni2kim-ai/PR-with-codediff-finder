@@ -334,6 +334,7 @@ def _auth_witness_digest(obj):
 
 def load_auth_witness(ledger,case_id=None):
     path=canonical_auth_witness_path(ledger)
+    if path.is_symlink():raise ValueError('ledger auth witness symlink is forbidden')
     if not path.is_file():return None
     try:obj=json.loads(path.read_text(encoding='utf-8'))
     except Exception as exc:raise ValueError(f'ledger auth witness unreadable: {type(exc).__name__}') from exc
