@@ -48,8 +48,8 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 
 1. HUMAN attestation freshness는 신규 decision acceptance window로만 강제되고, 이미 ledger-bound로 확정된 historical proof는 시간 경과만으로 무효화되지 않는다.
 2. HUMAN recovery transaction은 canonical digest + HUMAN authority-key HMAC + deterministic transaction ID에 바인딩된다.
-3. ledger append는 exact pre-append ledger bytes와 next event를 묶은 recovery journal로 event-fsync / anchor-replace 중단 창을 복구한다.
-4. dead ledger lock은 owner PID가 존재하지 않을 때 즉시 회수된다.
+3. ledger append는 exact pre-append ledger bytes와 next event를 묶은 recovery journal로 event-fsync / anchor-replace 중단 창을 복구한다. HMAC key가 구성된 journal만 authenticated이며, unsigned journal은 digest/hash-chain integrity recovery다. pending event의 exact torn-byte prefix는 pre-ledger SHA-256을 확인한 뒤 truncate/fsync/retry하고, 다른 malformed tail은 typed recovery error로 fail-closed한다.
+4. dead ledger lock은 PID뿐 아니라 process-instance와 machine/hostname/node identity를 대조하고, stale reclaim은 별도 guard 디렉터리로 직렬화한다.
 5. 동일 case_id의 case-bank 재사용은 current case/binding/evidence가 immutable snapshot과 일치해야 한다.
 6. standards/spec/tests는 reviewer 실행 전 `trusted-inputs/`에 동결된다.
 7. routing/escalation/protected-path/sensor policy는 `effective-policy/` snapshot에 고정되고 evidence recomputation/validation도 같은 snapshot을 사용한다.
@@ -91,6 +91,17 @@ canonical runner에서 다음 경로를 PASS 확인했다.
 - privacy-sensitive original immutability gap은 v2.7 mutation receipt로 일반화했다.
 - freshness-window rejection은 replay prevention과 별도 claim으로 취급하도록 명시했다.
 - 외부 R9B.3 Windows-specific run binding/process capture 요구는 이 harness 패키지의 자체 구현 범위를 넘어서는 integration evidence이며, v2.7의 ENFORCED 권한 근거로 사용하지 않는다.
+
+## 외부 FULL 검토 후속 (ledger recovery)
+
+최신 외부 FULL 검토에서 재현된 M1~M3/L1을 다음과 같이 보완했다.
+
+- HMAC signed-mode 판단을 anchor의 `hmac_sha256` 자기 선언 하나에 맡기지 않는다. signed ledger 생성 시 `case-events.auth.json` sticky witness를 남기고, anchor/append transaction의 `key_id`도 HMAC 요구 신호로 사용한다.
+- 로컬 witness까지 삭제·변조 가능한 공격 경계에서는 로컬 파일만으로 과거 HMAC 사용 사실을 증명할 수 없으므로, `MAESTRO_LEDGER_EXPECT_KEY_ID` 또는 validator `--expected-key-id`를 외부 기대값으로 사용할 수 있게 했다. ENFORCED의 신뢰 경계는 보호된 HMAC key/expectation 상태다.
+- append transaction HMAC도 같은 규칙을 적용한다. HMAC 미구성 journal은 authenticated라고 부르지 않는다.
+- pending transaction과 일치하는 torn event prefix는 자동 복구하고, 불일치 malformed tail은 `LedgerTornWriteError`로 차단한다.
+- recovery 중 동일 event 재요청 여부는 payload 동등성만으로 추정하지 않는다. `event_instance_id`가 같은 logical request일 때만 idempotent retry로 처리하며, identifier 없는 동일 payload의 새 호출은 별도 이벤트로 기록한다.
+- 검증 수치는 문서에 누적된 과거 snapshot과 분리한다. 이 보고서 상단의 Harness/TextDiffChecker/Manifest 수치는 최종 최신-HEAD CI 완료 뒤 갱신하며, 아래 과거 섹션의 수치는 당시 단계별 snapshot이다.
 
 ## NOT_RUN / 외부 승격 게이트
 
