@@ -9,6 +9,13 @@ ROOT=Path(__file__).resolve().parents[1]
 SCHEMA=json.loads((ROOT/'schemas/case-event.schema.json').read_text())
 ZERO='0'*64
 
+class LedgerRecoveryError(ValueError):
+    pass
+
+class LedgerTornWriteError(LedgerRecoveryError):
+    pass
+
+
 def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 
 def canonical_anchor_path(ledger):
@@ -18,6 +25,10 @@ def canonical_anchor_path(ledger):
 # Backward-compatible API name used by v2.5 tools/tests.
 def default_anchor_path(ledger):
     return canonical_anchor_path(ledger)
+
+def canonical_auth_witness_path(ledger):
+    p=Path(ledger)
+    return p.with_suffix('.auth.json') if p.suffix=='.jsonl' else Path(str(p)+'.auth.json')
 
 def load_events(path):
     p=Path(path)
@@ -307,6 +318,48 @@ def _atomic_json_fsync(path,obj):
         f.write(data);f.flush();os.fsync(f.fileno())
     os.replace(tmp,p)
 
+def _auth_witness_digest(obj):
+    return object_digest({k:v for k,v in obj.items() if k!='witness_digest'})
+
+def load_auth_witness(ledger,case_id=None):
+    path=canonical_auth_witness_path(ledger)
+    if not path.is_file():return None
+    try:obj=json.loads(path.read_text(encoding='utf-8'))
+    except Exception as exc:raise ValueError(f'ledger auth witness unreadable: {type(exc).__name__}') from exc
+    expected={'schema_version','kind','case_id','hmac_required','key_id','witness_digest'}
+    if set(obj)!=expected:raise ValueError('ledger auth witness fields mismatch')
+    if obj.get('schema_version')!='2.7' or obj.get('kind')!='ledger-auth-witness':raise ValueError('ledger auth witness schema/kind mismatch')
+    if not isinstance(obj.get('case_id'),str) or not obj.get('case_id'):raise ValueError('ledger auth witness case_id invalid')
+    if case_id is not None and obj.get('case_id')!=case_id:raise ValueError('ledger auth witness case_id mismatch')
+    if type(obj.get('hmac_required')) is not bool:raise ValueError('ledger auth witness hmac_required invalid')
+    if obj.get('key_id') is not None and (not isinstance(obj.get('key_id'),str) or not obj.get('key_id')):raise ValueError('ledger auth witness key_id invalid')
+    if obj.get('witness_digest')!=_auth_witness_digest(obj):raise ValueError('ledger auth witness digest mismatch')
+    return obj
+
+def ensure_auth_witness(ledger,case_id,hmac_required,key_id=None):
+    path=canonical_auth_witness_path(ledger);existing=load_auth_witness(ledger,case_id)
+    required=bool(hmac_required) or bool(existing and existing.get('hmac_required'))
+    effective_key_id=(existing or {}).get('key_id') or key_id
+    if existing and existing.get('hmac_required')==required and existing.get('key_id')==effective_key_id:return existing
+    obj={'schema_version':'2.7','kind':'ledger-auth-witness','case_id':case_id,'hmac_required':required,'key_id':effective_key_id,'witness_digest':''}
+    obj['witness_digest']=_auth_witness_digest(obj);_atomic_json_fsync(path,obj);return obj
+
+def _witness_requires_hmac(ledger,case_id=None):
+    obj=load_auth_witness(ledger,case_id)
+    return bool(obj and obj.get('hmac_required'))
+
+def _repair_exact_torn_tail(ledger,event,pre_ledger_sha256):
+    p=Path(ledger);raw=p.read_bytes() if p.exists() else b'';event_bytes=_events_bytes([event])
+    if hashlib.sha256(raw).hexdigest()==pre_ledger_sha256:return False
+    if len(raw)>=len(event_bytes) and raw.endswith(event_bytes) and hashlib.sha256(raw[:-len(event_bytes)]).hexdigest()==pre_ledger_sha256:return False
+    limit=min(len(raw),max(0,len(event_bytes)-1))
+    for size in range(limit,0,-1):
+        if raw.endswith(event_bytes[:size]) and hashlib.sha256(raw[:-size]).hexdigest()==pre_ledger_sha256:
+            with p.open('r+b') as fh:
+                fh.truncate(len(raw)-size);fh.flush();os.fsync(fh.fileno())
+            return True
+    return False
+
 def _append_tx_digest(tx):
     core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
     return object_digest(core)
@@ -315,12 +368,16 @@ def _append_tx_mac(tx,key):
     core={k:v for k,v in tx.items() if k!='hmac_sha256'}
     return _mac(core,key)
 
-def _validate_append_tx(tx,hmac_key=None):
+def _validate_append_tx(tx,hmac_key=None,require_hmac=False):
     errs=[]
     if tx.get('schema_version') not in {'2.6','2.7'}:errs.append('append transaction schema mismatch')
     if tx.get('transaction_digest')!=_append_tx_digest(tx):errs.append('append transaction digest mismatch')
     mac=tx.get('hmac_sha256')
+    event_instance_id=tx.get('event_instance_id')
+    if event_instance_id is not None and (not isinstance(event_instance_id,str) or not event_instance_id or len(event_instance_id)>256):errs.append('append transaction event_instance_id invalid')
     if mac and not hmac_key:errs.append('append transaction HMAC key unavailable')
+    if require_hmac and not hmac_key:errs.append('append transaction HMAC key unavailable')
+    if require_hmac and not mac:errs.append('append transaction HMAC missing')
     if hmac_key:
         if not mac:errs.append('append transaction HMAC missing')
         elif not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):errs.append('append transaction HMAC mismatch')
@@ -333,14 +390,20 @@ def _validate_append_tx(tx,hmac_key=None):
         if ev.get('prev_hash')!=tx.get('pre_event_hash'):errs.append('append transaction prev_hash mismatch')
     return errs
 
-def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None):
+def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None,require_hmac=False):
     try:tx=json.loads(Path(tx_path).read_text(encoding='utf-8'))
-    except Exception as exc:raise ValueError(f'append transaction unreadable: {type(exc).__name__}') from exc
-    errs=_validate_append_tx(tx,hmac_key)
-    if errs:raise ValueError('invalid append transaction: '+'; '.join(errs))
-    p=Path(ledger);events=load_events(p);errs=validate_events(events,tx['case_id'])
-    if errs:raise ValueError('invalid ledger during append recovery: '+'; '.join(errs))
-    n=int(tx['pre_seq']);ev=tx['event'];pre_events=events[:n]
+    except Exception as exc:raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
+    effective_require=bool(require_hmac) or _witness_requires_hmac(ledger,tx.get('case_id'))
+    errs=_validate_append_tx(tx,hmac_key,effective_require)
+    if errs:raise LedgerRecoveryError('invalid append transaction: '+'; '.join(errs))
+    p=Path(ledger);n=int(tx['pre_seq']);ev=tx['event']
+    _repair_exact_torn_tail(p,ev,tx.get('pre_ledger_sha256'))
+    try:events=load_events(p)
+    except (json.JSONDecodeError,UnicodeDecodeError) as exc:
+        raise LedgerTornWriteError('ledger tail is malformed and does not match the pending append transaction') from exc
+    errs=validate_events(events,tx['case_id'])
+    if errs:raise LedgerRecoveryError('invalid ledger during append recovery: '+'; '.join(errs))
+    pre_events=events[:n]
     if len(events)<n or _pre_ledger_sha256_from_current(p,ev,n,len(events))!=tx.get('pre_ledger_sha256'):
         raise ValueError('append transaction pre-ledger mismatch')
     pre_hash=pre_events[-1]['event_hash'] if pre_events else ZERO
@@ -368,14 +431,15 @@ def pending_append_case_id(ledger,hmac_key=None,require_hmac=False):
     # into an unauthenticated "unrelated" record.
     core={k:v for k,v in tx.items() if k not in {'transaction_digest','hmac_sha256'}}
     if tx.get('transaction_digest')!=object_digest(core):raise ValueError('append transaction digest mismatch')
-    mac=tx.get('hmac_sha256')
-    if mac and not hmac_key:raise ValueError('append transaction HMAC key unavailable')
-    if require_hmac and not mac:raise ValueError('append transaction HMAC missing')
-    if hmac_key and mac and not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):raise ValueError('append transaction HMAC mismatch')
     ev=tx.get('event')
     if not isinstance(ev,dict):raise ValueError('append transaction event missing')
     cid=tx.get('case_id')
     if not isinstance(cid,str) or not cid:raise ValueError('append transaction case_id missing')
+    mac=tx.get('hmac_sha256');require_hmac=bool(require_hmac) or _witness_requires_hmac(ledger,cid)
+    if mac and not hmac_key:raise ValueError('append transaction HMAC key unavailable')
+    if require_hmac and not hmac_key:raise ValueError('append transaction HMAC key unavailable')
+    if require_hmac and not mac:raise ValueError('append transaction HMAC missing')
+    if hmac_key and mac and not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):raise ValueError('append transaction HMAC mismatch')
     if ev.get('case_id')!=cid:raise ValueError('append transaction case_id mismatch')
     if ev.get('event_hash')!=object_digest(ev,'event_hash'):raise ValueError('append transaction event hash mismatch')
     try:pre_seq=int(tx.get('pre_seq',-1))
@@ -384,12 +448,12 @@ def pending_append_case_id(ledger,hmac_key=None,require_hmac=False):
     if ev.get('prev_hash')!=tx.get('pre_event_hash'):raise ValueError('append transaction prev_hash mismatch')
     return cid
 
-def recover_pending_append_if_present(ledger,anchor_path=None,hmac_key=None):
+def recover_pending_append_if_present(ledger,anchor_path=None,hmac_key=None,require_hmac=False):
     p=Path(ledger);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
     if not tx_path.exists():return False
     with ledger_lock(p):
         if not tx_path.exists():return False
-        _recover_pending_append(p,anchor,tx_path,hmac_key)
+        _recover_pending_append(p,anchor,tx_path,hmac_key,require_hmac)
     return True
 
 def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
@@ -398,6 +462,8 @@ def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
 
 def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac=False):
     p=Path(anchor);errs=[]
+    try:require_hmac=bool(require_hmac) or _witness_requires_hmac(ledger,case_id)
+    except ValueError as exc:errs.append(str(exc))
     if not p.is_file():return ['ledger anchor missing'] if events or require_hmac else []
     try:a=json.loads(p.read_text())
     except Exception:return ['ledger anchor invalid JSON']
@@ -415,15 +481,28 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
         if not mac or not hmac.compare_digest(mac,exp):errs.append('ledger anchor HMAC mismatch')
     return errs
 
-def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None,hmac_key=None,key_id=None):
+def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None,hmac_key=None,key_id=None,event_instance_id=None):
     if hmac_key is None:
         hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY')
         if hmac_key and key_id is None:key_id='MAESTRO_LEDGER_HMAC_KEY'
+    if event_instance_id is not None and (not isinstance(event_instance_id,str) or not event_instance_id or len(event_instance_id)>256):
+        raise ValueError('event_instance_id must be a non-empty string up to 256 chars')
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
     with ledger_lock(p):
+        visible_anchor_hmac=False
+        if anchor.is_file():
+            try:visible_anchor_hmac=bool(json.loads(anchor.read_text(encoding='utf-8')).get('hmac_sha256'))
+            except Exception:pass
+        witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac,key_id)
+        require_hmac=bool(witness.get('hmac_required'))
+        if require_hmac and not hmac_key:raise ValueError('ledger HMAC key unavailable for signed-history witness')
         if tx_path.exists():
-            recovered=_recover_pending_append(p,anchor,tx_path,hmac_key)
-            if recovered.get('case_id')==case_id and recovered.get('event_type')==event_type and recovered.get('payload')==payload:
+            try:pending_tx=json.loads(tx_path.read_text(encoding='utf-8'))
+            except Exception as exc:raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
+            recovered=_recover_pending_append(p,anchor,tx_path,hmac_key,require_hmac)
+            if event_instance_id is not None and pending_tx.get('event_instance_id')==event_instance_id:
+                return recovered
+            if 'event_instance_id' not in pending_tx and recovered.get('case_id')==case_id and recovered.get('event_type')==event_type and recovered.get('payload')==payload:
                 return recovered
         ledger_preexisting=p.exists()
         events=load_events(p);errs=validate_events(events,case_id if events else None)
@@ -438,7 +517,7 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
         ev['event_hash']=object_digest(ev,'event_hash')
-        tx={'schema_version':'2.7','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_file_sha_or_empty(p),'key_id':key_id,'event':ev}
+        tx={'schema_version':'2.7','case_id':case_id,'pre_seq':len(events),'pre_event_hash':prev,'pre_ledger_sha256':_file_sha_or_empty(p),'key_id':key_id,'event_instance_id':event_instance_id,'event':ev}
         tx['transaction_digest']=_append_tx_digest(tx);tx['hmac_sha256']=_append_tx_mac(tx,hmac_key) if hmac_key else None
         _atomic_json_fsync(tx_path,tx)
         with p.open('a',encoding='utf-8',newline='\n') as f:
@@ -448,11 +527,11 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
 
 def main():
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest='cmd',required=True)
-    a=sub.add_parser('append');a.add_argument('--ledger',required=True);a.add_argument('--case-id',required=True);a.add_argument('--event-type',required=True);a.add_argument('--payload-json',required=True);a.add_argument('--anchor');a.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');a.add_argument('--key-id')
+    a=sub.add_parser('append');a.add_argument('--ledger',required=True);a.add_argument('--case-id',required=True);a.add_argument('--event-type',required=True);a.add_argument('--payload-json',required=True);a.add_argument('--anchor');a.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');a.add_argument('--key-id');a.add_argument('--event-instance-id')
     v=sub.add_parser('validate');v.add_argument('--ledger',required=True);v.add_argument('--case-id');v.add_argument('--anchor');v.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');v.add_argument('--require-hmac',action='store_true')
     ns=ap.parse_args();key=os.environ.get(ns.hmac_key_env)
     if ns.cmd=='append':
-        payload=json.loads(Path(ns.payload_json).read_text());print(json.dumps(append_event(ns.ledger,ns.case_id,ns.event_type,payload,anchor_path=ns.anchor,hmac_key=key,key_id=ns.key_id),ensure_ascii=False))
+        payload=json.loads(Path(ns.payload_json).read_text());print(json.dumps(append_event(ns.ledger,ns.case_id,ns.event_type,payload,anchor_path=ns.anchor,hmac_key=key,key_id=ns.key_id,event_instance_id=ns.event_instance_id),ensure_ascii=False))
     else:
         events=load_events(ns.ledger);errs=validate_events(events,ns.case_id);anchor=ns.anchor or canonical_anchor_path(ns.ledger);errs+=validate_anchor(ns.ledger,anchor,events,ns.case_id,key,ns.require_hmac)
         if errs:[print('INVALID',x) for x in errs];raise SystemExit(1)
