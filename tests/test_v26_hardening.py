@@ -212,6 +212,34 @@ class LedgerHardeningTests(unittest.TestCase):
                     self.fail('malformed lock metadata was reclaimed')
             self.assertEqual(json.loads(lock.read_text()),bad)
 
+    def test_same_machine_survives_hostname_change_with_two_factor_identity(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ,{},clear=True), mock.patch.object(case_ledger,'_stable_machine_identity_source',return_value='linux-machine-id:stable-node'):
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            with mock.patch.object(case_ledger.socket,'gethostname',return_value='old-host'), mock.patch.object(case_ledger.uuid,'getnode',return_value=0x001122334455):
+                old_host=case_ledger.lock_host_id();old_identity=case_ledger.lock_identity_components()
+            stale={'schema_version':'2.7','host':old_host,'pid':2147483647,'token':'old-hostname'}
+            stale.update(old_identity);lock.write_text(json.dumps(stale))
+            with mock.patch.object(case_ledger.socket,'gethostname',return_value='new-host'), mock.patch.object(case_ledger.uuid,'getnode',return_value=0x001122334455):
+                with case_ledger.ledger_lock(p,timeout=0.2):
+                    owner=json.loads(lock.read_text())
+                    self.assertNotEqual(owner['host'],old_host)
+                    self.assertEqual(owner['machine_id'],old_identity['machine_id'])
+                    self.assertEqual(owner['node_id'],old_identity['node_id'])
+            self.assertFalse(lock.exists())
+
+    def test_cloned_machine_id_alone_cannot_reclassify_foreign_host_as_local(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ,{},clear=True), mock.patch.object(case_ledger,'_stable_machine_identity_source',return_value='linux-machine-id:cloned-image'):
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            with mock.patch.object(case_ledger.socket,'gethostname',return_value='clone-a'), mock.patch.object(case_ledger.uuid,'getnode',return_value=0x001122334455):
+                foreign={'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'foreign-clone'}
+                foreign.update(case_ledger.lock_identity_components())
+            lock.write_text(json.dumps(foreign))
+            with mock.patch.object(case_ledger.socket,'gethostname',return_value='clone-b'), mock.patch.object(case_ledger.uuid,'getnode',return_value=0x00aabbccddee):
+                with self.assertRaises(TimeoutError):
+                    with case_ledger.ledger_lock(p,timeout=0.08):
+                        self.fail('cloned machine-id alone collapsed two hosts')
+            self.assertEqual(json.loads(lock.read_text()),foreign)
+
     def test_configured_lock_host_id_cannot_collapse_distinct_machine_fingerprints(self):
         with mock.patch.dict(os.environ,{'MAESTRO_LOCK_HOST_ID':'shared-label'},clear=False):
             with mock.patch.object(case_ledger.socket,'gethostname',return_value='clone-host'):
