@@ -55,10 +55,10 @@ A Git-blob manifest PASS is not treated as proof that a distributed ZIP is compl
 - verifies the extracted tree against `MANIFEST.sha256` without relying on `.git`;
 - rejects extra, missing, changed or path-ambiguous entries;
 - reruns canonical full validation from the extracted tree;
-- emits a separate source-package receipt binding exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count.
+- emits a separate source-package receipt binding exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count; when created in GitHub Actions it also records validation run ID, run attempt and workflow ref for traceability.
 - rejects tracked pytest/Python cache artifacts before manifest generation so generated test state is not sealed as source-of-record.
 
-The package receipt is an integrity/binding record with `authority_effect=NONE`; it is not an external signature or promotion authority.
+The package receipt is an integrity/binding/traceability record with `authority_effect=NONE`. Its self-digest binds the recorded run metadata, but GitHub Actions/artifact metadata (or another external witness) is still required to prove that the referenced run actually existed; the receipt is not an external signature or promotion authority.
 
 ## Review invariant
 
