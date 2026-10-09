@@ -265,6 +265,13 @@
             },
             "uniqueItems": true
           },
+          "material_finding_signatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(blocker|major|minor|nit)\\|finding:[0-9a-f]{24}$"
+            }
+          },
           "note_only_finding_families": {
             "type": "array",
             "items": {
