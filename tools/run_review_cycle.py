@@ -12,7 +12,7 @@ from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_case_bundle import errors as case_bundle_errors
-from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path,pending_append_case_id,case_bundle_lock
+from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path,pending_append_case_id,case_bundle_lock,ensure_control_dir
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
 from queue_policy import choose_queue
@@ -583,10 +583,7 @@ def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mo
 
 def campaign_control_path(root,kind,case_id=None):
     root=Path(root).resolve();root.mkdir(parents=True,exist_ok=True)
-    base=root/'.codediff-control'
-    base.mkdir(mode=0o700,parents=True,exist_ok=True)
-    try:os.chmod(base,0o700)
-    except OSError:pass
+    base=ensure_control_dir(root/'.codediff-control')
     case_token=('-'+sha256_bytes(case_id.encode('utf-8'))[:16]) if case_id is not None else ''
     return base/f'campaign-{kind}{case_token}'
 
