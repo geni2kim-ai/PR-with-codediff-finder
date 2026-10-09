@@ -103,7 +103,7 @@ def main():
     anchor=Path(ns.anchor) if ns.anchor else default_anchor_path(ledger)
     tx_path=cycle_path.parent/'human-decision-transaction.json'
     persisted_att=cycle_path.parent/'human-decision-attestation.json'
-    ledger_key=os.environ.get(ns.ledger_hmac_key_env);human_key=os.environ.get(ns.human_key_env)
+    ledger_key=os.environ.get(ns.ledger_hmac_key_env);ledger_key_id=((os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip() or ns.ledger_hmac_key_env);human_key=os.environ.get(ns.human_key_env)
     supplied_att=json.loads(Path(ns.attestation).read_text());supplied_digest=human_attestation_digest(supplied_att)
     configured_replay=os.environ.get('MAESTRO_HUMAN_DECISION_REPLAY_DIR')
     if not configured_replay:raise SystemExit('trusted shared human replay cache required: set MAESTRO_HUMAN_DECISION_REPLAY_DIR')
@@ -121,7 +121,7 @@ def main():
             expected={'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'attestation_digest':supplied_digest}
             for k,v in expected.items():
                 if req.get(k)!=v:raise SystemExit(f'pending human transaction does not match request: {k}')
-            _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
+            _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ledger_key_id,replay_dir)
             print(cycle_path);return
     
         case=json.loads(case_path.read_text());cycle=json.loads(cycle_path.read_text())
@@ -165,7 +165,7 @@ def main():
         tx={'schema_version':'2.7','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event,'transaction_digest':''}
         tx['transaction_digest']=object_digest(tx,'transaction_digest');tx['transaction_hmac']=_transaction_hmac(tx,human_key)
         _atomic_json(tx_path,tx)
-        _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
+        _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ledger_key_id,replay_dir)
         print(cycle_path)
     
 if __name__=='__main__':main()
