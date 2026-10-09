@@ -16,6 +16,9 @@ from source_package_receipt import create as create_package_receipt,validate as 
 from verify_package_hygiene import generated_paths
 from build_source_package import build as build_source_package
 from run_review_cycle import disagreement,material_finding_key
+from common import canonical_finding_path,object_digest
+from validate_stage_result import semantic_errors as stage_semantic_errors
+from sanitize_review_text import scan_stage_result
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -162,20 +165,45 @@ class V27ReleaseInvariantTests(unittest.TestCase):
                 'findings':[{
                     'severity':'major',
                     'failure_family':'CORRECTNESS',
-                    'axis':'correctness',
+                    'axis':'correctness_security',
                     'path':path,
                 }],
             }
         self.assertTrue(disagreement(review('src/a.py'),review('src/b.py')))
         self.assertFalse(disagreement(review('src/a.py'),review('./src/a.py')))
+        self.assertTrue(disagreement(review('src/a.py'),review(r'src\\a.py'),changed_paths=['src/a.py',r'src\\a.py']))
 
-    def test_material_finding_identity_normalizes_equivalent_path_spellings(self):
-        base={'severity':'major','failure_family':'CORRECTNESS','axis':'correctness'}
-        a=dict(base,path='src/module.py')
-        b=dict(base,path='./src/module.py')
-        c=dict(base,path=r'src\\module.py')
-        self.assertEqual(material_finding_key(a),material_finding_key(b))
-        self.assertEqual(material_finding_key(a),material_finding_key(c))
+    def test_material_finding_identity_preserves_exact_git_backslash_paths(self):
+        base={'severity':'major','failure_family':'CORRECTNESS','axis':'correctness_security'}
+        slash=dict(base,path='src/module.py')
+        dotted=dict(base,path='./src/module.py')
+        backslash=dict(base,path=r'src\\module.py')
+        self.assertEqual(material_finding_key(slash),material_finding_key(dotted))
+        self.assertNotEqual(material_finding_key(slash),material_finding_key(backslash))
+        self.assertEqual(canonical_finding_path('./src/module.py',['src/module.py']),'src/module.py')
+        self.assertEqual(canonical_finding_path(r'src\\module.py',[r'src\\module.py']),r'src\\module.py')
+        with self.assertRaises(ValueError):canonical_finding_path('../src/module.py',['src/module.py'])
+        with self.assertRaises(ValueError):canonical_finding_path(r'C:\\repo\\src\\module.py',['src/module.py'])
+
+    def _stage_path_errors(self,path,preexisting=False,activated=False,changed_paths=None):
+        contract={'node_id':'node','model':{'family':'mock','version':'1'},'prompt_digest':'a'*64,'skill_digest':'b'*64,'policy_digest':'c'*64,'standards_digest':'d'*64,'worker_command_digest':'e'*64}
+        task={'task_id':'TASK','case_id':'CASE','level':'L1','binding':{'repository':'owner/repo','head_sha':'f'*40},'sensor':{'evidence_digest':'1'*64},
+              'reviewer_contract':contract,'limits':{'max_findings':12,'max_nits':2},'changed_paths':changed_paths or ['src/a.py']}
+        finding={'finding_id':'F-1','severity':'major','path':path,'preexisting':preexisting,'activated_or_worsened':activated}
+        result={'task_id':'TASK','case_id':'CASE','level':'L1','binding':{'repository':'owner/repo','reviewed_head_sha':'f'*40},'evidence_digest':'1'*64,
+                'reviewer':{**contract,'independent_context':False},'verdict':'FINDINGS','confidence':'high','findings':[finding],'output_safety':{},'result_digest':''}
+        result['output_safety']=scan_stage_result(result);result['result_digest']=object_digest(result,'result_digest')
+        return stage_semantic_errors(result,task)
+
+    def test_reviewer_finding_path_scope_is_fail_closed_without_blocking_activated_preexisting(self):
+        changed=self._stage_path_errors('./src/a.py')
+        self.assertFalse(any('path invalid' in x or 'outside changed_paths' in x for x in changed),changed)
+        outside=self._stage_path_errors('src/other.py')
+        self.assertTrue(any('outside changed_paths' in x for x in outside),outside)
+        activated=self._stage_path_errors('src/other.py',preexisting=True,activated=True)
+        self.assertFalse(any('path invalid' in x or 'outside changed_paths' in x for x in activated),activated)
+        unsafe=self._stage_path_errors('../src/a.py')
+        self.assertTrue(any('path invalid' in x for x in unsafe),unsafe)
 
 
 if __name__=='__main__':
