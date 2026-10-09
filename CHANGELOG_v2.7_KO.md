@@ -111,3 +111,10 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - pre-signature v2.7 row와 신규 row 혼합 시 representation 차이만으로 false disagreement가 생기지 않도록 key+count 호환 fallback 유지.
 - retry budget은 기존 severity-independent material_finding_key를 유지하여 severity 재평가가 자동 보완 횟수를 초기화하지 않음.
 - calibration report interpretation 문구를 실제 signature → key+count → state-only 호환 우선순위와 일치하도록 정정.
+
+- 외부 FULL 검토 M1~M3/L1 후속: signed-ledger HMAC mode를 anchor 자체가 아닌 sticky auth witness + anchor/transaction key_id + 선택적 외부 `MAESTRO_LEDGER_EXPECT_KEY_ID` 기대값으로 fail-closed 검증.
+- append recovery journal은 HMAC 구성 시에만 authenticated로 표현하고, unsigned 경로는 digest/hash-chain integrity recovery로 명확히 구분.
+- pending transaction이 증명하는 exact event-byte prefix torn tail은 pre-ledger SHA-256 확인 후 안전하게 truncate/fsync/retry하고, 그 외 malformed tail은 typed `LedgerTornWriteError`로 fail-closed.
+- recovery 후 동일 type/payload라도 새 요청은 새 이벤트로 기록하며, 동일 logical retry는 `event_instance_id`가 일치할 때만 idempotent하게 재사용.
+- ledger lock 문서를 PID 단독 설명에서 process-instance + machine identity + reclaim guard 구조로 갱신.
+- 과거 harness 수치는 역사적 snapshot으로만 유지하고, 현재 검증 보고서 상단 수치는 최신 HEAD full-validation 결과로 갱신하도록 정리.
