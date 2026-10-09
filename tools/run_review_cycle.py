@@ -651,7 +651,7 @@ def main():
             raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
             if current_head==last.get('head_sha'):raise SystemExit('material remediation retry requires a new HEAD; batch fixes before re-reviewing')
-    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=(last_attempt_index if continuing_authority_path else last_attempt_index+1) if history else 1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
+    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=(last_attempt_index if continuing_authority_path else last_attempt_index+1) if history else 1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');ledger_key_id=((os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip() or ('MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None));runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
     routing_source=Path(ns.routing_policy).resolve()
     if not routing_source.is_file():raise SystemExit(f'routing policy missing: {routing_source}')
     effective_routing=out/'reviewer-routing.effective.yml';shutil.copy2(routing_source,effective_routing)
@@ -684,7 +684,7 @@ def main():
     binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None;runtime_fresh_sessions={}
     def ev(type_,payload):
         instance='cycle:'+sha256_bytes(canonical_bytes({'case_id':ns.case_id,'attempt_index':attempt_index,'event_type':type_,'payload':payload}))[:40]
-        return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None,event_instance_id=instance)
+        return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id,event_instance_id=instance)
     def terminal_block(kind,msg,stage='HARNESS',required='L1',achieved='SENSOR',stage_rows=None,labels=None,families=None,reasons=None,current_stage=None):
         nonlocal ledger_ok
         stage_rows=stage_rows or [];labels=set(labels or []);families=set(families or []);reasons=list(reasons or [])+[kind];ledger_failures=[]
