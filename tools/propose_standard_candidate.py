@@ -17,6 +17,6 @@ def main():
     errs=[x.message for x in Draft202012Validator(STD).iter_errors(o)]
     if errs:raise SystemExit('generated invalid standard candidate: '+'; '.join(errs))
     write_json(ns.output,o)
-    if ns.ledger:append_event(ns.ledger,a['case_id'],'STANDARD_CANDIDATE_PROPOSED',{'candidate_id':o['candidate_id'],'candidate_digest':o['candidate_digest']})
+    if ns.ledger:append_event(ns.ledger,a['case_id'],'STANDARD_CANDIDATE_PROPOSED',{'candidate_id':o['candidate_id'],'candidate_digest':o['candidate_digest']},event_instance_id='standard:'+o['candidate_digest'][:48])
     print(ns.output)
 if __name__=='__main__':main()
