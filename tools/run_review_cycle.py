@@ -409,7 +409,7 @@ def campaign_history(root,case_id,hmac_key=None):
                             if not anchor.is_file():raise ValueError('unrelated ledger anchor missing')
                             try:unrelated_anchor=json.loads(anchor.read_text())
                             except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-                            anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(unrelated_anchor.get('hmac_sha256')) or bool(hmac_key))
+                            anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
                             if anchor_errs:raise ValueError('unrelated ledger invalid: '+'; '.join(anchor_errs[:8]))
                             continue
                     elif tx_path.is_file():
@@ -432,13 +432,13 @@ def campaign_history(root,case_id,hmac_key=None):
                             if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
                             event_case_id=next(iter(event_case_ids))
                             if event_case_id!=case_id:continue
-                            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
+                            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
                             if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
                             case=None
                             if case_path.is_file():
                                 case=json.loads(case_path.read_text())
                                 if case.get('case_id')!=case_id:raise ValueError('case_id mismatch')
-                                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
+                                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(hmac_key),hmac_key)
                                 if bundle_errs:raise ValueError('case_bundle_invalid: '+'; '.join(bundle_errs[:8]))
                     except TimeoutError as exc:
                         raise ValueError('campaign ledger busy during active bundle snapshot') from exc
@@ -682,7 +682,9 @@ def main():
         shadow_audit_unseeded=True
         ns.disable_random_audit=True
     binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None;runtime_fresh_sessions={}
-    def ev(type_,payload):return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None)
+    def ev(type_,payload):
+        instance='cycle:'+sha256_bytes(canonical_bytes({'case_id':ns.case_id,'attempt_index':attempt_index,'event_type':type_,'payload':payload}))[:40]
+        return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None,event_instance_id=instance)
     def terminal_block(kind,msg,stage='HARNESS',required='L1',achieved='SENSOR',stage_rows=None,labels=None,families=None,reasons=None,current_stage=None):
         nonlocal ledger_ok
         stage_rows=stage_rows or [];labels=set(labels or []);families=set(families or []);reasons=list(reasons or [])+[kind];ledger_failures=[]
