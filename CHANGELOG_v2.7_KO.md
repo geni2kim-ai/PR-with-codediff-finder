@@ -125,3 +125,4 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - recovery idempotency에 `event_instance_id`를 도입하여 같은 instance의 재시도만 흡수하고, 동일 type/payload라도 다른 instance의 의도적 이벤트는 별도 seq로 기록.
 - source-package receipt에 Actions run ID/attempt/workflow ref를 추가해 ZIP/HEAD와 검증 실행의 추적 연결을 강화(실행 존재 자체의 외부 증명 권한은 아님).
 - source-package receipt의 CI traceability 필드는 신규 생성물에는 기록하되 optional v2.7 extension으로 유지하여 기존 v2.7 receipt 검증 호환성을 보존.
+- external `MAESTRO_LEDGER_EXPECT_KEY_ID`를 실제 review/HUMAN/outcome/incident writer까지 전파하여 임의 key-version ID를 사용해도 signed ledger write/validation이 일치하도록 보완.
