@@ -1229,3 +1229,21 @@ L2 보완으로 Actions run metadata를 source-package receipt에 추가한 뒤 
 - 기존 receipt에서 세 필드를 제거하고 digest를 재계산한 회귀 fixture가 schema + semantic validation을 모두 통과하는지 확인
 
 이로써 CI provenance 강화가 기존 v2.7 package receipt 읽기 호환성을 파괴하지 않는다.
+
+### 48. 외부 expected key ID를 켜면 내부 writer의 고정 key_id가 정상 HMAC 쓰기를 막는 문제
+
+M1 보완으로 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 추가한 뒤 실제 review-cycle 쓰기 경로를 다시 시뮬레이션했다.
+
+반례:
+1. 운영자가 HMAC key와 `MAESTRO_LEDGER_EXPECT_KEY_ID=key-v1`을 설정
+2. validator는 `key-v1`을 기대
+3. 일부 writer는 anchor/transaction `key_id`로 고정 문자열 `MAESTRO_LEDGER_HMAC_KEY`를 명시
+4. 외부 expectation과 writer가 서로 충돌해 정상 signed append가 fail-closed
+
+보완:
+- `append_event()`는 HMAC key가 호출 인자로 직접 전달된 경우에도 key_id가 비어 있으면 external expected key ID를 기본값으로 사용
+- review cycle, HUMAN decision, outcome/incident writer가 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 우선 key ID로 사용
+- expectation이 없을 때는 기존 `MAESTRO_LEDGER_HMAC_KEY` 식별자 호환 유지
+- 실제 review-cycle subprocess를 `MAESTRO_LEDGER_HMAC_KEY + MAESTRO_LEDGER_EXPECT_KEY_ID=key-v1`로 실행해 anchor/witness의 key_id가 `key-v1`이고 HMAC이 생성되는 회귀 테스트 추가
+
+이로써 M1의 외부 expectation 기능이 검증 전용 장식이 아니라 실제 write/read 경로에서 사용할 수 있는 운영 기능이 된다.
