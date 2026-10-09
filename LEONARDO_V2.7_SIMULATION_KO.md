@@ -780,3 +780,36 @@ cross-host split-brain 보완 이후 이번에는 같은 PC의 장시간 운영/
 
 이 보완은 stale foreign lock 자동 추측을 도입하지 않으면서, **같은 PC 내부의 PID 재사용으로 생기는 불필요한 장기 중단만 줄인다.**
 
+### 28. 두 stale reclaimer의 compare→unlink race가 fresh owner lock을 삭제할 수 있는 문제
+
+PID reuse 보완 이후 stale recovery 자체를 동시 실행 관점에서 다시 공격했다.
+
+기존 흐름:
+1. reclaimer A/B가 같은 stale lock을 읽고 둘 다 stale로 판단
+2. A가 `_unlink_lock_if_unchanged()`에서 old bytes가 그대로임을 확인
+3. B가 먼저 old lock을 삭제하고 새 lock을 획득
+4. A가 자신의 check 이후 뒤늦게 path를 unlink
+5. A의 unlink가 B의 **fresh lock**을 지울 수 있음
+6. A도 새 lock을 획득하면 A/B가 동시에 critical section에 들어가 split-brain 가능
+
+핵심은 내용 비교와 path unlink 사이가 원자적이지 않았다는 점이다.
+
+보완:
+- 각 lock path에 대해 `<lock>.reclaim` atomic directory를 stale-reclaimer guard로 사용
+- stale deletion을 시도하는 reclaimer들만 이 guard를 경쟁
+- guard 획득 후 대상 lock을 다시 읽고 same-host/process-instance/PID 기준으로 stale 여부를 **재평가**
+- 재평가 결과가 여전히 stale일 때만 compare-and-unlink 수행
+- 다른 reclaimer는 guard가 존재하는 동안 stale deletion을 수행하지 않음
+- normal owner acquisition은 guard에 의해 막히지 않으며, 새 owner가 먼저 lock을 만들면 다음 reclaimer의 재평가에서 live owner로 판정되어 삭제되지 않음
+
+회귀:
+- reclaim guard를 다른 reclaimer가 보유한 상태에서는 stale lock을 삭제하지 않음
+- guard 해제 후 동일 stale lock은 정상 회수
+- 두 thread가 같은 stale lock에서 동시에 시작해도 critical section peak concurrency는 1
+- 기존 foreign-host non-reclaim, PID-reuse detection, owner-token unlock semantics 유지
+
+잔여 NOTE:
+- reclaimer가 `.reclaim` guard 생성 직후 강제 종료되면 guard가 남아 이후 자동 stale deletion을 막을 수 있다.
+- 이 상태는 split-brain 대신 fail-closed availability 저하를 선택한 것이며, SHADOW에서는 operator-verified cleanup 대상으로 둔다.
+- guard 자체를 age 기반 자동 삭제하면 같은 race를 다른 파일로 옮길 수 있으므로 자동 lease 복구는 추가하지 않는다.
+
