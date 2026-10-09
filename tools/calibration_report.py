@@ -18,24 +18,23 @@ def material_state(row):
 
 def material_signature(row):
     state=material_state(row)
-    if state!='FINDINGS':return (state,())
+    if state!='FINDINGS':return (state,None,None)
     signatures=row.get('material_finding_signatures')
-    if isinstance(signatures,list) and signatures:
-        # Preserve severity and multiplicity exactly as runtime disagreement does.
-        return (state,('severity_keys',tuple(sorted(str(x) for x in signatures if x))))
+    exact=tuple(sorted(str(x) for x in signatures if x)) if isinstance(signatures,list) and signatures else None
     keys=row.get('material_finding_keys')
-    if isinstance(keys,list) and keys:
-        # v2.7 pre-signature compatibility: key identity plus material count still
-        # detects a one-vs-two same-key omission even though per-key severity is lost.
-        return (state,('keys',tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))))
-    # Older or partially populated records may not carry per-finding identity.
-    # Preserve state-only compatibility instead of inventing precision.
-    return (state,None)
+    coarse=(tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))) if isinstance(keys,list) and keys else None
+    return (state,exact,coarse)
 
 def material_agrees(a,b):
     sa=material_signature(a);sb=material_signature(b)
-    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
-    return sa==sb
+    if sa[0]!=sb[0]:return False
+    if sa[0]!='FINDINGS':return True
+    # Use severity-aware exact signatures only when both rows carry them. Mixed
+    # old/new records safely fall back to key+count instead of creating a format-only
+    # disagreement. Very old rows with no identity retain state-only compatibility.
+    if sa[1] is not None and sb[1] is not None:return sa[1]==sb[1]
+    if sa[2] is not None and sb[2] is not None:return sa[2]==sb[2]
+    return True
 
 def p95(values):
     if not values:return None
