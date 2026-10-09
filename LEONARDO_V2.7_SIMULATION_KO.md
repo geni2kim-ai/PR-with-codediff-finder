@@ -753,3 +753,30 @@ multi-host lock 배치 자체를 filesystem redirect 관점에서 다시 공격�
 - control directory를 검증 직후 권한 있는 외부 주체가 교체하는 극단적 TOCTOU 공격까지 완전히 막으려면 directory handle/openat 또는 외부 coordinator 수준이 필요하다.
 - 현재 SHADOW 위협 모델에서는 pre-existing redirect를 fail-closed로 막고, shared storage ACL로 coordination directory 교체 권한을 제한하는 것을 운영 전제로 둔다.
 
+### 27. same-host PID 재사용이 stale lock을 영구 live로 오판하는 문제
+
+cross-host split-brain 보완 이후 이번에는 같은 PC의 장시간 운영/재부팅 상황을 시뮬레이션했다.
+
+반례:
+1. process A가 lock을 잡음
+2. A가 비정상 종료되어 lock file이 남음
+3. OS가 시간이 지난 뒤 동일 PID를 전혀 다른 process B에 재사용
+4. 기존 stale recovery는 host_id가 같고 `_pid_alive(pid)==True`이므로 lock을 live로 판단
+5. 실제 owner는 죽었지만 lock이 장기간 회수되지 않아 campaign/bundle/ledger가 불필요하게 중단
+
+보완:
+- lock owner metadata에 가능한 플랫폼에서 `process_instance` 추가
+- Linux: `/proc/<pid>/stat` start time + kernel boot ID
+- Windows: process creation FILETIME
+- same-host stale recovery는 recorded process_instance와 현재 PID의 process_instance가 다르면 PID가 살아 있어도 **PID reuse로 판정하여 stale lock 회수**
+- process instance를 읽을 수 없는 플랫폼/권한 상태에서는 기존 PID liveness 기반 보수적 동작으로 fallback
+- malformed `process_instance` metadata는 자동 회수하지 않고 fail-closed
+- unlock은 기존대로 host/pid/token이 모두 일치하는 현재 owner만 수행
+
+회귀:
+- same host + 같은 PID + 다른 process_instance + PID alive → old lock 회수 후 새 owner 획득
+- malformed process_instance object → 자동 회수 금지, timeout/fail-closed
+- 기존 dead same-host PID recovery와 foreign-host non-reclaim 규칙 유지
+
+이 보완은 stale foreign lock 자동 추측을 도입하지 않으면서, **같은 PC 내부의 PID 재사용으로 생기는 불필요한 장기 중단만 줄인다.**
+
