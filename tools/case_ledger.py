@@ -85,7 +85,9 @@ def _process_instance_id(pid):
     # /proc/<pid>/stat field 22 is process start time; after removing pid+comm,
     # the list starts at field 3, so start time is index 19.
     if len(fields)<=19:return None
-    return f'proc:{fields[19]}'
+    try:boot_id=Path('/proc/sys/kernel/random/boot_id').read_text(encoding='utf-8').strip()
+    except (FileNotFoundError,PermissionError,OSError):boot_id=''
+    return f'proc:{boot_id}:{fields[19]}' if boot_id else f'proc:{fields[19]}'
 
 def lock_local_fingerprint():
     return f'{socket.gethostname()}:{uuid.getnode():012x}'
@@ -106,6 +108,9 @@ def _lock_owner(raw):
     try:
         obj=json.loads(raw)
         if isinstance(obj,dict) and isinstance(obj.get('host'),str) and obj.get('host') and isinstance(obj.get('pid'),int) and obj.get('pid')>0 and isinstance(obj.get('token'),str) and obj.get('token'):
+            process_instance=obj.get('process_instance')
+            if process_instance is not None and (not isinstance(process_instance,str) or not process_instance):
+                return None
             return obj
     except Exception:
         pass
