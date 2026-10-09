@@ -350,6 +350,8 @@ def load_auth_witness(ledger,case_id=None):
 def ensure_auth_witness(ledger,case_id,hmac_required,key_id=None):
     path=canonical_auth_witness_path(ledger);existing=load_auth_witness(ledger,case_id)
     required=bool(hmac_required) or bool(existing and existing.get('hmac_required'))
+    if existing and existing.get('hmac_required') and existing.get('key_id') and key_id and existing.get('key_id')!=key_id:
+        raise ValueError('ledger auth witness key_id change requires explicit migration')
     effective_key_id=(existing or {}).get('key_id') or key_id
     if existing and existing.get('hmac_required')==required and existing.get('key_id')==effective_key_id:return existing
     obj={'schema_version':'2.7','kind':'ledger-auth-witness','case_id':case_id,'hmac_required':required,'key_id':effective_key_id,'witness_digest':''}
@@ -477,6 +479,10 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
     for k,v in core.items():
         if a.get(k)!=v:errs.append(f'anchor {k} mismatch')
     mac=a.get('hmac_sha256')
+    try:witness=load_auth_witness(ledger,cid)
+    except ValueError as exc:witness=None
+    if witness and witness.get('hmac_required') and witness.get('key_id') is not None and a.get('key_id')!=witness.get('key_id'):
+        errs.append('ledger anchor key_id disagrees with auth witness')
     if mac and not hmac_key:errs.append('ledger HMAC key unavailable for existing HMAC anchor')
     if require_hmac and not hmac_key:errs.append('ledger HMAC key unavailable')
     if require_hmac and not mac:errs.append('ledger anchor HMAC missing')
