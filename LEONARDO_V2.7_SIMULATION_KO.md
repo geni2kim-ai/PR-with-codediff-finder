@@ -1132,3 +1132,82 @@ severity-aware signature 초안을 적용한 뒤 upgrade/resume 호환성을 다
 - pre-signature v2.7은 key+count 비교
 - identity-less legacy만 state-only 비교
 라는 실제 우선순위를 calibration output 설명에 그대로 반영했다.
+
+### 42. signed ledger의 HMAC 요구를 anchor 자기신고만으로 판단하는 문제
+
+외부 FULL 리뷰 M1을 실제 코드 경로에 대입했다. 기존 일부 경로는 `anchor.hmac_sha256` 유무를 `require_hmac` 결정에 다시 사용했기 때문에, 공격자가 ledger와 anchor를 함께 다시 만든 뒤 HMAC 필드를 제거하면 키 없는 SHADOW 검증에서 과거 signed-mode 사실을 복원할 수 없었다.
+
+보완:
+- ledger마다 anchor와 분리된 sticky `case-events.auth.json` witness를 생성
+- 한 번 `hmac_required=true`가 되면 정상 API로 false downgrade 불가
+- `validate_anchor()`, append-journal recovery, case-bundle 검증이 anchor 자기신고가 아니라 witness를 자동 참조
+- immutable case-bank로 라우팅할 때 auth witness도 ledger/anchor와 함께 복사
+- `key_id`가 남아 있으면 HMAC requirement로 취급
+- 로컬 witness까지 삭제/변조 가능한 공격에 대비해 `MAESTRO_LEDGER_EXPECT_KEY_ID` 및 validation CLI `--expected-key-id`를 외부 expectation 경계로 제공
+
+한계:
+- HMAC key도 외부 expectation도 없고 공격자가 ledger/anchor/witness를 모두 다시 쓸 수 있으면, 과거에 signed history였다는 사실은 로컬 파일만으로 암호학적으로 증명할 수 없다.
+- 따라서 ENFORCED는 기존처럼 HMAC key를 요구하고, 강한 historical non-downgrade가 필요한 운영은 외부 durable witness/storage boundary를 유지해야 한다.
+
+### 43. keyless recovery journal을 authenticated라고 표현한 문제
+
+외부 FULL 리뷰 M2를 재현했다. HMAC가 없는 append transaction은 transaction digest와 event hash는 검증하지만, 동일 권한으로 파일을 다시 쓸 수 있는 공격자를 상대로 출처 인증을 제공하지 않는다.
+
+보완:
+- signed-history witness 또는 외부 expected key ID가 있으면 unsigned/missing-HMAC transaction을 fail-closed
+- transaction `key_id` 자체도 HMAC requirement signal로 사용
+- 문서/CHANGELOG에서 journal 기본 성격을 `digest-bound integrity`로 수정
+- “authenticated recovery journal” 표현은 HMAC authority가 구성된 경우에만 사용
+
+따라서 unsigned SHADOW journal은 deterministic crash recovery + integrity metadata이지 cryptographic authentication이 아니다.
+
+### 44. pending event의 torn JSONL tail을 복구하지 못하는 문제
+
+외부 FULL 리뷰 M3의 line-mid-write 반례를 적용했다.
+
+기존:
+1. append transaction durable
+2. JSONL event write가 일부 bytes만 기록
+3. 재기동 후 `load_events()`가 먼저 실행
+4. `JSONDecodeError`로 복구 진입 자체가 중단
+
+보완:
+- pending transaction의 exact event bytes를 기준으로 현재 ledger tail이 그 event의 prefix인지 검사
+- prefix 제거 후 남은 bytes SHA-256이 `pre_ledger_sha256`와 정확히 일치할 때만 truncate
+- truncate fsync 후 pending event 전체를 다시 기록
+- unrelated/malformed tail은 추측 수리하지 않고 typed `LedgerTornWriteError`로 fail-closed
+
+회귀:
+- exact half-event tail → 정상 recovery
+- pending event prefix가 아닌 garbage tail → typed failure
+
+### 45. recovery가 동일 type/payload의 의도적 두 번째 이벤트를 retry로 삼키는 문제
+
+외부 FULL 리뷰 L1의 반례는 payload 동일성만으로 retry identity를 추론하기 때문에 발생했다.
+
+보완:
+- append transaction에 optional `event_instance_id` 추가
+- 같은 instance ID로 재요청한 경우에만 recovered event를 idempotent retry로 반환
+- 다른 instance ID 또는 instance ID가 없는 새 요청은 type/payload가 같아도 별도 event/seq로 append
+- review cycle, HUMAN decision, outcome, incident, standard candidate 등 내부 mutation 경로는 stable instance ID를 사용
+
+이제 “동일 데이터”와 “동일 요청”을 구분한다.
+
+### 46. package receipt와 최신 검증 문서의 provenance 연결 부족
+
+외부 FULL 리뷰 L2에서 package 내부에 `.git`이 없어 HEAD/Actions run을 독립적으로 연결하기 어렵다는 점을 확인했다.
+
+보완:
+- source-package receipt에 `validation_run_id`, `validation_run_attempt`, `validation_workflow_ref` 추가
+- CI가 이 값을 GitHub Actions 환경에서 명시적으로 기록
+- receipt self-digest가 HEAD/package/manifest/run metadata를 하나의 traceability record로 묶음
+- 단, self-digest만으로 GitHub run의 실재를 증명하지는 않으며 GitHub artifact/run metadata가 외부 확인 근거임을 문서화
+- 검증 보고서의 테스트 수/manifest entry/HEAD/run은 최종 Latest-HEAD CI 결과로 다시 고정
+
+### 이번 외부 FULL 리뷰 반영 판정
+
+- M1: **보완됨(외부 expectation이 있을 때 강한 fail-closed, 로컬 전부 변조 한계는 명시)**
+- M2: **보완됨/표현 정정** — unsigned mode는 authentication으로 주장하지 않음
+- M3: **보완됨** — exact torn-tail recovery + typed failure
+- L1: **보완됨** — event-instance identity 도입
+- L2: **보완 진행** — receipt CI traceability 반영, 최종 CI 수치로 문서 재고정 예정
