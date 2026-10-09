@@ -75,14 +75,14 @@ def _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,repo,att_path
     if human:
         if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
     else:
-        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None,event_instance_id='human:'+req['transaction_id'])
         events=load_events(ledger)
 
     close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
     if close:
         if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
     else:
-        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None,event_instance_id='human-close:'+req['transaction_id'])
 
     _atomic_json(case_path,updated_case)
     _atomic_json(cycle_path,updated_cycle)
