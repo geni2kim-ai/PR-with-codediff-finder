@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,json,os,time
+import argparse,hashlib,hmac,json,os,tempfile,time
 from contextlib import contextmanager
 from datetime import datetime,timezone
 from pathlib import Path
@@ -77,6 +77,19 @@ def ledger_lock(path,timeout=10.0):
     finally:
         try:lock.unlink()
         except FileNotFoundError:pass
+
+def case_bundle_lock_path(case_path):
+    base=Path(tempfile.gettempdir())/'codediff-finder-bundle-locks'
+    base.mkdir(mode=0o700,parents=True,exist_ok=True)
+    try:os.chmod(base,0o700)
+    except OSError:pass
+    token=hashlib.sha256(str(Path(case_path).resolve()).encode('utf-8')).hexdigest()[:32]
+    return base/token
+
+@contextmanager
+def case_bundle_lock(case_path,timeout=10.0):
+    with ledger_lock(case_bundle_lock_path(case_path),timeout=timeout):
+        yield
 
 def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.7'):
     p=Path(ledger);last=events[-1]['event_hash'] if events else ZERO
