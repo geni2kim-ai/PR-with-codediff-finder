@@ -74,6 +74,20 @@ class LedgerHardeningTests(unittest.TestCase):
         events=load_events(out/'case-events.jsonl');self.assertFalse(validate_events(events,'HUMAN-ANCHOR'));self.assertFalse(validate_anchor(out/'case-events.jsonl',out/'case-events.anchor.json',events,'HUMAN-ANCHOR'))
         cyc2=json.loads((out/'review-cycle.json').read_text());self.assertEqual(cyc2['state'],'HUMAN_CONFIRMED');self.assertEqual(cyc2['gate_conclusion'],'success')
 
+    def test_review_cycle_honors_external_ledger_key_id(self):
+        td,r,_=gitrepo();self.addCleanup(td.cleanup)
+        (r/'a.py').write_text('x=1\n');base=commit(r,'base');(r/'a.py').write_text('x=2\n');commit(r,'head')
+        evp=adapter(r,base);out=r/'out-key-id'
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(evp),'--expected-base',base,
+              '--case-id','KEY-ID','--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        env={**os.environ,'MAESTRO_LEDGER_HMAC_KEY':'ledger-key','MAESTRO_LEDGER_EXPECT_KEY_ID':'key-v1'}
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=45,env=env)
+        self.assertEqual(cp.returncode,0,cp.stderr)
+        anchor_obj=json.loads((out/'case-events.anchor.json').read_text())
+        self.assertEqual(anchor_obj['key_id'],'key-v1');self.assertTrue(anchor_obj['hmac_sha256'])
+        witness=case_ledger.load_auth_witness(out/'case-events.jsonl','KEY-ID')
+        self.assertEqual(witness['key_id'],'key-v1');self.assertTrue(witness['hmac_required'])
+
     def test_hmac_anchor_cannot_be_downgraded_or_recreated_after_deletion(self):
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/'case-events.jsonl';a=default_anchor_path(p);key='ledger-key'
