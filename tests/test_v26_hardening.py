@@ -150,7 +150,7 @@ class LedgerHardeningTests(unittest.TestCase):
     def test_dead_same_host_ledger_lock_is_reclaimed_after_process_interruption(self):
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
-            lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.socket.gethostname(),'pid':2147483647,'token':'dead-local'}))
+            lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'dead-local'}))
             start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
             self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
 
@@ -572,6 +572,17 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertNotEqual(cp.returncode,0);self.assertIn('same case is not allowed',cp.stderr+cp.stdout)
         self.assertEqual(json.loads(lock.read_text()),foreign)
         self.assertFalse((out/'case-events.jsonl').exists())
+
+    def test_foreign_host_case_bundle_lock_blocks_local_bundle_access(self):
+        with tempfile.TemporaryDirectory() as td:
+            case_path=Path(td)/'case-record.json';case_path.write_text('{}')
+            target=case_bundle_lock_path(case_path);lock=Path(str(target)+'.lock')
+            foreign={'schema_version':'2.7','host':'pc2-remote:001122334455','pid':777777,'token':'bundle-owner'}
+            lock.write_text(json.dumps(foreign))
+            with self.assertRaises(TimeoutError):
+                with case_bundle_lock(case_path,timeout=0.08):
+                    self.fail('foreign-host case bundle lock was reclaimed')
+            self.assertEqual(json.loads(lock.read_text()),foreign)
 
     def test_campaign_allocation_lock_is_shared_root_visible(self):
         with tempfile.TemporaryDirectory() as td:
