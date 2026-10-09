@@ -25,7 +25,7 @@ def _finish(tx_path,p,ledger,anchor,key,key_id):
     if errs:raise SystemExit('recovered outcome bundle invalid: '+'; '.join(errs))
     Path(tx_path).unlink(missing_ok=True)
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--case',required=True);ap.add_argument('--ledger',required=True);ap.add_argument('--anchor');ap.add_argument('--ledger-hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');ap.add_argument('--author-response',required=True,choices=['fixed','rejected','accepted_risk','no_response','not_applicable']);ap.add_argument('--merged',required=True,choices=['true','false']);ap.add_argument('--merge-sha');ap.add_argument('--post-merge-status',default='unknown',choices=['clean','incident','regression','unknown','not_applicable']);ap.add_argument('--incident-ref');ns=ap.parse_args();p=Path(ns.case);ledger=Path(ns.ledger);anchor=Path(ns.anchor) if ns.anchor else canonical_anchor_path(ledger);key=os.environ.get(ns.ledger_hmac_key_env);merged=ns.merged=='true'
+    ap=argparse.ArgumentParser();ap.add_argument('--case',required=True);ap.add_argument('--ledger',required=True);ap.add_argument('--anchor');ap.add_argument('--ledger-hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');ap.add_argument('--author-response',required=True,choices=['fixed','rejected','accepted_risk','no_response','not_applicable']);ap.add_argument('--merged',required=True,choices=['true','false']);ap.add_argument('--merge-sha');ap.add_argument('--post-merge-status',default='unknown',choices=['clean','incident','regression','unknown','not_applicable']);ap.add_argument('--incident-ref');ns=ap.parse_args();p=Path(ns.case);ledger=Path(ns.ledger);anchor=Path(ns.anchor) if ns.anchor else canonical_anchor_path(ledger);key=os.environ.get(ns.ledger_hmac_key_env);key_id=((os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip() or ns.ledger_hmac_key_env);merged=ns.merged=='true'
     if merged and not ns.merge_sha:raise SystemExit('merge-sha required when merged=true')
     if not merged and ns.merge_sha:raise SystemExit('merge-sha forbidden when merged=false')
     if ns.post_merge_status in {'incident','regression'} and not ns.incident_ref:raise SystemExit('incident-ref required for incident/regression')
@@ -34,10 +34,10 @@ def main():
         if tx_path.exists():
             tx=json.loads(tx_path.read_text())
             if tx.get('request')!=request:raise SystemExit('pending outcome transaction does not match request')
-            _finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p);return
+            _finish(tx_path,p,ledger,anchor,key,key_id);print(p);return
         case=json.loads(p.read_text());errs=valid(case)+bundle_errors(case,ledger,anchor,False,key)
         if errs:raise SystemExit('invalid anchored case: '+'; '.join(errs))
         updated=json.loads(json.dumps(case));updated['outcome']=request;errs=valid(updated)
         if errs:raise SystemExit('updated case invalid: '+'; '.join(errs))
-        tx={'schema_version':'2.7','request':request,'event_type':'OUTCOME_RECORDED','event_payload':updated['outcome'],'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,ns.ledger_hmac_key_env);print(p)
+        tx={'schema_version':'2.7','request':request,'event_type':'OUTCOME_RECORDED','event_payload':updated['outcome'],'updated_case':updated,'transaction_digest':''};tx['transaction_digest']=object_digest(tx,'transaction_digest');_atomic_json(tx_path,tx);_finish(tx_path,p,ledger,anchor,key,key_id);print(p)
 if __name__=='__main__':main()
