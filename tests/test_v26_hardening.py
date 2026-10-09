@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy, hashlib, json, os, shutil, subprocess, sys, tempfile, threading, time, unittest
+from unittest import mock
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -153,6 +154,16 @@ class LedgerHardeningTests(unittest.TestCase):
             lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'dead-local'}))
             start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
             self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
+
+    def test_configured_lock_host_id_cannot_collapse_distinct_machine_fingerprints(self):
+        with mock.patch.dict(os.environ,{'MAESTRO_LOCK_HOST_ID':'shared-label'},clear=False):
+            with mock.patch.object(case_ledger.socket,'gethostname',return_value='clone-host'):
+                with mock.patch.object(case_ledger.uuid,'getnode',return_value=0x001122334455):
+                    a=case_ledger.lock_host_id()
+                with mock.patch.object(case_ledger.uuid,'getnode',return_value=0x00aabbccddee):
+                    b=case_ledger.lock_host_id()
+        self.assertNotEqual(a,b)
+        self.assertTrue(a.startswith('shared-label:'));self.assertTrue(b.startswith('shared-label:'))
 
     def test_foreign_host_ledger_lock_is_never_reclaimed_as_local_dead_pid(self):
         with tempfile.TemporaryDirectory() as td:
