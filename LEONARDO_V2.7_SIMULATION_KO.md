@@ -680,3 +680,26 @@ section 19에서는 다른 case의 ledger append 중간 상태를 막았지만 a
 - stale foreign lock은 운영자가 공유 스토리지/노드 상태를 확인한 뒤 제거하거나, 향후 외부 lease/coordinator 계층에서 증명된 recovery를 제공해야 한다.
 - SHADOW v2.7에서는 fail-closed를 선택하며 자동 retry loop를 만들지 않는다.
 
+### 24. shared control directory cleanup이 waiter와 경합하는 문제
+
+multi-host shared lock 보완 후 exact-HEAD canonical validation에서 실제 회귀가 검출됐다.
+
+실패:
+- `test_active_history_waits_for_case_bundle_snapshot`
+- `test_outcome_writer_holds_case_bundle_lock_through_bundle_mutation`
+
+원인:
+1. owner가 `case-bundle-*.lock`을 해제
+2. `case_bundle_lock()` finally가 비어 보이는 `.codediff-control/` 디렉터리를 `rmdir`
+3. 동시에 기다리던 다른 thread/process가 다음 exclusive lock file을 생성하려고 함
+4. parent directory가 사라져 `FileNotFoundError`
+5. lock 자체의 mutual exclusion은 맞지만 control-directory lifecycle이 waiter-safe하지 않았음
+
+보완:
+- shared `.codediff-control/` 디렉터리를 runtime 동안 삭제하지 않고 persistent control namespace로 유지
+- lock file만 owner token 검증 후 제거
+- `.gitignore`에 `**/.codediff-control/` 추가하여 case bundle이 repository 내부에 놓이는 예외 상황에서도 coordination metadata가 source dirtiness를 만들지 않도록 함
+- campaign root freshness 판정은 이미 `.codediff-control`을 payload에서 제외하므로 최초/재시도 semantics 유지
+
+이 보완 후 waiter는 parent namespace가 사라지는 race 없이 다음 lock acquisition을 계속할 수 있다.
+
