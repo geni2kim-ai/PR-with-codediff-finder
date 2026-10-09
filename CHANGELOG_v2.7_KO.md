@@ -94,7 +94,7 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 
 - Leonardo 추가 시뮬레이션: L1/L2 disagreement가 같은 family/axis의 서로 다른 파일 결함을 합의로 오인하던 경계를 수정.
 - reviewer disagreement와 campaign repeat가 동일한 normalized material-finding identity를 사용하도록 통일.
-- `./src/a.py` / `src\\a.py` 같은 동등 path 표기가 same-material repeat 제한을 우회하지 못하도록 repository-path identity 정규화.
+- `./src/a.py` 같은 presentation alias는 동일 identity로 정규화하되, Git literal backslash path는 별도 파일 identity로 보존.
 - path-aware disagreement / path-alias repeat 회귀 테스트 2건 추가.
 - Leonardo calibration/route가 서로 다른 material finding key를 단순 FINDINGS 상태 일치로 합의 처리하던 문제 수정; v2.7 key-set identity 우선, legacy state-only fallback 유지.
 
