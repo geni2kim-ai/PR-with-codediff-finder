@@ -730,3 +730,26 @@ section 23의 multi-host lock을 다시 설정 오류 관점에서 공격했다.
 - 그런 환경에서는 VM별로 서로 다른 `MAESTRO_LOCK_HOST_ID` namespace를 반드시 부여해야 한다.
 - 이 제한은 일반 PC/정상적으로 고유화된 VM에서는 발생하지 않는다.
 
+### 26. .codediff-control symlink/junction이 shared lock namespace를 우회하는 문제
+
+multi-host lock 배치 자체를 filesystem redirect 관점에서 다시 공격했다.
+
+반례:
+1. shared campaign root의 `.codediff-control`을 symlink 또는 Windows junction으로 미리 생성
+2. target을 host-local path 또는 다른 writable directory로 지정
+3. campaign/bundle lock 코드는 해당 path 아래에 lock을 생성
+4. 서로 다른 PC가 실질적으로 다른 coordination namespace를 보거나 공격자가 lock namespace를 외부로 이동 가능
+5. same-case exclusion/attempt allocation이 다시 split-brain 될 수 있음
+
+보완:
+- `ensure_control_dir()` 추가
+- 기존 `.codediff-control`이 symlink, junction, non-directory이면 fail-closed
+- 새 directory 생성 후에도 type을 다시 확인
+- campaign `campaign_control_path()`와 bundle `case_bundle_lock_path()`가 동일 검증 helper 사용
+- 정상 real directory만 chmod best-effort 후 사용
+- 회귀 테스트에서 campaign control symlink와 bundle control symlink 모두 `unsafe coordination directory`로 거부 확인
+
+잔여 NOTE:
+- control directory를 검증 직후 권한 있는 외부 주체가 교체하는 극단적 TOCTOU 공격까지 완전히 막으려면 directory handle/openat 또는 외부 coordinator 수준이 필요하다.
+- 현재 SHADOW 위협 모델에서는 pre-existing redirect를 fail-closed로 막고, shared storage ACL로 coordination directory 교체 권한을 제한하는 것을 운영 전제로 둔다.
+
