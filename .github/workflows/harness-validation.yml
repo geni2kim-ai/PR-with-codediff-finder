@@ -105,6 +105,9 @@ jobs:
             --head-sha "$(git rev-parse HEAD)" \
             --clean-extract-verified \
             --canonical-validation-passed \
+            --validation-run-id "$GITHUB_RUN_ID" \
+            --validation-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --validation-workflow-ref "$GITHUB_WORKFLOW_REF" \
             --output PR-with-codediff-finder-v2.7.receipt.json
           python tools/source_package_receipt.py validate \
             --receipt PR-with-codediff-finder-v2.7.receipt.json \
