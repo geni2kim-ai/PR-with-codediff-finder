@@ -89,7 +89,19 @@ def ledger_lock(path,timeout=10.0):
     encoded=(json.dumps(owner,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
     while True:
         try:
-            fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.write(fd,encoded);os.fsync(fd);os.close(fd);fd=None;break
+            fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+            try:
+                with os.fdopen(fd,'wb',closefd=True) as f:
+                    fd=None;f.write(encoded);f.flush();os.fsync(f.fileno())
+            except Exception:
+                if fd is not None:
+                    try:os.close(fd)
+                    except OSError:pass
+                    fd=None
+                try:lock.unlink()
+                except FileNotFoundError:pass
+                raise
+            break
         except FileExistsError:
             try:
                 raw=lock.read_text(encoding='utf-8')
