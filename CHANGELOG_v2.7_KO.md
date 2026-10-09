@@ -97,3 +97,8 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - `./src/a.py` / `src\\a.py` 같은 동등 path 표기가 same-material repeat 제한을 우회하지 못하도록 repository-path identity 정규화.
 - path-aware disagreement / path-alias repeat 회귀 테스트 2건 추가.
 - Leonardo calibration/route가 서로 다른 material finding key를 단순 FINDINGS 상태 일치로 합의 처리하던 문제 수정; v2.7 key-set identity 우선, legacy state-only fallback 유지.
+
+- Leonardo 추가 시뮬레이션 #33~#35: Git literal backslash path를 Windows separator alias로 합치던 finding identity 오판 수정.
+- reviewer finding path를 stage validation에서 repository-relative 안전경로로 검증하고 traversal/absolute/drive path를 invalid result로 차단.
+- changed_paths 밖 finding은 preexisting=true + activated_or_worsened=true일 때만 허용하여 무관한 pre-existing issue가 escalation/repeat/calibration을 오염하는 경로 차단.
+- reviewer worker contract에 exact Git changed_paths spelling 및 off-diff activated/worsened 예외 규칙 명시.
