@@ -91,3 +91,8 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - case record에 NOTE_ONLY key/family, major/blocker count, review campaign summary를 보존하여 Leonardo 장기 backdata 지표 강화.
 - recurring NOTE를 case-frequency 기준으로 집계하고 기본 3 cases부터 standard/check **proposal signal**로만 노출; 자동 수정/자동 표준 승격은 금지.
 - Leonardo calibration regressions 4건 추가; code-bearing harness **145 PASS / 87 groups** 확인.
+
+- Leonardo 추가 시뮬레이션: L1/L2 disagreement가 같은 family/axis의 서로 다른 파일 결함을 합의로 오인하던 경계를 수정.
+- reviewer disagreement와 campaign repeat가 동일한 normalized material-finding identity를 사용하도록 통일.
+- `./src/a.py` / `src\\a.py` 같은 동등 path 표기가 same-material repeat 제한을 우회하지 못하도록 repository-path identity 정규화.
+- path-aware disagreement / path-alias repeat 회귀 테스트 2건 추가.
