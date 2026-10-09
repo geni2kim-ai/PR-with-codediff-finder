@@ -10,6 +10,19 @@ SCHEMA=json.loads((ROOT/'schemas/case-event.schema.json').read_text())
 ZERO='0'*64
 
 class LedgerRecoveryError(ValueError):
+    """Typed fail-closed error for interrupted/torn ledger recovery."""
+    def __init__(self,code,message):
+        self.code=str(code)
+        super().__init__(f'{self.code}: {message}')
+
+def _expected_ledger_key_id(explicit=None):
+    if explicit is not None:
+        value=str(explicit).strip()
+        return value or None
+    value=(os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip()
+    return value or None
+
+class LedgerRecoveryError(ValueError):
     pass
 
 class LedgerTornWriteError(LedgerRecoveryError):
