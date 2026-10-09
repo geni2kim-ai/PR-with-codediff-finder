@@ -496,7 +496,7 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
     expected_key_id=_expected_ledger_key_id(expected_key_id)
     if hmac_key is None:
         hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY')
-        if hmac_key and key_id is None:key_id=expected_key_id or 'MAESTRO_LEDGER_HMAC_KEY'
+    if hmac_key and key_id is None:key_id=expected_key_id or 'MAESTRO_LEDGER_HMAC_KEY'
     if expected_key_id and key_id!=expected_key_id:raise ValueError('ledger key_id does not match external expectation')
     if expected_key_id and not hmac_key:raise ValueError('ledger HMAC key unavailable for external expectation')
     if key_id and not hmac_key:raise ValueError('ledger key_id requires HMAC key')
