@@ -12,7 +12,7 @@ from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_case_bundle import errors as case_bundle_errors
-from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path,pending_append_case_id
+from case_ledger import append_event,load_events,validate_events,validate_anchor,ledger_lock,recover_pending_append_if_present,pending_append_path,pending_append_case_id,case_bundle_lock
 from sanitize_review_text import sanitize,scan_stage_result
 from runtime_attestation import validate as validate_runtime_attestation,digest as runtime_attestation_digest,consume_nonce as consume_runtime_attestation_nonce
 from queue_policy import choose_queue
@@ -407,30 +407,39 @@ def campaign_history(root,case_id,hmac_key=None):
                         if event_case_id!=case_id:continue
             except TimeoutError as exc:
                 raise ValueError('campaign ledger busy during consistent history snapshot') from exc
-            if tx_path.is_file():
-                recover_pending_append_if_present(ledger,anchor,hmac_key)
-            if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
-            try:anchor_obj=json.loads(anchor.read_text())
-            except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-            events=load_events(ledger);errs=validate_events(events)
-            event_case_ids={e.get('case_id') for e in events}
-            if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
-            event_case_id=next(iter(event_case_ids))
-            if event_case_id!=case_id:continue
-            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
-            if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+            case_path=d/'case-record.json'
+            try:
+                with case_bundle_lock(case_path,timeout=2.0):
+                    if tx_path.is_file():
+                        recover_pending_append_if_present(ledger,anchor,hmac_key)
+                    try:
+                        with ledger_lock(ledger,timeout=2.0):
+                            if not ledger.is_file() or not anchor.is_file():raise ValueError('ledger_or_anchor_missing')
+                            try:anchor_obj=json.loads(anchor.read_text())
+                            except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
+                            events=load_events(ledger);errs=validate_events(events)
+                            event_case_ids={e.get('case_id') for e in events}
+                            if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
+                            event_case_id=next(iter(event_case_ids))
+                            if event_case_id!=case_id:continue
+                            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
+                            if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
+                            case=None
+                            if case_path.is_file():
+                                case=json.loads(case_path.read_text())
+                                if case.get('case_id')!=case_id:raise ValueError('case_id mismatch')
+                                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
+                                if bundle_errs:raise ValueError('case_bundle_invalid: '+'; '.join(bundle_errs[:8]))
+                    except TimeoutError as exc:
+                        raise ValueError('campaign ledger busy during active bundle snapshot') from exc
+            except TimeoutError as exc:
+                raise ValueError('campaign case bundle busy during consistent history snapshot') from exc
             ledger_identity=(anchor_obj.get('ledger_sha256'),anchor_obj.get('event_hash'),anchor_obj.get('seq'))
             if ledger_identity in seen_ledger_identities:raise ValueError('duplicate/replayed campaign ledger identity')
             seen_ledger_identities.add(ledger_identity)
             opened=[e for e in events if e.get('event_type')=='CASE_OPENED'];closed=[e for e in events if e.get('event_type')=='CYCLE_CLOSED'];completed=[e for e in events if e.get('event_type')=='REVIEW_COMPLETED']
             if not opened:raise ValueError('campaign ledger missing CASE_OPENED')
             head_sha=opened[-1].get('payload',{}).get('head_sha')
-            case_path=d/'case-record.json';case=None
-            if case_path.is_file():
-                case=json.loads(case_path.read_text())
-                if case.get('case_id')!=case_id:raise ValueError('case_id mismatch')
-                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
-                if bundle_errs:raise ValueError('case_bundle_invalid: '+'; '.join(bundle_errs[:8]))
             if closed:
                 if case is None:raise ValueError('closed campaign attempt missing case-record')
                 payload=closed[-1].get('payload',{});state=payload.get('state')
