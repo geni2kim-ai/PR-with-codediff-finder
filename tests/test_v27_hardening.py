@@ -15,6 +15,7 @@ from verify_manifest import filesystem_errors
 from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
 from verify_package_hygiene import generated_paths
 from build_source_package import build as build_source_package
+from run_review_cycle import disagreement,material_finding_key
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -152,6 +153,29 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             ledger=Path(td)/'case-events.jsonl';append_event(ledger,'CASE','CASE_OPENED',{})
             anchor=json.loads(default_anchor_path(ledger).read_text(encoding='utf-8'))
             self.assertEqual(anchor['schema_version'],'2.7')
+
+
+    def test_disagreement_distinguishes_same_family_axis_on_different_paths(self):
+        def review(path):
+            return {
+                'verdict':'FINDINGS',
+                'findings':[{
+                    'severity':'major',
+                    'failure_family':'CORRECTNESS',
+                    'axis':'correctness',
+                    'path':path,
+                }],
+            }
+        self.assertTrue(disagreement(review('src/a.py'),review('src/b.py')))
+        self.assertFalse(disagreement(review('src/a.py'),review('./src/a.py')))
+
+    def test_material_finding_identity_normalizes_equivalent_path_spellings(self):
+        base={'severity':'major','failure_family':'CORRECTNESS','axis':'correctness'}
+        a=dict(base,path='src/module.py')
+        b=dict(base,path='./src/module.py')
+        c=dict(base,path=r'src\\module.py')
+        self.assertEqual(material_finding_key(a),material_finding_key(b))
+        self.assertEqual(material_finding_key(a),material_finding_key(c))
 
 
 if __name__=='__main__':
