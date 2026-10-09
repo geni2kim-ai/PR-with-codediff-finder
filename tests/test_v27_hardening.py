@@ -196,6 +196,11 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertFalse(material_agrees(l1,l2))
         self.assertIn('L1_L2_DISAGREEMENT',reasons_for({'review_trail':[l1,l2],'labels':[],'failure_families':[]}))
 
+        # Mixed old/new rows compare at the best identity level both possess.
+        legacy_same=dict(l1);legacy_same.pop('material_finding_signatures')
+        self.assertTrue(material_agrees(l1,legacy_same))
+        self.assertNotIn('L1_L2_DISAGREEMENT',reasons_for({'review_trail':[l1,dict(legacy_same,level='L2')],'labels':[],'failure_families':[]}))
+
         # Pre-signature v2.7 records cannot recover severity mapping, but count
         # still prevents a two-vs-one same-key omission from becoming agreement.
         old_two=dict(l1);old_two.pop('material_finding_signatures');old_two['material_finding_count']=2
