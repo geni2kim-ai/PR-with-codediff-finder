@@ -16,6 +16,21 @@ def material_state(row):
     if 'material_finding_count' in row:return 'FINDINGS' if int(row.get('material_finding_count',0))>0 else 'PASS'
     return row.get('verdict')
 
+def material_signature(row):
+    state=material_state(row)
+    keys=row.get('material_finding_keys')
+    if state!='FINDINGS':return (state,())
+    if isinstance(keys,list) and keys:
+        return (state,tuple(sorted(set(str(x) for x in keys if x))))
+    # Older or partially populated records may not carry per-finding identity.
+    # Preserve state-only compatibility instead of inventing precision.
+    return (state,None)
+
+def material_agrees(a,b):
+    sa=material_signature(a);sb=material_signature(b)
+    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
+    return sa==sb
+
 def p95(values):
     if not values:return None
     rows=sorted(int(x) for x in values);return rows[max(0,math.ceil(len(rows)*0.95)-1)]
@@ -37,7 +52,7 @@ def summarize_cases(cases,cfg):
         for r in trail:
             level=r.get('level');d=per[level];d['reviews']+=1;key=(r.get('model') or {}).get('family','human')+'@'+(r.get('model') or {}).get('version','n/a');model[key]['reviews']+=1;wkey=r.get('worker_command_digest') or 'unknown';worker[wkey]['reviews']+=1
             if level in MACHINE_LEVELS and LEVEL[level]<LEVEL[final['level']]:
-                d['compared_to_final']+=1;model[key]['compared_to_final']+=1;worker[wkey]['compared_to_final']+=1;agree=material_state(r)==material_state(final)
+                d['compared_to_final']+=1;model[key]['compared_to_final']+=1;worker[wkey]['compared_to_final']+=1;agree=material_agrees(r,final)
                 if agree:d['agree_final']+=1;model[key]['agree_final']+=1;worker[wkey]['agree_final']+=1
                 if level=='L1':sampling[cls]['l1_compared_to_final']+=1;sampling[cls]['l1_agree_final']+=int(agree)
             if level=='L1':sampling[cls]['l1_reviews']+=1
@@ -52,7 +67,7 @@ def summarize_cases(cases,cfg):
         for k in case_note_keys:note_keys[k]+=1
         for fam in case_note_families:note_families[fam]+=1
         for a,b in [('L1','L2'),('L2','ADVERSARIAL')]:
-            if a in by_level and b in by_level and material_state(by_level[a])!=material_state(by_level[b]):reversals[f'{a}_TO_{b}']+=1
+            if a in by_level and b in by_level and not material_agrees(by_level[a],by_level[b]):reversals[f'{a}_TO_{b}']+=1
         l1=by_level.get('L1');l2=by_level.get('L2')
         if l1 and l2 and int(l1.get('major_finding_count',0))>0:
             l1_major_with_l2+=1
