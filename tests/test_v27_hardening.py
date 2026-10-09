@@ -184,6 +184,8 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertEqual(canonical_finding_path(r'src\\module.py',[r'src\\module.py']),r'src\\module.py')
         with self.assertRaises(ValueError):canonical_finding_path('../src/module.py',['src/module.py'])
         with self.assertRaises(ValueError):canonical_finding_path(r'C:\\repo\\src\\module.py',['src/module.py'])
+        literal_host_like=r'C:\\literal.py'
+        self.assertEqual(canonical_finding_path(literal_host_like,[literal_host_like]),literal_host_like)
 
     def _stage_path_errors(self,path,preexisting=False,activated=False,changed_paths=None):
         contract={'node_id':'node','model':{'family':'mock','version':'1'},'prompt_digest':'a'*64,'skill_digest':'b'*64,'policy_digest':'c'*64,'standards_digest':'d'*64,'worker_command_digest':'e'*64}
