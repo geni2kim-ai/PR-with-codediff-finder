@@ -813,3 +813,38 @@ PID reuse 보완 이후 stale recovery 자체를 동시 실행 관점에서 다�
 - 이 상태는 split-brain 대신 fail-closed availability 저하를 선택한 것이며, SHADOW에서는 operator-verified cleanup 대상으로 둔다.
 - guard 자체를 age 기반 자동 삭제하면 같은 race를 다른 파일로 옮길 수 있으므로 자동 lease 복구는 추가하지 않는다.
 
+### 29. hostname/NIC 변화가 같은 PC를 foreign host로 고정하는 문제
+
+cross-host split-brain 방어를 유지한 채 운영 중 host identity drift를 시뮬레이션했다.
+
+기존 `lock_local_fingerprint()`는 `hostname + uuid.getnode()` 기반이다.
+
+반례:
+1. PC가 lock을 보유한 상태에서 비정상 종료
+2. 이후 hostname 변경 또는 NIC 교체/가상 NIC 재생성
+3. stale lock의 old `host_id`와 현재 `host_id`가 달라짐
+4. 동일한 실제 PC인데도 foreign-host lock으로 분류
+5. local process death를 안전하게 확인할 수 있어도 stale lock 자동 회수 불가
+6. campaign/bundle/ledger가 operator cleanup 전까지 불필요하게 중단
+
+단일 OS machine-id만 신뢰하는 보완은 복제 VM에서 위험하므로 사용하지 않았다.
+
+최종 보완:
+- Windows MachineGuid 또는 Linux `/etc/machine-id`/D-Bus machine-id를 안정 machine source로 사용
+- raw 값은 lock metadata에 기록하지 않고 SHA-256 기반 `machine_id`로 저장
+- `hostname_id`, `node_id`도 namespace/salt와 함께 해시해 owner metadata에 저장
+- exact host_id가 다를 때 same-host로 인정하려면:
+  - machine_id 일치 **AND**
+  - hostname_id 또는 node_id 중 하나 이상 일치
+- 따라서 hostname만 변경되거나 NIC만 변경된 같은 PC는 stale recovery 가능
+- machine-id만 같은 clone A/B에서 hostname과 node가 모두 다르면 foreign 유지
+- hostname과 NIC가 동시에 모두 바뀐 경우는 machine-id 하나만으로 자동 reclaim하지 않고 fail-closed/manual
+- `MAESTRO_LOCK_HOST_ID` namespace는 각 identity component hash에도 포함되어 clone 분리 가능
+
+회귀:
+- stable machine + same node + hostname change → old stale lock 회수 성공
+- same machine-id clone + different hostname + different node → foreign lock 유지/timeout
+- 기존 exact host, PID-reuse, foreign-host, stale-reclaimer guard semantics 유지
+
+이 수정은 split-brain 허용 범위를 넓히지 않고, 정상적인 단일 식별자 변화에서만 availability를 회복한다.
+
