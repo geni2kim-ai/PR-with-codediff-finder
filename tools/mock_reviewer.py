@@ -6,26 +6,28 @@ sys.path.insert(0,str(ROOT/'tools'))
 from common import object_digest
 from sanitize_review_text import scan_stage_result
 
-def finding(fid='F-001',severity='major',family='MOCK-MAJOR',axis='correctness_security'):
-    return {'finding_id':fid,'axis':axis,'severity':severity,'confidence':'high','certainty':'confirmed','path':'src/example.py','line':1,'claim':'Mock defect detected','evidence':'Changed branch violates the test fixture expectation','source_ref':'fixture','impact':'The fixture models a review failure','recommendation':'Correct the fixture or implementation','preexisting':False,'activated_or_worsened':True,'failure_family':family}
+def finding(fid='F-001',severity='major',family='MOCK-MAJOR',axis='correctness_security',path='src/example.py'):
+    return {'finding_id':fid,'axis':axis,'severity':severity,'confidence':'high','certainty':'confirmed','path':path,'line':1,'claim':'Mock defect detected','evidence':'Changed branch violates the test fixture expectation','source_ref':'fixture','impact':'The fixture models a review failure','recommendation':'Correct the fixture or implementation','preexisting':False,'activated_or_worsened':True,'failure_family':family}
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--mode',default='pass');ns=ap.parse_args();task=json.load(sys.stdin);level=task['level'];c=task['reviewer_contract']
+    changed_path=(task.get('changed_paths') or ['src/example.py'])[0]
+    def make_finding(**kwargs):return finding(path=changed_path,**kwargs)
     findings=[];verdict='PASS';confidence='high';target='NONE';requested=False;novel=False
     risk={'reversibility':'EASY','blast_radius':'LOCAL','data_sensitivity':'NONE','security_surface':'LOW','availability_criticality':'LOW'}
-    if ns.mode=='major': findings=[finding()];verdict='FINDINGS'
-    elif ns.mode=='minor': findings=[finding(severity='minor',family='MOCK-MINOR')];verdict='FINDINGS'
-    elif ns.mode=='nit': findings=[finding(severity='nit',family='MOCK-NIT',axis='standards')];verdict='FINDINGS'
-    elif ns.mode=='minor-escalate': findings=[finding(severity='minor',family='MOCK-MINOR',axis='standards')];verdict='FINDINGS';requested=True;target='L2'
-    elif ns.mode=='critical-minor': findings=[finding(severity='minor',family='SECURITY-CRITICAL',axis='correctness_security')];verdict='FINDINGS'
-    elif ns.mode=='test-integrity-minor': findings=[finding(severity='minor',family='MOCK-TEST-INTEGRITY',axis='test_integrity')];verdict='FINDINGS'
+    if ns.mode=='major': findings=[make_finding()];verdict='FINDINGS'
+    elif ns.mode=='minor': findings=[make_finding(severity='minor',family='MOCK-MINOR')];verdict='FINDINGS'
+    elif ns.mode=='nit': findings=[make_finding(severity='nit',family='MOCK-NIT',axis='standards')];verdict='FINDINGS'
+    elif ns.mode=='minor-escalate': findings=[make_finding(severity='minor',family='MOCK-MINOR',axis='standards')];verdict='FINDINGS';requested=True;target='L2'
+    elif ns.mode=='critical-minor': findings=[make_finding(severity='minor',family='SECURITY-CRITICAL',axis='correctness_security')];verdict='FINDINGS'
+    elif ns.mode=='test-integrity-minor': findings=[make_finding(severity='minor',family='MOCK-TEST-INTEGRITY',axis='test_integrity')];verdict='FINDINGS'
     elif ns.mode=='low': confidence='low'
-    elif ns.mode=='novel': findings=[finding(family='NOVEL-MOCK')];verdict='FINDINGS';novel=True;requested=True;target='ADVERSARIAL'
+    elif ns.mode=='novel': findings=[make_finding(family='NOVEL-MOCK')];verdict='FINDINGS';novel=True;requested=True;target='ADVERSARIAL'
     elif ns.mode=='block': verdict='BLOCKED'
-    elif ns.mode=='security-high': findings=[finding(family='SECURITY-CRITICAL')];verdict='FINDINGS';risk['security_surface']='HIGH';requested=True;target='HUMAN'
+    elif ns.mode=='security-high': findings=[make_finding(family='SECURITY-CRITICAL')];verdict='FINDINGS';risk['security_surface']='HIGH';requested=True;target='HUMAN'
     elif ns.mode=='human-risk': risk['reversibility']='HARD';requested=True;target='HUMAN'
-    elif ns.mode=='unsafe-url': findings=[finding(severity='minor',family='MOCK-UNSAFE')];findings[0]['source_ref']='www.example.invalid/leak';verdict='FINDINGS'
-    elif ns.mode=='unsafe-mention': findings=[finding(severity='minor',family='MOCK-UNSAFE')];findings[0]['failure_family']='ALERT-\u200b@owner';verdict='FINDINGS'
+    elif ns.mode=='unsafe-url': findings=[make_finding(severity='minor',family='MOCK-UNSAFE')];findings[0]['source_ref']='www.example.invalid/leak';verdict='FINDINGS'
+    elif ns.mode=='unsafe-mention': findings=[make_finding(severity='minor',family='MOCK-UNSAFE')];findings[0]['failure_family']='ALERT-\u200b@owner';verdict='FINDINGS'
     elif ns.mode=='mutate-head':
         import subprocess
         repo=task['binding']['workspace_ref'];Path(repo,'reviewer_mutation.txt').write_text('mutation\n');subprocess.run(['git','add','reviewer_mutation.txt'],cwd=repo,check=True);subprocess.run(['git','-c','user.email=mock@example.com','-c','user.name=mock','commit','-qm','reviewer mutation'],cwd=repo,check=True)
