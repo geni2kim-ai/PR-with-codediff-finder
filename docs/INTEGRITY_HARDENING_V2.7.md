@@ -10,11 +10,21 @@ The design therefore treats recovery files, locks, immutable case-bank entries, 
 
 ### Ledger append crash window
 
-Before mutating the JSONL ledger, the harness writes an append transaction containing the exact prior ledger byte digest, prior event hash, next event and optional HMAC. Recovery accepts only the exact interrupted transition.
+Before mutating the JSONL ledger, the harness writes an append transaction containing the exact prior ledger byte digest, prior event hash, next event, a logical event-instance identifier when supplied, and an optional HMAC. The digest is always an integrity check; the journal is authenticated only when HMAC authority is configured. If the ledger ends with an exact byte-prefix of the pending event, recovery verifies the pre-ledger SHA-256, truncates only that proven prefix, fsyncs, and retries the append. A malformed tail that is not the pending event prefix raises a typed `LedgerTornWriteError` and is not guessed or repaired.
 
 ### Dead lock recovery
 
-The ledger lock records its owner PID. A subsequent process may reclaim the lock immediately when that process no longer exists, instead of waiting for an arbitrary age threshold that exceeds the caller timeout.
+The ledger lock records owner PID, a process-instance identifier where the OS exposes one, and hashed machine/hostname/node identity components. Reclamation is limited to a stale lock attributable to the same host and is serialized through a separate reclaim guard, preventing a second reclaimer from deleting a freshly acquired lock.
+
+### Ledger HMAC downgrade boundary
+
+When an HMAC-backed ledger is created, v2.7 writes a sticky local `case-events.auth.json` witness outside the anchor. Validation also treats a non-null anchor/transaction `key_id` as an HMAC requirement. Deployments that need the requirement to survive deletion or rewriting of every local ledger-side trust file must provide an external expectation through `MAESTRO_LEDGER_EXPECT_KEY_ID` or the validation CLI `--expected-key-id`, together with the HMAC key. This external expectation is the fail-closed authority boundary; a fully mutable local bundle cannot cryptographically prove that an attacker deleted evidence of earlier HMAC use.
+
+Unsigned journals therefore provide digest/hash-chain integrity and deterministic crash recovery, not authentication. “Authenticated recovery journal” applies only to the HMAC-configured path.
+
+### Duplicate append semantics
+
+The recovery journal may carry `event_instance_id`. Replaying the same logical request with the same identifier returns the recovered event idempotently. A new append request without that identifier is treated as a new logical event even when type/payload are identical, so intentional repeated events are not silently swallowed.
 
 ### HUMAN transaction recovery
 
