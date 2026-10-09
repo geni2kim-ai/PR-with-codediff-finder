@@ -1040,3 +1040,81 @@ Git exact path 보존을 다시 검증하면서 host-path 차단 순서의 반�
 - mock도 production reviewer와 동일 output contract를 따르게 되어 회귀 테스트의 신뢰도가 오히려 높아짐
 
 이 항목은 보안 규칙을 테스트 때문에 완화하지 않고 **test double을 실제 계약에 맞추는 방향**으로 해결한다.
+
+### 38. runtime은 severity disagreement인데 Leonardo calibration/route는 agreement로 학습하는 문제
+
+#30~#32에서 path-aware material identity를 도입했지만 runtime과 장기 기록이 아직 완전히 같지 않았다.
+
+반례:
+1. L1: `SECURITY-CRITICAL`, 같은 axis/path, severity=`major`
+2. L2: 같은 failure family/axis/path, severity=`minor`
+3. 강제-review family이므로 minor도 NOTE_ONLY가 아니라 material finding
+4. runtime `disagreement()`는 `severity + material_finding_key`를 비교하므로 disagreement=true
+5. case-record에는 material key만 저장
+6. calibration/route는 같은 key로 보아 agreement=true
+
+영향:
+- 실제 authority path에서는 adversarial adjudication이 필요했는데 장기 Leonardo 지표는 합의로 기록
+- model/worker agreement rate 과대평가
+- 같은 case를 후속 routing할 때 runtime과 다른 이유 집합을 만들 수 있음
+
+보완:
+- retry identity인 `material_finding_key`와 review agreement identity를 분리
+- `material_finding_signature = severity|material_finding_key`를 harness가 결정적으로 계산
+- case-record에 optional `material_finding_signatures`를 저장
+- calibration과 route는 양쪽 row에 signature가 있으면 동일 signature multiset을 비교
+- campaign retry budget은 기존 key만 계속 사용하여 severity 재평가가 retry budget을 초기화하지 않음
+
+회귀:
+- 같은 key의 major vs forced-material minor → runtime disagreement=true
+- persisted signature 비교에서도 disagreement=true
+- route reason에 `L1_L2_DISAGREEMENT` 유지
+
+### 39. set 비교가 같은 material key의 finding 개수 차이를 숨기는 문제
+
+기존 runtime disagreement는 set을 사용했다.
+
+반례:
+1. L1이 같은 file/family/axis에서 material finding 두 개를 보고
+2. L2가 그중 하나만 보고
+3. 두 finding이 현재 coarse material key로 충돌
+4. `{severity,key}` set은 양쪽 모두 원소 하나가 되어 agreement 처리
+
+완전한 semantic defect identifier 없이 두 finding의 의미 자체를 안정적으로 구분할 수는 없지만, 적어도 **개수 손실**까지 허용할 이유는 없다.
+
+보완:
+- runtime agreement를 set이 아니라 정렬된 signature list, 즉 multiset으로 비교
+- case-record `material_finding_signatures`도 duplicate를 허용하여 multiplicity 보존
+- pre-signature v2.7 row도 `material_finding_keys + material_finding_count`를 coarse identity로 비교
+- 따라서 같은 key 2개 vs 1개는 runtime/calibration/route 모두 disagreement
+
+회귀:
+- 동일 signature 두 개 vs 한 개 → disagreement=true
+- retry budget은 여전히 unique material key 기준이므로 같은 coarse defect가 여러 번 표현됐다고 자동 remediation 횟수가 늘어나지 않음
+
+### 40. 새 signature row와 기존 key-only row가 섞일 때 형식 차이만으로 false disagreement가 생길 수 있는 문제
+
+severity-aware signature 초안을 적용한 뒤 upgrade/resume 호환성을 다시 시뮬레이션했다.
+
+반례:
+1. 한 row는 새 `material_finding_signatures` 보유
+2. 다른 row는 기존 v2.7 `material_finding_keys`만 보유
+3. 실제 material key/count는 동일
+4. representation 자체를 직접 비교하면 `severity-signature`와 `key` 형식이 다르다는 이유만으로 disagreement
+
+보완:
+- 양쪽 모두 새 signature를 가진 경우에만 severity-aware exact 비교
+- 한쪽이라도 pre-signature row이면 양쪽이 공통으로 가진 `key set + material_finding_count` 수준으로 downgrade 비교
+- 아주 오래된 identity-less row는 기존 state-only compatibility 유지
+- case-record validator는 signature가 존재하는 신규 row에서 signature count, key 집합, major/blocker count의 상호 정합성을 검증
+
+회귀:
+- new signature row vs 동일한 legacy key/count row → agreement
+- legacy same-key count 2 vs count 1 → disagreement
+- malformed persisted signature count/key/severity count → case semantic validation failure
+
+### 잔여 NOTE
+
+이번 보완으로 기존 NOTE의 가장 위험한 부분인 **severity 손실과 multiplicity 손실**은 제거했다. 다만 같은 file/family/axis에서 동일 severity로 발생한 서로 다른 두 결함을 reviewer들이 각각 하나씩 보고한 경우처럼, 개수까지 같은 완전한 coarse-key collision은 아직 구분할 수 없다.
+
+이를 해소하려면 claim 문구 hash처럼 불안정한 값을 쓰는 대신 reviewer 간/재시도 간 안정적인 semantic defect locator 계약이 필요하다. 현재 즉시 authority bypass나 무한 retry를 만드는 경로는 아니므로 schema-level 후속 설계 항목으로 유지한다.
