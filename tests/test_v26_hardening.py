@@ -9,7 +9,7 @@ TOOLS=ROOT/'tools'
 sys.path.insert(0,str(TOOLS))
 from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
-from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events
+from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events,case_bundle_lock,case_bundle_lock_path
 from policy_engine import classify_paths,derive_required_level,load_yaml
 from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys,campaign_control_path
 from calibration_report import material_state,summarize_cases
@@ -558,6 +558,34 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         with case_ledger.ledger_lock(lock_target,timeout=1.0):
             cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=20)
         self.assertEqual(cp.returncode,0,cp.stderr);self.assertTrue((out/'case-events.jsonl').is_file())
+
+    def test_active_history_waits_for_case_bundle_snapshot(self):
+        r,base=self._repo();case='BUNDLE-SNAPSHOT';out=r/'campaign-bundle-snapshot';ev=adapter(r,base)
+        cycle(r,ev,base,case,out=out)
+        case_path=out/'case-record.json';original_case=case_path.read_bytes();result={}
+        with case_bundle_lock(case_path,timeout=1.0):
+            case_path.write_text('{"partial":',encoding='utf-8')
+            def reader():
+                try:result['history']=campaign_history(out,case)
+                except Exception as exc:result['error']=exc
+            t=threading.Thread(target=reader);t.start();time.sleep(0.15)
+            self.assertTrue(t.is_alive(),'active history reader ignored case bundle lock and consumed a partial case-record')
+            case_path.write_bytes(original_case)
+        t.join(3.0);self.assertFalse(t.is_alive())
+        self.assertNotIn('error',result);self.assertEqual(len(result.get('history',[])),1)
+        self.assertFalse(str(case_bundle_lock_path(case_path)).startswith(str(r.resolve())+os.sep))
+
+    def test_outcome_writer_holds_case_bundle_lock_through_bundle_mutation(self):
+        r,base=self._repo();case='BUNDLE-OUTCOME';out=r/'campaign-bundle-outcome';ev=adapter(r,base)
+        cycle(r,ev,base,case,out=out);case_path=out/'case-record.json';ledger=out/'case-events.jsonl'
+        args=[sys.executable,str(TOOLS/'ingest_outcome.py'),'--case',str(case_path),'--ledger',str(ledger),'--author-response','fixed','--merged','false','--post-merge-status','not_applicable']
+        with case_bundle_lock(case_path,timeout=1.0):
+            proc=subprocess.Popen(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            time.sleep(0.15);self.assertIsNone(proc.poll(),'outcome writer bypassed case bundle lock')
+            self.assertFalse(any(e.get('event_type')=='OUTCOME_RECORDED' for e in load_events(ledger)))
+        stdout,stderr=proc.communicate(timeout=10);self.assertEqual(proc.returncode,0,stderr)
+        self.assertTrue(any(e.get('event_type')=='OUTCOME_RECORDED' for e in load_events(ledger)))
+        self.assertEqual(json.loads(case_path.read_text())['outcome']['author_response'],'fixed')
 
     def test_shared_root_history_waits_for_unrelated_ledger_append_lock(self):
         with tempfile.TemporaryDirectory() as td:
