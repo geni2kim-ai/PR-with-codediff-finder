@@ -8,7 +8,7 @@ from validate_case_record import semantic_errors
 from validate_case_bundle import errors as bundle_errors
 from validate_textdiff_evidence import semantic_errors as evidence_semantic_errors
 from validate_stage_result import validate as validate_stage_result
-from case_ledger import default_anchor_path
+from case_ledger import default_anchor_path,canonical_auth_witness_path
 from queue_policy import choose_queue
 def _trail_material_state(row):
     if row.get('verdict')=='BLOCKED':return 'BLOCKED'
@@ -196,6 +196,8 @@ def main():
     reasons=reasons_for(case,rsi);q=choose_queue(reasons,case.get('labels'),rsi,case.get('failure_families'));bank_parent=cb.parent;bank_parent.mkdir(parents=True,exist_ok=True);stage=Path(tempfile.mkdtemp(prefix=f'.{case["case_id"]}.stage-',dir=bank_parent))
     try:
         _copy(ns.case,stage/'case-record.json');_copy(evidence_path,stage/'textdiff-evidence.json');_copy(ns.ledger,stage/'case-events.jsonl');_copy(anchor,stage/'case-events.anchor.json')
+        auth_witness=canonical_auth_witness_path(ns.ledger)
+        if auth_witness.is_file():_copy(auth_witness,stage/'case-events.auth.json')
         if rsi_path:_copy(rsi_path,stage/'rsi-evaluation.json')
         _copy(l1_path,stage/'l1-review.json')
         if l2_path:_copy(l2_path,stage/'l2-review.json')
