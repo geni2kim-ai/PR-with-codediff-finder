@@ -1211,3 +1211,21 @@ severity-aware signature 초안을 적용한 뒤 upgrade/resume 호환성을 다
 - M3: **보완됨** — exact torn-tail recovery + typed failure
 - L1: **보완됨** — event-instance identity 도입
 - L2: **보완 진행** — receipt CI traceability 반영, 최종 CI 수치로 문서 재고정 예정
+
+### 47. CI traceability 필드를 같은 v2.7 receipt에서 필수화하면 기존 receipt가 깨지는 문제
+
+L2 보완으로 Actions run metadata를 source-package receipt에 추가한 뒤 migration 시나리오를 다시 검토했다.
+
+반례:
+1. 기존 v2.7 receipt에는 `validation_run_id` / `validation_run_attempt` / `validation_workflow_ref`가 없음
+2. 동일 `schema_version: 2.7`에서 이 세 필드를 required로 바꾸면 과거에 정상 발행된 receipt가 schema/semantic validation에서 실패
+3. traceability 개선이 기존 배포물 검증을 깨뜨리는 역회귀 발생
+
+보완:
+- 새 receipt 생성기는 세 traceability 필드를 계속 기록
+- schema의 required 집합은 기존 v2.7 필드 집합을 유지하고 새 세 필드는 optional extension으로 처리
+- semantic validator도 기존 required 필드가 모두 존재하고 unknown field가 없으면 허용
+- run ID/attempt는 둘 중 하나만 있는 경우에는 계속 거부
+- 기존 receipt에서 세 필드를 제거하고 digest를 재계산한 회귀 fixture가 schema + semantic validation을 모두 통과하는지 확인
+
+이로써 CI provenance 강화가 기존 v2.7 package receipt 읽기 호환성을 파괴하지 않는다.
