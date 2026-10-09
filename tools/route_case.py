@@ -16,11 +16,24 @@ def _trail_material_state(row):
         return 'FINDINGS' if int(row.get('material_finding_count',0))>0 else 'PASS'
     return row.get('verdict')
 
+def _trail_material_signature(row):
+    state=_trail_material_state(row)
+    keys=row.get('material_finding_keys')
+    if state!='FINDINGS':return (state,())
+    if isinstance(keys,list) and keys:
+        return (state,tuple(sorted(set(str(x) for x in keys if x))))
+    return (state,None)
+
+def _trail_material_agrees(a,b):
+    sa=_trail_material_signature(a);sb=_trail_material_signature(b)
+    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
+    return sa==sb
+
 def reasons_for(case,rsi=None):
     labels=set(case.get('labels',[]));trail=case.get('review_trail',[]);reasons=[];by={}
     for r in trail:by.setdefault(r['level'],[]).append(r)
     l1=by.get('L1',[]);l2=by.get('L2',[])
-    if l1 and l2 and _trail_material_state(l1[-1])!=_trail_material_state(l2[-1]):reasons.append('L1_L2_DISAGREEMENT')
+    if l1 and l2 and not _trail_material_agrees(l1[-1],l2[-1]):reasons.append('L1_L2_DISAGREEMENT')
     if any(r.get('confidence')=='low' for r in trail):reasons.append('LOW_CONFIDENCE')
     if 'novel_failure_family' in labels or (rsi and 'NOVEL-FAILURE-FAMILY' in rsi.get('failure_tags',[])):reasons.append('NOVEL_FAILURE_FAMILY')
     if 'governance' in labels:reasons.append('GOVERNANCE_CHANGE')
