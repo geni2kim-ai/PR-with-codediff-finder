@@ -109,6 +109,6 @@ def main():
     cfg=load_yaml(ns.limits).get('calibration',{});every=int(cfg.get('review_every_runs',500));summary=summarize_cases(cases,cfg)
     out={'schema_version':'2.7','cases_seen':len(cases),'invalid_or_unanchored_cases':invalid,**summary,
          'calibration_policy':{'review_every_runs':every,'review_due':len(cases)>=every,'completed_windows':(len(cases)//every if every>0 else 0),'metrics':cfg.get('metrics',[])},
-         'interpretation':'Machine-review agreement uses material finding state, so NOTE_ONLY does not count as a reversal. HUMAN CONFIRMED/REJECTED is reported as confirmation/rejection of its parent review rather than compared as a different verdict vocabulary. Recurring NOTE_ONLY keys are proposal signals only and do not auto-change standards.'}
+         'interpretation':'Machine-review agreement uses severity-aware material signatures when both rows provide them, falls back to material key+count for pre-signature v2.7 compatibility, and uses state-only comparison only for older identity-less rows. NOTE_ONLY does not count as a material reversal. HUMAN CONFIRMED/REJECTED is reported as confirmation/rejection of its parent review rather than compared as a different verdict vocabulary. Recurring NOTE_ONLY keys are proposal signals only and do not auto-change standards.'}
     Path(ns.output).write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');print(ns.output)
 if __name__=='__main__':main()
