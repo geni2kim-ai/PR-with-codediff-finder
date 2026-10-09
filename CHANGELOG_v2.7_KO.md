@@ -102,3 +102,4 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - reviewer finding path를 stage validation에서 repository-relative 안전경로로 검증하고 traversal/absolute/drive path를 invalid result로 차단.
 - changed_paths 밖 finding은 preexisting=true + activated_or_worsened=true일 때만 허용하여 무관한 pre-existing issue가 escalation/repeat/calibration을 오염하는 경로 차단.
 - reviewer worker contract에 exact Git changed_paths spelling 및 off-diff activated/worsened 예외 규칙 명시.
+- exact changed Git path가 Windows drive/UNC처럼 보이는 literal filename일 경우 task changed_paths authority를 우선하여 host-path heuristic false positive를 방지.
