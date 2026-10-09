@@ -3,7 +3,7 @@ import argparse,json
 from pathlib import Path
 from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
-from common import object_digest
+from common import object_digest,canonical_finding_path
 from sanitize_review_text import scan_stage_result
 TASK_SCHEMA=json.loads((ROOT/'schemas/reviewer-task.schema.json').read_text())
 SCHEMA=json.loads((ROOT/'schemas/reviewer-stage-result.schema.json').read_text())
@@ -24,6 +24,16 @@ def semantic_errors(o,task=None):
         if task['level'] in {'L2','ADVERSARIAL'} and not r.get('independent_context'):e.append(f'{task["level"]} must report independent_context=true')
         if len(findings)>task['limits']['max_findings']:e.append('finding count exceeds task limit')
         if nits>task['limits']['max_nits']:e.append('nit count exceeds task limit')
+        changed_paths=task.get('changed_paths',[])
+        changed_set=set(changed_paths)
+        for f in findings:
+            fid=str(f.get('finding_id') or '?')
+            try:canonical_path=canonical_finding_path(f.get('path'),changed_paths)
+            except ValueError as exc:
+                e.append(f'finding {fid} path invalid: {exc}')
+                continue
+            if canonical_path not in changed_set and not (f.get('preexisting') is True and f.get('activated_or_worsened') is True):
+                e.append(f'finding {fid} outside changed_paths requires preexisting=true and activated_or_worsened=true')
     reported=o.get('output_safety',{})
     computed=scan_stage_result(o)
     if reported != computed:e.append('output_safety does not match harness-computed safety scan')
