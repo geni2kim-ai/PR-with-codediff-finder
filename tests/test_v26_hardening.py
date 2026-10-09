@@ -11,7 +11,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,sha256_file
 import case_ledger
 from case_ledger import append_event,default_anchor_path,load_events,validate_anchor,validate_events,case_bundle_lock,case_bundle_lock_path
 from policy_engine import classify_paths,derive_required_level,load_yaml
-from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys,campaign_control_path
+from run_review_cycle import audit_sample,worker_command_digest,finding_disposition,stage_signals,campaign_history,evaluate_review_budget,material_finding_key,authoritative_material_keys,campaign_control_path,choose_out_dir
 from calibration_report import material_state,summarize_cases
 import record_human_decision
 from sanitize_review_text import scan_text,scan_stage_result
@@ -147,11 +147,22 @@ class LedgerHardeningTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'append transaction digest mismatch'):
                 campaign_history(root,'CAMP-TX-TAMPER',key)
 
-    def test_dead_ledger_lock_is_reclaimed_after_process_interruption(self):
+    def test_dead_same_host_ledger_lock_is_reclaimed_after_process_interruption(self):
         with tempfile.TemporaryDirectory() as td:
-            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock');lock.write_text('2147483647')
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.socket.gethostname(),'pid':2147483647,'token':'dead-local'}))
             start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
             self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
+
+    def test_foreign_host_ledger_lock_is_never_reclaimed_as_local_dead_pid(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            foreign={'schema_version':'2.7','host':'foreign-node.example','pid':2147483647,'token':'remote-active'}
+            lock.write_text(json.dumps(foreign))
+            with self.assertRaises(TimeoutError):
+                with case_ledger.ledger_lock(p,timeout=0.08):
+                    self.fail('foreign-host lock was incorrectly reclaimed')
+            self.assertEqual(json.loads(lock.read_text()),foreign)
 
 
     def test_unicode_line_separator_payload_does_not_corrupt_ledger(self):
@@ -551,6 +562,26 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertNotEqual(cp.returncode,0);self.assertIn('same case is not allowed',cp.stderr+cp.stdout)
         self.assertFalse((out/'case-events.jsonl').exists())
 
+    def test_foreign_host_campaign_case_lock_blocks_same_case_before_review(self):
+        r,base=self._repo();case='BUDGET-CROSS-HOST';out=r/'campaign-cross-host';ev=adapter(r,base)
+        target=campaign_control_path(out,'case',case);lock=Path(str(target)+'.lock')
+        foreign={'schema_version':'2.7','host':'pc2-remote','pid':999999,'token':'pc2-active'}
+        lock.write_text(json.dumps(foreign))
+        args=[sys.executable,str(TOOLS/'run_review_cycle.py'),'--repo',str(r),'--evidence',str(ev),'--expected-base',base,'--case-id',case,'--output-dir',str(out),'--l1-cmd-json',cmdjson('pass'),'--disable-random-audit']
+        cp=subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=10)
+        self.assertNotEqual(cp.returncode,0);self.assertIn('same case is not allowed',cp.stderr+cp.stdout)
+        self.assertEqual(json.loads(lock.read_text()),foreign)
+        self.assertFalse((out/'case-events.jsonl').exists())
+
+    def test_campaign_allocation_lock_is_shared_root_visible(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)/'shared-campaign';target=campaign_control_path(root,'allocation');lock=Path(str(target)+'.lock')
+            foreign={'schema_version':'2.7','host':'pc2-remote','pid':888888,'token':'allocator'}
+            lock.write_text(json.dumps(foreign))
+            with self.assertRaisesRegex(SystemExit,'output allocation is busy'):
+                choose_out_dir(root,True)
+            self.assertEqual(json.loads(lock.read_text()),foreign)
+
     def test_different_case_lock_does_not_serialize_shared_output_root(self):
         r,base=self._repo();out=r/'campaign-shared-lock';ev=adapter(r,base);held_case='LOCK-CASE-A';run_case='LOCK-CASE-B'
         lock_target=campaign_control_path(out,'case',held_case)
@@ -573,7 +604,8 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
             case_path.write_bytes(original_case)
         t.join(3.0);self.assertFalse(t.is_alive())
         self.assertNotIn('error',result);self.assertEqual(len(result.get('history',[])),1)
-        self.assertFalse(str(case_bundle_lock_path(case_path)).startswith(str(r.resolve())+os.sep))
+        self.assertEqual(case_bundle_lock_path(case_path).parent,out/'.codediff-control')
+        self.assertFalse(Path(str(case_bundle_lock_path(case_path))+'.lock').exists())
 
     def test_outcome_writer_holds_case_bundle_lock_through_bundle_mutation(self):
         r,base=self._repo();case='BUNDLE-OUTCOME';out=r/'campaign-bundle-outcome';ev=adapter(r,base)
