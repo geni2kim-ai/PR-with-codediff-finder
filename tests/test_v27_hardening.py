@@ -139,6 +139,11 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             schema=json.loads((ROOT/'schemas/source-package-receipt.schema.json').read_text(encoding='utf-8'))
             self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)),[])
             self.assertEqual(validate_package_receipt(receipt,pkg,manifest),[])
+            legacy=json.loads(json.dumps(receipt))
+            for k in ('validation_run_id','validation_run_attempt','validation_workflow_ref'):legacy.pop(k,None)
+            legacy['receipt_digest']='';legacy['receipt_digest']=__import__('common').object_digest(legacy,'receipt_digest')
+            self.assertEqual(list(Draft202012Validator(schema).iter_errors(legacy)),[])
+            self.assertEqual(validate_package_receipt(legacy,pkg,manifest),[])
             pkg.write_bytes(b'tampered')
             self.assertIn('source package sha256 mismatch',validate_package_receipt(receipt,pkg,manifest))
             pkg.write_bytes(b'zip-bytes');leaked=json.loads(json.dumps(receipt));leaked['path']='secret';leaked['receipt_digest']=''
