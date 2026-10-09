@@ -106,12 +106,23 @@ def _stable_machine_identity_source():
         if value:return f'linux-machine-id:{value}'
     return None
 
-def lock_machine_id():
-    source=_stable_machine_identity_source()
-    if not source:return None
+def _lock_component_id(kind,value):
+    if value is None:return None
+    value=str(value).strip()
+    if not value:return None
     explicit=(os.environ.get('MAESTRO_LOCK_HOST_ID') or '').strip()
-    material=(explicit+'\0'+source) if explicit else source
-    return 'machine:'+hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]
+    material=(explicit+'\0'+kind+'\0'+value) if explicit else (kind+'\0'+value)
+    return kind+':'+hashlib.sha256(material.encode('utf-8')).hexdigest()[:32]
+
+def lock_machine_id():
+    return _lock_component_id('machine',_stable_machine_identity_source())
+
+def lock_identity_components():
+    return {
+        'machine_id':lock_machine_id(),
+        'hostname_id':_lock_component_id('hostname',socket.gethostname()),
+        'node_id':_lock_component_id('node',f'{uuid.getnode():012x}'),
+    }
 
 def lock_local_fingerprint():
     return f'{socket.gethostname()}:{uuid.getnode():012x}'
@@ -135,9 +146,10 @@ def _lock_owner(raw):
             process_instance=obj.get('process_instance')
             if process_instance is not None and (not isinstance(process_instance,str) or not process_instance):
                 return None
-            machine_id=obj.get('machine_id')
-            if machine_id is not None and (not isinstance(machine_id,str) or not machine_id):
-                return None
+            for identity_key in ('machine_id','hostname_id','node_id'):
+                identity_value=obj.get(identity_key)
+                if identity_value is not None and (not isinstance(identity_value,str) or not identity_value):
+                    return None
             return obj
     except Exception:
         pass
@@ -146,11 +158,14 @@ def _lock_owner(raw):
     if raw.isdigit():return {'legacy_pid':int(raw)}
     return None
 
-def _same_host_lock_is_stale(existing,host,machine_id=None):
+def _same_host_lock_is_stale(existing,host,identity=None):
     if not existing:return False
     same_host=existing.get('host')==host
-    if not same_host and machine_id and existing.get('machine_id')==machine_id:
-        same_host=True
+    if not same_host and identity:
+        machine_match=bool(identity.get('machine_id') and existing.get('machine_id')==identity.get('machine_id'))
+        hostname_match=bool(identity.get('hostname_id') and existing.get('hostname_id')==identity.get('hostname_id'))
+        node_match=bool(identity.get('node_id') and existing.get('node_id')==identity.get('node_id'))
+        same_host=machine_match and (hostname_match or node_match)
     if not same_host:return False
     pid=existing.get('pid')
     expected_instance=existing.get('process_instance')
@@ -166,7 +181,7 @@ def _unlink_lock_if_unchanged(lock,expected_raw):
         lock.unlink();return True
     except FileNotFoundError:return False
 
-def _reclaim_stale_lock(lock,host,machine_id=None):
+def _reclaim_stale_lock(lock,host,identity=None):
     # Stale reclamation needs its own atomic guard. Without this, two
     # reclaimers can both validate an old lock; one may then delete the fresh
     # lock installed by the other between compare and unlink.
@@ -177,7 +192,7 @@ def _reclaim_stale_lock(lock,host,machine_id=None):
         try:raw=lock.read_text(encoding='utf-8')
         except FileNotFoundError:return False
         existing=_lock_owner(raw)
-        if not _same_host_lock_is_stale(existing,host,machine_id):return False
+        if not _same_host_lock_is_stale(existing,host,identity):return False
         return _unlink_lock_if_unchanged(lock,raw)
     finally:
         try:guard.rmdir()
@@ -186,9 +201,9 @@ def _reclaim_stale_lock(lock,host,machine_id=None):
 @contextmanager
 def ledger_lock(path,timeout=10.0):
     lock=Path(str(path)+'.lock');lock.parent.mkdir(parents=True,exist_ok=True);deadline=time.monotonic()+timeout;fd=None
-    host=lock_host_id();machine_id=lock_machine_id();token=f'{os.getpid()}-{time.time_ns()}'
+    host=lock_host_id();identity=lock_identity_components();token=f'{os.getpid()}-{time.time_ns()}'
     owner={'schema_version':'2.7','host':host,'pid':os.getpid(),'token':token}
-    if machine_id is not None:owner['machine_id']=machine_id
+    owner.update({k:v for k,v in identity.items() if v is not None})
     process_instance=_process_instance_id(os.getpid())
     if process_instance is not None:owner['process_instance']=process_instance
     encoded=(json.dumps(owner,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
@@ -211,7 +226,7 @@ def ledger_lock(path,timeout=10.0):
             try:
                 raw=lock.read_text(encoding='utf-8')
                 existing=_lock_owner(raw)
-                if _same_host_lock_is_stale(existing,host,machine_id) and _reclaim_stale_lock(lock,host,machine_id):continue
+                if _same_host_lock_is_stale(existing,host,identity) and _reclaim_stale_lock(lock,host,identity):continue
             except FileNotFoundError:
                 continue
             if time.monotonic()>=deadline:raise TimeoutError(f'ledger lock timeout: {lock}')
