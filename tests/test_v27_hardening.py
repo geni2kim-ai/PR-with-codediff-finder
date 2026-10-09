@@ -204,6 +204,10 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertFalse(any('path invalid' in x or 'outside changed_paths' in x for x in activated),activated)
         unsafe=self._stage_path_errors('../src/a.py')
         self.assertTrue(any('path invalid' in x for x in unsafe),unsafe)
+        unsafe_even_if_listed=self._stage_path_errors('../src/a.py',changed_paths=['../src/a.py'])
+        self.assertTrue(any('path invalid' in x for x in unsafe_even_if_listed),unsafe_even_if_listed)
+        wrong_separator=self._stage_path_errors(r'src\\a.py',changed_paths=['src/a.py'])
+        self.assertTrue(any('outside changed_paths' in x for x in wrong_separator),wrong_separator)
 
 
 if __name__=='__main__':
