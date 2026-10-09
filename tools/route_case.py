@@ -18,10 +18,13 @@ def _trail_material_state(row):
 
 def _trail_material_signature(row):
     state=_trail_material_state(row)
-    keys=row.get('material_finding_keys')
     if state!='FINDINGS':return (state,())
+    signatures=row.get('material_finding_signatures')
+    if isinstance(signatures,list) and signatures:
+        return (state,('severity_keys',tuple(sorted(str(x) for x in signatures if x))))
+    keys=row.get('material_finding_keys')
     if isinstance(keys,list) and keys:
-        return (state,tuple(sorted(set(str(x) for x in keys if x))))
+        return (state,('keys',tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))))
     return (state,None)
 
 def _trail_material_agrees(a,b):
