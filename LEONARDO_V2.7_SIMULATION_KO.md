@@ -897,3 +897,32 @@ material repeat key의 path를 raw reviewer 문자열 그대로 사용하면 동
 - 다른 실제 path는 계속 다른 identity로 유지
 
 이 두 보완은 review 단계를 무조건 늘리는 변경이 아니다. **서로 다른 결함은 disagreement로 분리하고, 같은 결함의 표기 차이는 하나로 합쳐** 불필요한 반복과 과소 에스컬레이션을 동시에 줄인다.
+
+### 32. Leonardo calibration이 서로 다른 material finding을 FINDINGS라는 이유만으로 agreement로 학습하는 문제
+
+런타임 disagreement를 path-aware identity로 고친 뒤 장기 calibration 경로를 다시 시뮬레이션했다.
+
+반례:
+1. L1 material key = `finding:path-a`
+2. L2 material key = `finding:path-b`
+3. 둘 다 material finding이 있으므로 `material_state()==FINDINGS`
+4. 기존 calibration은 state 문자열만 비교하여 L1을 final L2와 agreement로 집계
+5. downstream `route_case`도 두 단계가 모두 FINDINGS이면 disagreement reason을 만들지 않음
+
+영향:
+- 실제로 서로 다른 결함을 보고한 reviewer를 “정확히 일치”한 것으로 학습
+- model/worker agreement rate가 과대평가될 수 있음
+- 장기적으로 reviewer routing/calibration 판단이 잘못된 방향으로 수렴할 수 있음
+
+보완:
+- v2.7의 `material_finding_keys`가 존재하면 calibration agreement/reversal을 exact key-set identity로 비교
+- 과거/부분 레코드처럼 material key가 없으면 state-only 비교로 backward compatibility 유지
+- `route_case`의 L1/L2 disagreement도 같은 key-set 의미론으로 통일
+- NOTE_ONLY는 기존처럼 material PASS로 유지
+
+회귀:
+- L1/L2가 모두 FINDINGS이지만 key set이 다름 → agreement=0, reversal=1
+- 같은 case의 routing reason에 `L1_L2_DISAGREEMENT` 포함
+- legacy key-missing record는 기존 state-only 의미론 유지
+
+이 보완으로 런타임 authority path와 Leonardo 장기 학습이 같은 material identity를 사용하게 된다.
