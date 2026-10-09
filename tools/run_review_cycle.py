@@ -582,21 +582,24 @@ def cycle_obj(case_id,binding,evidence,stages,required,achieved,state,reasons,mo
     c['gate_conclusion']=cycle_gate(state,required,achieved,current_stage,esc_cfg);c['cycle_digest']=object_digest(c,'cycle_digest');return c
 
 def campaign_control_path(root,kind,case_id=None):
-    base=Path(tempfile.gettempdir())/'codediff-finder-campaign-locks'
+    root=Path(root).resolve();root.mkdir(parents=True,exist_ok=True)
+    base=root/'.codediff-control'
     base.mkdir(mode=0o700,parents=True,exist_ok=True)
     try:os.chmod(base,0o700)
     except OSError:pass
-    root_token=sha256_bytes(str(Path(root).resolve()).encode('utf-8'))[:24]
     case_token=('-'+sha256_bytes(case_id.encode('utf-8'))[:16]) if case_id is not None else ''
-    return base/f'{root_token}-{kind}{case_token}'
+    return base/f'campaign-{kind}{case_token}'
+
+def _campaign_payload_entries(root):
+    ignored={'.codediff-control','.campaign-root-reserved'}
+    return [p for p in Path(root).iterdir() if p.name not in ignored]
 
 def choose_out_dir(raw,retry):
-    root=Path(raw).resolve();root.parent.mkdir(parents=True,exist_ok=True)
+    root=Path(raw).resolve();root.parent.mkdir(parents=True,exist_ok=True);root.mkdir(parents=True,exist_ok=True)
     allocation_target=campaign_control_path(root,'allocation')
     try:
         with ledger_lock(allocation_target,timeout=1.0):
-            root.mkdir(parents=True,exist_ok=True)
-            if not any(root.iterdir()):
+            if not _campaign_payload_entries(root) and not (root/'.campaign-root-reserved').exists():
                 (root/'.campaign-root-reserved').write_text('reserved\n',encoding='utf-8')
                 return root
             if not retry:raise SystemExit('output-dir must be empty for a new immutable review cycle (use --retry to create a new attempt subdirectory)')
