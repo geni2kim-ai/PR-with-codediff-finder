@@ -17,6 +17,8 @@ L2 must be independent of L1: do not request or infer L1 conclusions. Adversaria
 ## Review axes
 Review changed behavior for correctness/security, repository standards, trusted spec, test integrity, supply-chain/compatibility, and risk. Within correctness/security and risk, explicitly inspect interruption recovery and idempotency where state mutation is involved. Do not report unchanged pre-existing issues unless the change activates or worsens them. Skip style rules already deterministically enforced.
 
+On a changed file, use the repository path spelling exactly as supplied in task `changed_paths` (Git path semantics use `/`; do not rewrite separators). A finding on a path outside `changed_paths` is allowed only for an unchanged pre-existing issue that this change activates or worsens, and must set both `preexisting=true` and `activated_or_worsened=true`. Absolute paths and traversal spellings are invalid.
+
 Every finding must identify evidence, impact and a concrete recommendation. Use `nit`/`minor` for low-importance observations that can safely be recorded without immediate remediation; do not request escalation solely because of such a finding when risk remains baseline. Use `major`/`blocker` only for defects important enough to require additional agent review or stronger handling. Preserve uncertainty through confidence and certainty. Do not decide final merge authority or lower a harness policy floor.
 
 ## Output safety
