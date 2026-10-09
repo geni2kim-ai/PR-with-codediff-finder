@@ -42,55 +42,54 @@ def _transaction_hmac(tx,key):
     return hmac.new(key.encode('utf-8'),canonical_bytes(core),hashlib.sha256).hexdigest()
 
 def _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,repo,att_path,ledger_key,human_key,ledger_key_id,replay_dir):
-    with case_bundle_lock(case_path):
-        tx=json.loads(Path(tx_path).read_text())
-        if tx.get('transaction_digest')!=object_digest({k:v for k,v in tx.items() if k!='transaction_hmac'},'transaction_digest'):raise SystemExit('human transaction digest mismatch')
-        if not human_key:raise SystemExit('human transaction HMAC key unavailable')
-        mac=tx.get('transaction_hmac')
-        if not mac or not hmac.compare_digest(mac,_transaction_hmac(tx,human_key)):raise SystemExit('human transaction HMAC mismatch')
-        req=tx['request'];head=git_head(repo)
-        expected_transaction_id=sha256_bytes(canonical_bytes({'case_id':req.get('case_id'),'review_id':req.get('review_id'),'attestation_digest':req.get('attestation_digest'),'source_cycle_digest':req.get('source_cycle_digest')}))
-        if req.get('transaction_id')!=expected_transaction_id:raise SystemExit('human transaction id mismatch')
-        if head!=req['head_sha']:raise SystemExit('repository HEAD changed since human transaction; recovery refused')
-        att=tx['attestation']
-        ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key,enforce_freshness=False)
-        if ae:raise SystemExit('invalid human decision attestation during recovery: '+'; '.join(ae))
-        if human_attestation_digest(att)!=req['attestation_digest']:raise SystemExit('human transaction attestation digest mismatch')
-        replay_error,_=consume_human_nonce(att,replay_dir,req['transaction_id'])
-        if replay_error:raise SystemExit(replay_error)
-        updated_case=tx['updated_case'];updated_cycle=tx['updated_cycle']
-        ce=_validate_case(updated_case)+_validate_cycle(updated_cycle)
-        if ce:raise SystemExit('human transaction state invalid: '+'; '.join(ce))
-        if updated_case.get('case_id')!=req['case_id'] or updated_case.get('binding',{}).get('head_sha')!=head:raise SystemExit('human transaction case binding mismatch')
-        expected_state='HUMAN_CONFIRMED' if req['verdict']=='CONFIRMED' else 'HUMAN_REJECTED'
-        expected_gate='success' if req['verdict']=='CONFIRMED' else 'failure'
-        if updated_cycle.get('state')!=expected_state or updated_cycle.get('gate_conclusion')!=expected_gate or updated_cycle.get('achieved_level')!='HUMAN':
-            raise SystemExit('human transaction terminal state mismatch')
-    
+    tx=json.loads(Path(tx_path).read_text())
+    if tx.get('transaction_digest')!=object_digest({k:v for k,v in tx.items() if k!='transaction_hmac'},'transaction_digest'):raise SystemExit('human transaction digest mismatch')
+    if not human_key:raise SystemExit('human transaction HMAC key unavailable')
+    mac=tx.get('transaction_hmac')
+    if not mac or not hmac.compare_digest(mac,_transaction_hmac(tx,human_key)):raise SystemExit('human transaction HMAC mismatch')
+    req=tx['request'];head=git_head(repo)
+    expected_transaction_id=sha256_bytes(canonical_bytes({'case_id':req.get('case_id'),'review_id':req.get('review_id'),'attestation_digest':req.get('attestation_digest'),'source_cycle_digest':req.get('source_cycle_digest')}))
+    if req.get('transaction_id')!=expected_transaction_id:raise SystemExit('human transaction id mismatch')
+    if head!=req['head_sha']:raise SystemExit('repository HEAD changed since human transaction; recovery refused')
+    att=tx['attestation']
+    ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key,enforce_freshness=False)
+    if ae:raise SystemExit('invalid human decision attestation during recovery: '+'; '.join(ae))
+    if human_attestation_digest(att)!=req['attestation_digest']:raise SystemExit('human transaction attestation digest mismatch')
+    replay_error,_=consume_human_nonce(att,replay_dir,req['transaction_id'])
+    if replay_error:raise SystemExit(replay_error)
+    updated_case=tx['updated_case'];updated_cycle=tx['updated_cycle']
+    ce=_validate_case(updated_case)+_validate_cycle(updated_cycle)
+    if ce:raise SystemExit('human transaction state invalid: '+'; '.join(ce))
+    if updated_case.get('case_id')!=req['case_id'] or updated_case.get('binding',{}).get('head_sha')!=head:raise SystemExit('human transaction case binding mismatch')
+    expected_state='HUMAN_CONFIRMED' if req['verdict']=='CONFIRMED' else 'HUMAN_REJECTED'
+    expected_gate='success' if req['verdict']=='CONFIRMED' else 'failure'
+    if updated_cycle.get('state')!=expected_state or updated_cycle.get('gate_conclusion')!=expected_gate or updated_cycle.get('achieved_level')!='HUMAN':
+        raise SystemExit('human transaction terminal state mismatch')
+
+    events=load_events(ledger)
+    errs=validate_events(events,req['case_id'])+validate_anchor(ledger,anchor,events,req['case_id'],ledger_key,require_hmac=(updated_cycle.get('execution_mode')=='ENFORCED'))
+    if errs:raise SystemExit('invalid ledger during human transaction recovery: '+'; '.join(errs))
+
+    hp=tx['human_event_payload'];cp=tx['close_event_payload']
+    human=_matching_event(events,'HUMAN_DECISION',lambda p:p.get('review_id')==req['review_id'])
+    if human:
+        if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
+    else:
+        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
         events=load_events(ledger)
-        errs=validate_events(events,req['case_id'])+validate_anchor(ledger,anchor,events,req['case_id'],ledger_key,require_hmac=(updated_cycle.get('execution_mode')=='ENFORCED'))
-        if errs:raise SystemExit('invalid ledger during human transaction recovery: '+'; '.join(errs))
-    
-        hp=tx['human_event_payload'];cp=tx['close_event_payload']
-        human=_matching_event(events,'HUMAN_DECISION',lambda p:p.get('review_id')==req['review_id'])
-        if human:
-            if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
-        else:
-            append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
-            events=load_events(ledger)
-    
-        close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
-        if close:
-            if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
-        else:
-            append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
-    
-        _atomic_json(case_path,updated_case)
-        _atomic_json(cycle_path,updated_cycle)
-        _atomic_json(att_path,att)
-        Path(tx_path).unlink(missing_ok=True)
-        return updated_cycle
-    
+
+    close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
+    if close:
+        if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
+    else:
+        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+
+    _atomic_json(case_path,updated_case)
+    _atomic_json(cycle_path,updated_cycle)
+    _atomic_json(att_path,att)
+    Path(tx_path).unlink(missing_ok=True)
+    return updated_cycle
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--case',required=True);ap.add_argument('--cycle',required=True);ap.add_argument('--ledger',required=True);ap.add_argument('--anchor')
@@ -115,57 +114,58 @@ def main():
     if replay_dir==case_bundle_dir or case_bundle_dir in replay_dir.parents:
         raise SystemExit('human replay cache must be outside the mutable case bundle')
 
-    if tx_path.exists():
-        tx=json.loads(tx_path.read_text())
-        req=tx.get('request',{})
-        expected={'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'attestation_digest':supplied_digest}
-        for k,v in expected.items():
-            if req.get(k)!=v:raise SystemExit(f'pending human transaction does not match request: {k}')
+    with case_bundle_lock(case_path):
+        if tx_path.exists():
+            tx=json.loads(tx_path.read_text())
+            req=tx.get('request',{})
+            expected={'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'attestation_digest':supplied_digest}
+            for k,v in expected.items():
+                if req.get(k)!=v:raise SystemExit(f'pending human transaction does not match request: {k}')
+            _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
+            print(cycle_path);return
+    
+        case=json.loads(case_path.read_text());cycle=json.loads(cycle_path.read_text())
+        errs=_validate_case(case)+_validate_cycle(cycle)
+        if errs:raise SystemExit('invalid case/cycle: '+'; '.join(errs))
+        if cycle.get('state')!='HUMAN_REQUIRED' or cycle.get('required_level')!='HUMAN':
+            raise SystemExit('human decision requires HUMAN_REQUIRED cycle')
+        if case.get('case_id')!=cycle.get('case_id') or case.get('binding',{}).get('head_sha')!=cycle.get('binding',{}).get('head_sha'):
+            raise SystemExit('case/cycle binding mismatch')
+    
+        events=load_events(ledger)
+        errs=validate_events(events,case['case_id'])+validate_anchor(ledger,anchor,events,case['case_id'],ledger_key,require_hmac=(cycle.get('execution_mode')=='ENFORCED'))
+        errs+=bundle_errors(case,ledger,anchor,cycle.get('execution_mode')=='ENFORCED',ledger_key)
+        if errs:raise SystemExit('invalid anchored case bundle: '+'; '.join(errs))
+        close=_latest_close(events)
+        if not close or close.get('payload',{}).get('cycle_digest')!=cycle.get('cycle_digest'):
+            raise SystemExit('current cycle is not bound to latest CYCLE_CLOSED ledger event')
+    
+        head=git_head(ns.repo)
+        if head!=case['binding']['head_sha']:raise SystemExit('repository HEAD changed since review; human decision refused')
+        ae=validate_human_attestation(supplied_att,case_id=case['case_id'],actor_id=ns.node_id,verdict=ns.verdict,head_sha=head,cycle_digest=cycle['cycle_digest'],evidence_digest=case['sensor']['evidence_digest'],key=human_key)
+        if ae:raise SystemExit('invalid human decision attestation: '+'; '.join(ae))
+    
+        trail=case.get('review_trail',[]);parent=ns.source_review_id or (trail[-1]['review_id'] if trail else None);last=trail[-1] if trail else None
+        result_payload={'review_id':ns.review_id,'parent_review_id':parent,'level':'HUMAN','node_id':ns.node_id,'model':None,'verdict':ns.verdict,'confidence':'not_applicable','reviewed_head_sha':head,'evidence_digest':case['sensor']['evidence_digest'],'note':ns.note,'attestation_digest':supplied_digest}
+        row={'review_id':ns.review_id,'parent_review_id':parent,'level':'HUMAN','node_id':ns.node_id,'model':None,'verdict':ns.verdict,'confidence':'not_applicable','result_digest':object_digest(result_payload),'reviewed_head_sha':head,'evidence_digest':case['sensor']['evidence_digest'],'input_digest':sha256_bytes(canonical_bytes(result_payload)),'prompt_digest':ZERO,'skill_digest':ZERO,'policy_digest':(last or {}).get('policy_digest',ZERO),'standards_digest':(last or {}).get('standards_digest',ZERO),'worker_command_digest':ZERO,'independent_context':True,'requested_level':'HUMAN','achieved_level':'HUMAN','timestamp':supplied_att.get('issued_at'),'finding_families':[]}
+        updated_case=json.loads(json.dumps(case));updated_case['review_trail'].append(row)
+        ce=_validate_case(updated_case)
+        if ce:raise SystemExit('updated case invalid: '+'; '.join(ce))
+    
+        updated_cycle=json.loads(json.dumps(cycle));updated_cycle['achieved_level']='HUMAN';updated_cycle['current_head_verified']=True;updated_cycle['ledger_anchor_verified']=True
+        updated_cycle['state']='HUMAN_CONFIRMED' if ns.verdict=='CONFIRMED' else 'HUMAN_REJECTED'
+        updated_cycle['gate_conclusion']='success' if ns.verdict=='CONFIRMED' else 'failure'
+        updated_cycle['cycle_digest']='';updated_cycle['cycle_digest']=object_digest(updated_cycle,'cycle_digest')
+        ce=_validate_cycle(updated_cycle)
+        if ce:raise SystemExit('updated cycle invalid: '+'; '.join(ce))
+    
+        human_event={'review_id':ns.review_id,'actor_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'result_digest':row['result_digest'],'note_digest':sha256_bytes(ns.note.encode()),'attestation_digest':supplied_digest}
+        close_event={'state':updated_cycle['state'],'cycle_digest':updated_cycle['cycle_digest'],'gate_conclusion':updated_cycle['gate_conclusion'],'human_review_id':ns.review_id,'human_attestation_digest':supplied_digest}
+        transaction_id=sha256_bytes(canonical_bytes({'case_id':case['case_id'],'review_id':ns.review_id,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest']}))
+        tx={'schema_version':'2.7','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event,'transaction_digest':''}
+        tx['transaction_digest']=object_digest(tx,'transaction_digest');tx['transaction_hmac']=_transaction_hmac(tx,human_key)
+        _atomic_json(tx_path,tx)
         _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
-        print(cycle_path);return
-
-    case=json.loads(case_path.read_text());cycle=json.loads(cycle_path.read_text())
-    errs=_validate_case(case)+_validate_cycle(cycle)
-    if errs:raise SystemExit('invalid case/cycle: '+'; '.join(errs))
-    if cycle.get('state')!='HUMAN_REQUIRED' or cycle.get('required_level')!='HUMAN':
-        raise SystemExit('human decision requires HUMAN_REQUIRED cycle')
-    if case.get('case_id')!=cycle.get('case_id') or case.get('binding',{}).get('head_sha')!=cycle.get('binding',{}).get('head_sha'):
-        raise SystemExit('case/cycle binding mismatch')
-
-    events=load_events(ledger)
-    errs=validate_events(events,case['case_id'])+validate_anchor(ledger,anchor,events,case['case_id'],ledger_key,require_hmac=(cycle.get('execution_mode')=='ENFORCED'))
-    errs+=bundle_errors(case,ledger,anchor,cycle.get('execution_mode')=='ENFORCED',ledger_key)
-    if errs:raise SystemExit('invalid anchored case bundle: '+'; '.join(errs))
-    close=_latest_close(events)
-    if not close or close.get('payload',{}).get('cycle_digest')!=cycle.get('cycle_digest'):
-        raise SystemExit('current cycle is not bound to latest CYCLE_CLOSED ledger event')
-
-    head=git_head(ns.repo)
-    if head!=case['binding']['head_sha']:raise SystemExit('repository HEAD changed since review; human decision refused')
-    ae=validate_human_attestation(supplied_att,case_id=case['case_id'],actor_id=ns.node_id,verdict=ns.verdict,head_sha=head,cycle_digest=cycle['cycle_digest'],evidence_digest=case['sensor']['evidence_digest'],key=human_key)
-    if ae:raise SystemExit('invalid human decision attestation: '+'; '.join(ae))
-
-    trail=case.get('review_trail',[]);parent=ns.source_review_id or (trail[-1]['review_id'] if trail else None);last=trail[-1] if trail else None
-    result_payload={'review_id':ns.review_id,'parent_review_id':parent,'level':'HUMAN','node_id':ns.node_id,'model':None,'verdict':ns.verdict,'confidence':'not_applicable','reviewed_head_sha':head,'evidence_digest':case['sensor']['evidence_digest'],'note':ns.note,'attestation_digest':supplied_digest}
-    row={'review_id':ns.review_id,'parent_review_id':parent,'level':'HUMAN','node_id':ns.node_id,'model':None,'verdict':ns.verdict,'confidence':'not_applicable','result_digest':object_digest(result_payload),'reviewed_head_sha':head,'evidence_digest':case['sensor']['evidence_digest'],'input_digest':sha256_bytes(canonical_bytes(result_payload)),'prompt_digest':ZERO,'skill_digest':ZERO,'policy_digest':(last or {}).get('policy_digest',ZERO),'standards_digest':(last or {}).get('standards_digest',ZERO),'worker_command_digest':ZERO,'independent_context':True,'requested_level':'HUMAN','achieved_level':'HUMAN','timestamp':supplied_att.get('issued_at'),'finding_families':[]}
-    updated_case=json.loads(json.dumps(case));updated_case['review_trail'].append(row)
-    ce=_validate_case(updated_case)
-    if ce:raise SystemExit('updated case invalid: '+'; '.join(ce))
-
-    updated_cycle=json.loads(json.dumps(cycle));updated_cycle['achieved_level']='HUMAN';updated_cycle['current_head_verified']=True;updated_cycle['ledger_anchor_verified']=True
-    updated_cycle['state']='HUMAN_CONFIRMED' if ns.verdict=='CONFIRMED' else 'HUMAN_REJECTED'
-    updated_cycle['gate_conclusion']='success' if ns.verdict=='CONFIRMED' else 'failure'
-    updated_cycle['cycle_digest']='';updated_cycle['cycle_digest']=object_digest(updated_cycle,'cycle_digest')
-    ce=_validate_cycle(updated_cycle)
-    if ce:raise SystemExit('updated cycle invalid: '+'; '.join(ce))
-
-    human_event={'review_id':ns.review_id,'actor_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'result_digest':row['result_digest'],'note_digest':sha256_bytes(ns.note.encode()),'attestation_digest':supplied_digest}
-    close_event={'state':updated_cycle['state'],'cycle_digest':updated_cycle['cycle_digest'],'gate_conclusion':updated_cycle['gate_conclusion'],'human_review_id':ns.review_id,'human_attestation_digest':supplied_digest}
-    transaction_id=sha256_bytes(canonical_bytes({'case_id':case['case_id'],'review_id':ns.review_id,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest']}))
-    tx={'schema_version':'2.7','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event,'transaction_digest':''}
-    tx['transaction_digest']=object_digest(tx,'transaction_digest');tx['transaction_hmac']=_transaction_hmac(tx,human_key)
-    _atomic_json(tx_path,tx)
-    _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
-    print(cycle_path)
-
+        print(cycle_path)
+    
 if __name__=='__main__':main()
