@@ -5,8 +5,8 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
-from common import canonical_bytes,named_files_digest,object_digest,sha256_bytes,sha256_file,write_json
-from policy_engine import load_yaml,classify_paths,derive_required_level,max_level,is_self_protected_repository,normalize_repo_path
+from common import canonical_bytes,named_files_digest,object_digest,sha256_bytes,sha256_file,write_json,canonical_finding_path
+from policy_engine import load_yaml,classify_paths,derive_required_level,max_level,is_self_protected_repository
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
@@ -318,14 +318,14 @@ def requested_target(r,esc_cfg=None):
         return r['level']
     return requested
 
-def disagreement(a,b,esc_cfg=None):
+def disagreement(a,b,esc_cfg=None,changed_paths=None):
     if a['verdict']=='BLOCKED' or b['verdict']=='BLOCKED':return a['verdict']!=b['verdict']
     ma=material_findings(a,esc_cfg);mb=material_findings(b,esc_cfg)
     if bool(ma)!=bool(mb):return True
-    # Compare the same normalized semantic identity used by campaign repeat
-    # accounting. Family/axis-only comparison can hide a real L1/L2 conflict
-    # when each reviewer reports the same defect class in a different file.
-    sa={(f['severity'],material_finding_key(f)) for f in ma};sb={(f['severity'],material_finding_key(f)) for f in mb}
+    # Compare the same Git-aware semantic identity used by campaign repeat
+    # accounting. Backslash is a legal Git filename character and is not a
+    # separator alias here.
+    sa={(f['severity'],material_finding_key(f,changed_paths)) for f in ma};sb={(f['severity'],material_finding_key(f,changed_paths)) for f in mb}
     return sa!=sb
 
 def review_notes_obj(stage_rows,esc_cfg=None):
@@ -338,12 +338,12 @@ def review_notes_obj(stage_rows,esc_cfg=None):
     obj['notes_digest']=object_digest(obj,'notes_digest')
     return obj
 
-def material_finding_key(f):
+def material_finding_key(f,changed_paths=None):
     # Bind the semantic family to its review axis/path. Family-only keys are too
     # broad and can falsely classify a different defect as the same repeated issue.
-    # Normalize only the identity spelling; Git access continues to use exact paths.
-    raw_path=str(f.get('path') or '').strip()
-    normalized_path=normalize_repo_path(raw_path) if raw_path else None
+    # Preserve exact Git path semantics: backslash may be a literal filename
+    # character. Only a leading './' presentation alias is collapsed.
+    normalized_path=canonical_finding_path(f.get('path'),changed_paths)
     basis={'failure_family':str(f.get('failure_family') or '').strip() or None,
            'axis':str(f.get('axis') or '').strip() or None,
            'path':normalized_path}
@@ -488,9 +488,10 @@ def authoritative_material_keys(stage_rows,esc_cfg=None):
     # stage, not every lower-stage allegation. A finding cleared by L2/Adversarial
     # must not survive only as a budget/repeat signal and force a false HUMAN loop.
     for level in ('ADVERSARIAL','L2','L1'):
-        rows=[r for lvl,_,r,_ in stage_rows if lvl==level]
+        rows=[(task,r) for lvl,task,r,_ in stage_rows if lvl==level]
         if rows:
-            return sorted({material_finding_key(f) for f in material_findings(rows[-1],esc_cfg)})
+            task,row=rows[-1]
+            return sorted({material_finding_key(f,task.get('changed_paths')) for f in material_findings(row,esc_cfg)})
     return []
 
 def evaluate_review_budget(history,current_keys,attempt_index,max_attempts,repeat_limit):
@@ -574,9 +575,9 @@ def cycle_gate(state,required,achieved,stage,esc_cfg=None):
 def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     trail=[]
     for level,task,r,ref in stage_rows:
-        material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY']
-        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f) for f in material})
-        note_ff=sorted({f.get('failure_family') for f in notes if f.get('failure_family')});note_keys=sorted({material_finding_key(f) for f in notes})
+        material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY'];changed_paths=task.get('changed_paths')
+        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f,changed_paths) for f in material})
+        note_ff=sorted({f.get('failure_family') for f in notes if f.get('failure_family')});note_keys=sorted({material_finding_key(f,changed_paths) for f in notes})
         major_count=sum(f.get('severity')=='major' for f in material);blocker_count=sum(f.get('severity')=='blocker' for f in material)
         trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
@@ -830,7 +831,7 @@ def main():
                     else:return
                 else:
                     s2,ff2=stage_signals(l2,esc_cfg);families|=ff2;sig.update({k:v for k,v in s2.items() if v})
-                    if disagreement(l1,l2,esc_cfg):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
+                    if disagreement(l1,l2,esc_cfg,changed):sig['l1_l2_disagreement']=True;reasons.append('L1_L2_DISAGREEMENT')
                     _lvl,_why=derive_required_level(l2['risk_signal'],hits,sig,esc_cfg,sensor_cfg);required=max_level(required,_lvl);reasons.extend(_why);_req=requested_target(l2,esc_cfg);required=max_level(required,_req)
                     if l2['escalation']['requested']:reasons.append('L2_REQUEST_'+_req)
                     audit2_eligible=(required=='L2');audit2=bool(ra.get('enabled')) and not ns.disable_random_audit and audit2_eligible and audit_sample(float(ra.get('l2_final_sample_percent',0)),audit_key,f'{ns.case_id}:{head}','L2')
