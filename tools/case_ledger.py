@@ -55,6 +55,38 @@ def _pid_alive(pid):
     except ProcessLookupError:return False
     except PermissionError:return True
 
+def _process_instance_id(pid):
+    try:pid=int(pid)
+    except Exception:return None
+    if pid<=0:return None
+    if os.name=='nt':
+        try:
+            import ctypes
+            from ctypes import wintypes
+            handle=ctypes.windll.kernel32.OpenProcess(0x1000,False,pid)
+            if not handle:return None
+            try:
+                creation=wintypes.FILETIME();exit_time=wintypes.FILETIME();kernel=wintypes.FILETIME();user=wintypes.FILETIME()
+                if not ctypes.windll.kernel32.GetProcessTimes(handle,ctypes.byref(creation),ctypes.byref(exit_time),ctypes.byref(kernel),ctypes.byref(user)):
+                    return None
+                value=(int(creation.dwHighDateTime)<<32)|int(creation.dwLowDateTime)
+                return f'win:{value}'
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception:
+            return None
+    proc=Path(f'/proc/{pid}/stat')
+    try:raw=proc.read_text(encoding='utf-8')
+    except (FileNotFoundError,ProcessLookupError,PermissionError,OSError):
+        return None
+    rparen=raw.rfind(')')
+    if rparen<0:return None
+    fields=raw[rparen+2:].split()
+    # /proc/<pid>/stat field 22 is process start time; after removing pid+comm,
+    # the list starts at field 3, so start time is index 19.
+    if len(fields)<=19:return None
+    return f'proc:{fields[19]}'
+
 def lock_local_fingerprint():
     return f'{socket.gethostname()}:{uuid.getnode():012x}'
 
@@ -94,6 +126,8 @@ def ledger_lock(path,timeout=10.0):
     lock=Path(str(path)+'.lock');lock.parent.mkdir(parents=True,exist_ok=True);deadline=time.monotonic()+timeout;fd=None
     host=lock_host_id();token=f'{os.getpid()}-{time.time_ns()}'
     owner={'schema_version':'2.7','host':host,'pid':os.getpid(),'token':token}
+    process_instance=_process_instance_id(os.getpid())
+    if process_instance is not None:owner['process_instance']=process_instance
     encoded=(json.dumps(owner,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
     while True:
         try:
@@ -114,8 +148,16 @@ def ledger_lock(path,timeout=10.0):
             try:
                 raw=lock.read_text(encoding='utf-8')
                 existing=_lock_owner(raw)
-                if existing and existing.get('host')==host and not _pid_alive(existing.get('pid')):
-                    if _unlink_lock_if_unchanged(lock,raw):continue
+                if existing and existing.get('host')==host:
+                    pid=existing.get('pid')
+                    expected_instance=existing.get('process_instance')
+                    observed_instance=_process_instance_id(pid)
+                    stale=False
+                    if expected_instance and observed_instance is not None:
+                        stale=expected_instance!=observed_instance
+                    elif not _pid_alive(pid):
+                        stale=True
+                    if stale and _unlink_lock_if_unchanged(lock,raw):continue
             except FileNotFoundError:
                 continue
             if time.monotonic()>=deadline:raise TimeoutError(f'ledger lock timeout: {lock}')
