@@ -92,16 +92,97 @@ class LedgerHardeningTests(unittest.TestCase):
             original_write_anchor=case_ledger.write_anchor
             case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
             try:
-                with self.assertRaises(RuntimeError):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+                with self.assertRaises(RuntimeError):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k',event_instance_id='open-1')
             finally:
                 case_ledger.write_anchor=original_write_anchor
             self.assertTrue(txp.is_file());self.assertEqual(len(load_events(p)),1);self.assertFalse(a.exists())
             original_tx=json.loads(txp.read_text());tampered=copy.deepcopy(original_tx);tampered['event']['payload']['v']=2;txp.write_text(json.dumps(tampered))
-            with self.assertRaisesRegex(ValueError,'append transaction digest mismatch'):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+            with self.assertRaisesRegex(ValueError,'append transaction digest mismatch'):case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k',event_instance_id='open-1')
             txp.write_text(json.dumps(original_tx))
-            recovered=case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k')
+            recovered=case_ledger.append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k',event_instance_id='open-1')
             self.assertEqual(recovered['seq'],1);self.assertFalse(txp.exists())
             events=load_events(p);self.assertEqual(len(events),1);self.assertEqual(validate_anchor(p,a,events,'C',key,True),[])
+
+    def test_hmac_auth_witness_blocks_unsigned_anchor_downgrade_without_key(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';a=default_anchor_path(p);key='ledger-key'
+            append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k',event_instance_id='open')
+            witness=case_ledger.load_auth_witness(p,'C')
+            self.assertTrue(witness['hmac_required'])
+            # Forge both the event chain and an unsigned anchor while leaving the
+            # sticky auth witness intact.
+            forged={'schema_version':'2.4','case_id':'C','seq':1,'event_type':'CASE_OPENED','timestamp':'2026-01-01T00:00:00Z','payload':{'v':999},'prev_hash':'0'*64,'event_hash':''}
+            forged['event_hash']=object_digest(forged,'event_hash')
+            p.write_text(json.dumps(forged,ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
+            core=case_ledger._anchor_core(p,'C',[forged],None)
+            a.write_text(json.dumps({**core,'hmac_sha256':None}),encoding='utf-8')
+            errs=validate_anchor(p,a,[forged],'C',None,False)
+            self.assertTrue(any('HMAC key unavailable' in x or 'HMAC missing' in x for x in errs),errs)
+            with self.assertRaisesRegex(ValueError,'signed-history witness'):
+                append_event(p,'C','SENSOR_ACCEPTED',{},event_instance_id='sensor')
+
+    def test_signed_auth_witness_rejects_forged_unsigned_pending_transaction(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';key='ledger-key';txp=case_ledger.pending_append_path(p)
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(p,'C','CASE_OPENED',{'v':1},hmac_key=key,key_id='k',event_instance_id='open')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            tx=json.loads(txp.read_text());tx['hmac_sha256']=None;txp.write_text(json.dumps(tx))
+            with self.assertRaisesRegex(ValueError,'HMAC key unavailable|HMAC missing'):
+                case_ledger.recover_pending_append_if_present(p,hmac_key=None)
+
+    def test_pending_append_recovers_exact_torn_event_tail(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';a=default_anchor_path(p);txp=case_ledger.pending_append_path(p)
+            append_event(p,'C','CASE_OPENED',{'v':1},event_instance_id='open')
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(p,'C','SENSOR_ACCEPTED',{'v':2},event_instance_id='sensor-2')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            tx=json.loads(txp.read_text());tail=case_ledger._events_bytes([tx['event']]);raw=p.read_bytes()
+            self.assertTrue(raw.endswith(tail));pre=raw[:-len(tail)];cut=max(1,len(tail)//2)
+            p.write_bytes(pre+tail[:cut])
+            recovered=append_event(p,'C','SENSOR_ACCEPTED',{'v':2},event_instance_id='sensor-2')
+            self.assertEqual(recovered['seq'],2);events=load_events(p);self.assertEqual(len(events),2)
+            self.assertEqual(validate_anchor(p,a,events,'C'),[]);self.assertFalse(txp.exists())
+
+    def test_pending_append_malformed_nonmatching_tail_raises_typed_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';txp=case_ledger.pending_append_path(p)
+            append_event(p,'C','CASE_OPENED',{'v':1},event_instance_id='open')
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(p,'C','SENSOR_ACCEPTED',{'v':2},event_instance_id='sensor-2')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            tx=json.loads(txp.read_text());tail=case_ledger._events_bytes([tx['event']]);raw=p.read_bytes();pre=raw[:-len(tail)]
+            p.write_bytes(pre+b'not-a-valid-json-tail')
+            with self.assertRaises(case_ledger.LedgerTornWriteError):
+                append_event(p,'C','SENSOR_ACCEPTED',{'v':2},event_instance_id='sensor-2')
+
+    def test_recovered_identical_payload_is_not_swallowed_when_instance_id_differs(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';txp=case_ledger.pending_append_path(p);payload={'same':True}
+            original_write_anchor=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *args,**kwargs: (_ for _ in ()).throw(RuntimeError('simulated anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(p,'C','CASE_OPENED',payload,event_instance_id='intent-1')
+            finally:
+                case_ledger.write_anchor=original_write_anchor
+            self.assertTrue(txp.exists())
+            second=append_event(p,'C','CASE_OPENED',payload,event_instance_id='intent-2')
+            events=load_events(p);self.assertEqual(len(events),2);self.assertEqual(second['seq'],2)
+            self.assertEqual([x['payload'] for x in events],[payload,payload])
 
 
     def test_campaign_history_recovers_pending_authenticated_append(self):
