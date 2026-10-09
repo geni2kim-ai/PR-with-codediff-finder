@@ -12,7 +12,7 @@ from verify_manifest import manifest_entries
 HEX_HEAD = re.compile(r"^[0-9a-f]{40,64}$")
 HEX256 = re.compile(r"^[0-9a-f]{64}$")
 PACKAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
-ALLOWED = {
+REQUIRED = {
     "schema_version",
     "kind",
     "authority_effect",
@@ -23,11 +23,14 @@ ALLOWED = {
     "manifest_entries",
     "clean_extract_verified",
     "canonical_validation_passed",
+    "receipt_digest",
+}
+TRACEABILITY = {
     "validation_run_id",
     "validation_run_attempt",
     "validation_workflow_ref",
-    "receipt_digest",
 }
+ALLOWED = REQUIRED | TRACEABILITY
 
 
 def create(package, manifest, head_sha, *, clean_extract_verified, canonical_validation_passed, validation_run_id=None, validation_run_attempt=None, validation_workflow_ref=None):
@@ -67,7 +70,8 @@ def validate(obj, package=None, manifest=None):
     errors = []
     if not isinstance(obj, dict):
         return ["source package receipt must be an object"]
-    if set(obj) != ALLOWED:
+    fields=set(obj)
+    if not REQUIRED.issubset(fields) or fields-ALLOWED:
         errors.append("source package receipt fields mismatch")
     if obj.get("schema_version") != "2.7":
         errors.append("source package receipt schema mismatch")
