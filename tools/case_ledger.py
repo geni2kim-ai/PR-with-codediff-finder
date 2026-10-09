@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,json,os,socket,tempfile,time
+import argparse,hashlib,hmac,json,os,socket,tempfile,time,uuid
 from contextlib import contextmanager
 from datetime import datetime,timezone
 from pathlib import Path
@@ -55,6 +55,11 @@ def _pid_alive(pid):
     except ProcessLookupError:return False
     except PermissionError:return True
 
+def lock_host_id():
+    explicit=os.environ.get('MAESTRO_LOCK_HOST_ID')
+    if explicit:return explicit
+    return f'{socket.gethostname()}:{uuid.getnode():012x}'
+
 def _lock_owner(raw):
     raw=raw.strip()
     if not raw:return None
@@ -79,7 +84,7 @@ def _unlink_lock_if_unchanged(lock,expected_raw):
 @contextmanager
 def ledger_lock(path,timeout=10.0):
     lock=Path(str(path)+'.lock');lock.parent.mkdir(parents=True,exist_ok=True);deadline=time.monotonic()+timeout;fd=None
-    host=socket.gethostname();token=f'{os.getpid()}-{time.time_ns()}'
+    host=lock_host_id();token=f'{os.getpid()}-{time.time_ns()}'
     owner={'schema_version':'2.7','host':host,'pid':os.getpid(),'token':token}
     encoded=(json.dumps(owner,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
     while True:
