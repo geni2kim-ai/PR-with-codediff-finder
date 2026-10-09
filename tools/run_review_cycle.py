@@ -6,7 +6,7 @@ from jsonschema import Draft202012Validator
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from common import canonical_bytes,named_files_digest,object_digest,sha256_bytes,sha256_file,write_json
-from policy_engine import load_yaml,classify_paths,derive_required_level,max_level,is_self_protected_repository
+from policy_engine import load_yaml,classify_paths,derive_required_level,max_level,is_self_protected_repository,normalize_repo_path
 from validate_textdiff_evidence import semantic_errors as evidence_errors
 from validate_reviewer_task import validate as validate_task
 from validate_stage_result import validate as validate_stage
@@ -322,7 +322,10 @@ def disagreement(a,b,esc_cfg=None):
     if a['verdict']=='BLOCKED' or b['verdict']=='BLOCKED':return a['verdict']!=b['verdict']
     ma=material_findings(a,esc_cfg);mb=material_findings(b,esc_cfg)
     if bool(ma)!=bool(mb):return True
-    sa={(f['severity'],f.get('failure_family'),f['axis']) for f in ma};sb={(f['severity'],f.get('failure_family'),f['axis']) for f in mb}
+    # Compare the same normalized semantic identity used by campaign repeat
+    # accounting. Family/axis-only comparison can hide a real L1/L2 conflict
+    # when each reviewer reports the same defect class in a different file.
+    sa={(f['severity'],material_finding_key(f)) for f in ma};sb={(f['severity'],material_finding_key(f)) for f in mb}
     return sa!=sb
 
 def review_notes_obj(stage_rows,esc_cfg=None):
@@ -338,9 +341,12 @@ def review_notes_obj(stage_rows,esc_cfg=None):
 def material_finding_key(f):
     # Bind the semantic family to its review axis/path. Family-only keys are too
     # broad and can falsely classify a different defect as the same repeated issue.
+    # Normalize only the identity spelling; Git access continues to use exact paths.
+    raw_path=str(f.get('path') or '').strip()
+    normalized_path=normalize_repo_path(raw_path) if raw_path else None
     basis={'failure_family':str(f.get('failure_family') or '').strip() or None,
            'axis':str(f.get('axis') or '').strip() or None,
-           'path':str(f.get('path') or '').strip() or None}
+           'path':normalized_path}
     return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
 
 def _trail_authoritative_material(case):
