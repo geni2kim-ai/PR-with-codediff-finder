@@ -104,3 +104,9 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - reviewer worker contract에 exact Git changed_paths spelling 및 off-diff activated/worsened 예외 규칙 명시.
 - exact changed Git path가 Windows drive/UNC처럼 보이는 literal filename일 경우 task changed_paths authority를 우선하여 host-path heuristic false positive를 방지.
 - canonical validation에서 발견된 mock reviewer 계약 회귀 수정: 고정 src/example.py 대신 task changed_paths에 finding path를 바인딩하여 test double도 production path-scope 계약을 준수.
+
+- Leonardo 추가 시뮬레이션 #38~#40: runtime disagreement와 calibration/route 사이에서 severity가 소실되던 문제를 severity-aware material signature로 통일.
+- 동일 coarse material key가 여러 finding에서 반복될 때 set 축약으로 2-vs-1 omission을 합의로 오인하던 문제를 multiset 비교로 수정.
+- case-record에 optional material_finding_signatures를 저장하고 signature count/key/major/blocker 정합성 검증 추가.
+- pre-signature v2.7 row와 신규 row 혼합 시 representation 차이만으로 false disagreement가 생기지 않도록 key+count 호환 fallback 유지.
+- retry budget은 기존 severity-independent material_finding_key를 유지하여 severity 재평가가 자동 보완 횟수를 초기화하지 않음.
