@@ -20,7 +20,7 @@ def _finish(tx_path,p,ledger,anchor,key,key_id):
     events=load_events(ledger);errs=validate_events(events,updated['case_id'])+validate_anchor(ledger,anchor,events,updated['case_id'],key,False)
     if errs:raise SystemExit('incident transaction ledger invalid: '+'; '.join(errs))
     payload=tx['event_payload']
-    if not any(e.get('event_type')=='INCIDENT_RECORDED' and e.get('payload')==payload for e in events):append_event(ledger,updated['case_id'],'INCIDENT_RECORDED',payload,anchor_path=anchor,hmac_key=key,key_id=key_id if key else None)
+    if not any(e.get('event_type')=='INCIDENT_RECORDED' and e.get('payload')==payload for e in events):append_event(ledger,updated['case_id'],'INCIDENT_RECORDED',payload,anchor_path=anchor,hmac_key=key,key_id=key_id if key else None,event_instance_id='incident:'+tx['transaction_digest'][:48])
     _atomic_json(p,updated);errs=bundle_errors(updated,ledger,anchor,False,key)
     if errs:raise SystemExit('recovered incident bundle invalid: '+'; '.join(errs))
     Path(tx_path).unlink(missing_ok=True)
