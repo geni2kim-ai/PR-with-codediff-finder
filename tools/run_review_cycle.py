@@ -322,10 +322,10 @@ def disagreement(a,b,esc_cfg=None,changed_paths=None):
     if a['verdict']=='BLOCKED' or b['verdict']=='BLOCKED':return a['verdict']!=b['verdict']
     ma=material_findings(a,esc_cfg);mb=material_findings(b,esc_cfg)
     if bool(ma)!=bool(mb):return True
-    # Compare the same Git-aware semantic identity used by campaign repeat
-    # accounting. Backslash is a legal Git filename character and is not a
-    # separator alias here.
-    sa={(f['severity'],material_finding_key(f,changed_paths)) for f in ma};sb={(f['severity'],material_finding_key(f,changed_paths)) for f in mb}
+    # Agreement needs severity plus identity *with multiplicity*. A set would
+    # collapse two same-key defects into one and could hide an omitted finding.
+    sa=sorted(material_finding_signature(f,changed_paths) for f in ma)
+    sb=sorted(material_finding_signature(f,changed_paths) for f in mb)
     return sa!=sb
 
 def review_notes_obj(stage_rows,esc_cfg=None):
@@ -348,6 +348,10 @@ def material_finding_key(f,changed_paths=None):
            'axis':str(f.get('axis') or '').strip() or None,
            'path':normalized_path}
     return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
+
+def material_finding_signature(f,changed_paths=None):
+    severity=str(f.get('severity') or '').strip()
+    return severity+'|'+material_finding_key(f,changed_paths)
 
 def _trail_authoritative_material(case):
     trail=[r for r in case.get('review_trail',[]) if r.get('level') in {'L1','L2','ADVERSARIAL'}]
@@ -576,10 +580,10 @@ def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     trail=[]
     for level,task,r,ref in stage_rows:
         material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY'];changed_paths=task.get('changed_paths')
-        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f,changed_paths) for f in material})
+        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f,changed_paths) for f in material});signatures=sorted(material_finding_signature(f,changed_paths) for f in material)
         note_ff=sorted({f.get('failure_family') for f in notes if f.get('failure_family')});note_keys=sorted({material_finding_key(f,changed_paths) for f in notes})
         major_count=sum(f.get('severity')=='major' for f in material);blocker_count=sum(f.get('severity')=='blocker' for f in material)
-        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
+        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'material_finding_signatures':signatures,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
