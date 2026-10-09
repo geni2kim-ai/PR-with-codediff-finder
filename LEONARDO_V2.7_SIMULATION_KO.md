@@ -1118,3 +1118,17 @@ severity-aware signature 초안을 적용한 뒤 upgrade/resume 호환성을 다
 이번 보완으로 기존 NOTE의 가장 위험한 부분인 **severity 손실과 multiplicity 손실**은 제거했다. 다만 같은 file/family/axis에서 동일 severity로 발생한 서로 다른 두 결함을 reviewer들이 각각 하나씩 보고한 경우처럼, 개수까지 같은 완전한 coarse-key collision은 아직 구분할 수 없다.
 
 이를 해소하려면 claim 문구 hash처럼 불안정한 값을 쓰는 대신 reviewer 간/재시도 간 안정적인 semantic defect locator 계약이 필요하다. 현재 즉시 authority bypass나 무한 retry를 만드는 경로는 아니므로 schema-level 후속 설계 항목으로 유지한다.
+
+### 41. calibration 결과의 interpretation 문구가 새 agreement 의미론과 불일치
+
+#38~#40 보완 후 출력 JSON의 설명 문자열을 다시 확인했다. 계산 로직은 signature/key+count 계층으로 바뀌었지만 `interpretation`은 여전히 “material finding state를 사용한다”고 설명하고 있었다.
+
+영향:
+- 수치 자체는 맞아도 운영자가 agreement/reversal을 단순 PASS/FINDINGS 상태 비교로 오해할 수 있음
+- Leonardo 장기 지표의 감사 가능성과 설명력이 떨어짐
+
+보완:
+- 양쪽 signature 존재 시 severity-aware signature 비교
+- pre-signature v2.7은 key+count 비교
+- identity-less legacy만 state-only 비교
+라는 실제 우선순위를 calibration output 설명에 그대로 반영했다.
