@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,hashlib,hmac,json,os,tempfile,time
+import argparse,hashlib,hmac,json,os,socket,tempfile,time
 from contextlib import contextmanager
 from datetime import datetime,timezone
 from pathlib import Path
@@ -55,41 +55,73 @@ def _pid_alive(pid):
     except ProcessLookupError:return False
     except PermissionError:return True
 
+def _lock_owner(raw):
+    raw=raw.strip()
+    if not raw:return None
+    try:
+        obj=json.loads(raw)
+        if isinstance(obj,dict) and isinstance(obj.get('host'),str) and obj.get('host') and isinstance(obj.get('pid'),int) and obj.get('pid')>0 and isinstance(obj.get('token'),str) and obj.get('token'):
+            return obj
+    except Exception:
+        pass
+    # Legacy PID-only locks are intentionally not auto-reclaimed because their
+    # host identity is unknowable on shared storage.
+    if raw.isdigit():return {'legacy_pid':int(raw)}
+    return None
+
+def _unlink_lock_if_unchanged(lock,expected_raw):
+    try:
+        current=lock.read_text(encoding='utf-8')
+        if current!=expected_raw:return False
+        lock.unlink();return True
+    except FileNotFoundError:return False
+
 @contextmanager
 def ledger_lock(path,timeout=10.0):
-    lock=Path(str(path)+'.lock');deadline=time.monotonic()+timeout;fd=None
+    lock=Path(str(path)+'.lock');lock.parent.mkdir(parents=True,exist_ok=True);deadline=time.monotonic()+timeout;fd=None
+    host=socket.gethostname();token=f'{os.getpid()}-{time.time_ns()}'
+    owner={'schema_version':'2.7','host':host,'pid':os.getpid(),'token':token}
+    encoded=(json.dumps(owner,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
     while True:
         try:
-            fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.write(fd,str(os.getpid()).encode());os.close(fd);fd=None;break
+            fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.write(fd,encoded);os.fsync(fd);os.close(fd);fd=None;break
         except FileExistsError:
             try:
-                raw=lock.read_text(encoding='utf-8').strip()
-                owner=int(raw) if raw else None
-                if owner is not None and not _pid_alive(owner):lock.unlink();continue
-                if owner is None and time.time()-lock.stat().st_mtime>max(1.0,timeout):lock.unlink();continue
-            except (FileNotFoundError,ValueError): 
-                try:
-                    if lock.exists() and time.time()-lock.stat().st_mtime>max(1.0,timeout):lock.unlink();continue
-                except FileNotFoundError:continue
+                raw=lock.read_text(encoding='utf-8')
+                existing=_lock_owner(raw)
+                if existing and existing.get('host')==host and not _pid_alive(existing.get('pid')):
+                    if _unlink_lock_if_unchanged(lock,raw):continue
+            except FileNotFoundError:
+                continue
             if time.monotonic()>=deadline:raise TimeoutError(f'ledger lock timeout: {lock}')
             time.sleep(0.02)
     try:yield
     finally:
-        try:lock.unlink()
+        try:
+            raw=lock.read_text(encoding='utf-8')
+            existing=_lock_owner(raw)
+            if existing and existing.get('host')==host and existing.get('pid')==os.getpid() and existing.get('token')==token:
+                _unlink_lock_if_unchanged(lock,raw)
         except FileNotFoundError:pass
 
 def case_bundle_lock_path(case_path):
-    base=Path(tempfile.gettempdir())/'codediff-finder-bundle-locks'
+    p=Path(case_path)
+    base=p.parent/'.codediff-control'
     base.mkdir(mode=0o700,parents=True,exist_ok=True)
     try:os.chmod(base,0o700)
     except OSError:pass
-    token=hashlib.sha256(str(Path(case_path).resolve()).encode('utf-8')).hexdigest()[:32]
-    return base/token
+    token=hashlib.sha256(p.name.encode('utf-8')).hexdigest()[:16]
+    return base/f'case-bundle-{token}'
 
 @contextmanager
 def case_bundle_lock(case_path,timeout=10.0):
-    with ledger_lock(case_bundle_lock_path(case_path),timeout=timeout):
-        yield
+    target=case_bundle_lock_path(case_path)
+    try:
+        with ledger_lock(target,timeout=timeout):
+            yield
+    finally:
+        try:target.parent.rmdir()
+        except OSError:pass
 
 def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.7'):
     p=Path(ledger);last=events[-1]['event_hash'] if events else ZERO
