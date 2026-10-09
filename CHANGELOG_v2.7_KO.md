@@ -110,3 +110,4 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - case-record에 optional material_finding_signatures를 저장하고 signature count/key/major/blocker 정합성 검증 추가.
 - pre-signature v2.7 row와 신규 row 혼합 시 representation 차이만으로 false disagreement가 생기지 않도록 key+count 호환 fallback 유지.
 - retry budget은 기존 severity-independent material_finding_key를 유지하여 severity 재평가가 자동 보완 횟수를 초기화하지 않음.
+- calibration report interpretation 문구를 실제 signature → key+count → state-only 호환 우선순위와 일치하도록 정정.
