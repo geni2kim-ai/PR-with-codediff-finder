@@ -382,5 +382,34 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertEqual(len(case_ledger.load_events(ledger)),1)
 
 
+    def test_recovered_event_instance_collision_rejects_conflicting_requests(self):
+        # A retry token must not cause a changed payload/type/case/timestamp
+        # to be mistaken for an already-applied logical request.
+        collisions=[
+            ('CASE','CASE_OPENED',{'v':2},None),
+            ('CASE','SENSOR_ACCEPTED',{'v':1},None),
+            ('OTHER','CASE_OPENED',{'v':1},None),
+            ('CASE','CASE_OPENED',{'v':1},'2026-01-01T00:00:00Z'),
+        ]
+        for requested_case,kind,payload,stamp in collisions:
+            with self.subTest(case=requested_case,kind=kind,payload=payload,timestamp=stamp):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                        with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='stable-id')
+                    self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+                    with self.assertRaises(case_ledger.LedgerRecoveryError) as ctx:
+                        append_event(ledger,requested_case,kind,payload,
+                                     timestamp=stamp,event_instance_id='stable-id')
+                    self.assertIn('EVENT_INSTANCE_CONFLICT',str(ctx.exception))
+                    events=case_ledger.load_events(ledger)
+                    self.assertEqual(len(events),1)
+                    self.assertEqual(events[0]['payload'],{'v':1})
+                    self.assertFalse(case_ledger.validate_events(events,'CASE'))
+                    self.assertFalse(case_ledger.validate_anchor(ledger,default_anchor_path(ledger),events,'CASE'))
+                    self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+
+
 if __name__=='__main__':
     unittest.main()

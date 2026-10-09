@@ -516,6 +516,12 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
             except Exception as exc:raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
             recovered=_recover_pending_append(p,anchor,tx_path,hmac_key,require_hmac)
             if event_instance_id is not None and pending_tx.get('event_instance_id')==event_instance_id:
+                # An idempotency token identifies the request, not just any earlier
+                # transaction: conflicting data must never be silently swallowed.
+                if (recovered.get('case_id')!=case_id or recovered.get('event_type')!=event_type
+                        or recovered.get('payload')!=payload
+                        or (timestamp is not None and recovered.get('timestamp')!=timestamp)):
+                    raise LedgerRecoveryError('event_instance_id reused with conflicting event data','EVENT_INSTANCE_CONFLICT')
                 return recovered
             if 'event_instance_id' not in pending_tx and recovered.get('case_id')==case_id and recovered.get('event_type')==event_type and recovered.get('payload')==payload:
                 return recovered

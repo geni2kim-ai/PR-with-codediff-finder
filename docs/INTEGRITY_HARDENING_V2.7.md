@@ -24,7 +24,7 @@ Unsigned journals therefore provide digest/hash-chain integrity and deterministi
 
 ### Duplicate append semantics
 
-The recovery journal may carry `event_instance_id`. Replaying the same logical request with the same identifier returns the recovered event idempotently. A new append request without that identifier is treated as a new logical event even when type/payload are identical, so intentional repeated events are not silently swallowed.
+The recovery journal may carry `event_instance_id`. During a pending-journal recovery, repeating the same logical request with the same identifier **and matching case/type/payload/explicit timestamp** returns the recovered event idempotently. Reusing that identifier with conflicting event data raises typed `EVENT_INSTANCE_CONFLICT` after safely completing the pending recovery, rather than silently dropping the caller's request. A distinct identifier (or a new request with no identifier) creates a separate event, even when type/payload match. **Scope:** the identifier currently exists only in the pending journal; after successful transaction cleanup, the v2.4 event schema does not retain it, so this is not a general post-commit exactly-once/replay guarantee. A durable receipt/index or versioned schema extension with migration is required for that stronger contract.
 
 ### HUMAN transaction recovery
 

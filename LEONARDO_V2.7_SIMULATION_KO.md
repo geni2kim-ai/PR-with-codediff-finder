@@ -1247,3 +1247,22 @@ M1 보완으로 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 추가한 뒤 실제 review-cy
 - 실제 review-cycle subprocess를 `MAESTRO_LEDGER_HMAC_KEY + MAESTRO_LEDGER_EXPECT_KEY_ID=key-v1`로 실행해 anchor/witness의 key_id가 `key-v1`이고 HMAC이 생성되는 회귀 테스트 추가
 
 이로써 M1의 외부 expectation 기능이 검증 전용 장식이 아니라 실제 write/read 경로에서 사용할 수 있는 운영 기능이 된다.
+
+### 49. Pending ledger 복구에서 동일 event_instance_id의 변경된 요청이 묵살되는 문제
+
+재현 경로 (정적 흐름 분석 + 회귀 테스트 추가):
+1. 첫 요청이 `event_instance_id=stable-id`, `CASE_OPENED`, `payload={"v":1}`로 append를 시작
+2. JSONL은 기록됐지만 anchor 작성 직전에 예외가 발생하여 pending journal만 남음
+3. 다른 요청이 같은 `stable-id`를 재사용하면서 case/type/payload 또는 명시 timestamp를 변경
+4. 기존 구현은 `event_instance_id` 일치만 검사하고 recovery 결과를 즉시 반환하여 변경된 새 요청을 조용히 무시
+
+대응:
+- pending 복구 완료 후에도 동일 instance ID에 대해 `case_id`, `event_type`, `payload`, caller가 명시한 `timestamp`를 비교
+- 하나라도 다르면 `LedgerRecoveryError(code=EVENT_INSTANCE_CONFLICT)`로 fail-closed
+- 4개 충돌 변형과 복구 후 원본 이벤트/anchor 정합성 검사를 회귀 테스트로 추가
+- 기존 동일 ID + 동일 event 요청의 정상 재시도 동작은 유지
+
+범위 주의:
+- 현재 instance ID는 pending journal에만 유지되므로 **성공적으로 완료되어 journal이 제거된 후** 동일 ID를 재사용한 요청에는 durable dedup을 제공하지 않는다. 이를 일반적 exactly-once 보장으로 홍보해서는 안 된다.
+- 완료 후 replay까지 막으려면 이벤트 스키마의 버전드 확장 또는 HMAC/anchor로 바인딩된 durable receipt/index를 설계하고 레거시 migration/거버넌스 검증을 거쳐야 한다.
+- 이번 수정은 좁은 정합성 경계를 보완하는 1회 배치이며, 자동 재수정 루프나 ENFORCED 승격은 수행하지 않는다.
