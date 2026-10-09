@@ -103,3 +103,4 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - changed_paths 밖 finding은 preexisting=true + activated_or_worsened=true일 때만 허용하여 무관한 pre-existing issue가 escalation/repeat/calibration을 오염하는 경로 차단.
 - reviewer worker contract에 exact Git changed_paths spelling 및 off-diff activated/worsened 예외 규칙 명시.
 - exact changed Git path가 Windows drive/UNC처럼 보이는 literal filename일 경우 task changed_paths authority를 우선하여 host-path heuristic false positive를 방지.
+- canonical validation에서 발견된 mock reviewer 계약 회귀 수정: 고정 src/example.py 대신 task changed_paths에 finding path를 바인딩하여 test double도 production path-scope 계약을 준수.
