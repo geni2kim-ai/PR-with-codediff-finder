@@ -1088,6 +1088,16 @@ class LeonardoCalibrationTests(unittest.TestCase):
         s=summarize_cases([case],{'recurring_note_min_occurrences':2})
         self.assertEqual(material_state(l1),'PASS');self.assertEqual(s['per_level']['L1']['agree_final'],1);self.assertNotIn('L1_TO_L2',s['reversals']);self.assertEqual(s['leonardo_metrics']['note_only_rate'],1.0)
 
+    def test_calibration_and_route_detect_different_material_identities(self):
+        l1=self._row('L1','FINDINGS','L1',material=1,major=1);l1['material_finding_keys']=['finding:path-a']
+        l2=self._row('L2','FINDINGS','L2',material=1,major=1);l2['material_finding_keys']=['finding:path-b']
+        case={'review_trail':[l1,l2],'labels':[],'outcome':{'post_merge_status':'clean'}}
+        s=summarize_cases([case],{'recurring_note_min_occurrences':2})
+        self.assertEqual(s['per_level']['L1']['compared_to_final'],1)
+        self.assertEqual(s['per_level']['L1']['agree_final'],0)
+        self.assertEqual(s['reversals']['L1_TO_L2'],1)
+        self.assertIn('L1_L2_DISAGREEMENT',reasons_for(case))
+
     def test_calibration_separates_human_confirmation_from_machine_verdict_vocabulary(self):
         l1=self._row('L1','FINDINGS','L1',material=1,major=1);l2=self._row('L2','PASS','L2');human=self._row('HUMAN','REJECTED','H1',parent='L2')
         case={'review_trail':[l1,l2,human],'labels':[],'outcome':{'post_merge_status':'clean'},'review_campaign':{'attempt_index':2,'stop_reason':'SAME_MATERIAL_FINDING_REPEAT'}}
