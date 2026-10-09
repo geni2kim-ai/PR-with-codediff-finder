@@ -6,24 +6,25 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'))
 from common import object_digest,write_json
 from validate_case_record import semantic_errors
 from validate_case_bundle import errors as bundle_errors
-from case_ledger import append_event,canonical_anchor_path,load_events,validate_events,validate_anchor
+from case_ledger import append_event,canonical_anchor_path,load_events,validate_events,validate_anchor,case_bundle_lock
 SCHEMA=json.loads((ROOT/'schemas/case-record.schema.json').read_text())
 def valid(case):return [x.message for x in Draft202012Validator(SCHEMA).iter_errors(case)]+semantic_errors(case)
 def _atomic_json(path,obj):
     path=Path(path);tmp=path.with_suffix(path.suffix+'.replace');write_json(tmp,obj);os.replace(tmp,path)
 def _finish(tx_path,p,ledger,anchor,key,key_id):
-    tx=json.loads(Path(tx_path).read_text())
-    if tx.get('transaction_digest')!=object_digest(tx,'transaction_digest'):raise SystemExit('incident transaction digest mismatch')
-    if tx.get('event_type')!='INCIDENT_RECORDED':raise SystemExit('incident transaction type mismatch')
-    updated=tx.get('updated_case');errs=valid(updated)
-    if errs:raise SystemExit('incident transaction case invalid: '+'; '.join(errs))
-    events=load_events(ledger);errs=validate_events(events,updated['case_id'])+validate_anchor(ledger,anchor,events,updated['case_id'],key,False)
-    if errs:raise SystemExit('incident transaction ledger invalid: '+'; '.join(errs))
-    payload=tx['event_payload']
-    if not any(e.get('event_type')=='INCIDENT_RECORDED' and e.get('payload')==payload for e in events):append_event(ledger,updated['case_id'],'INCIDENT_RECORDED',payload,anchor_path=anchor,hmac_key=key,key_id=key_id if key else None)
-    _atomic_json(p,updated);errs=bundle_errors(updated,ledger,anchor,False,key)
-    if errs:raise SystemExit('recovered incident bundle invalid: '+'; '.join(errs))
-    Path(tx_path).unlink(missing_ok=True)
+    with case_bundle_lock(p):
+        tx=json.loads(Path(tx_path).read_text())
+        if tx.get('transaction_digest')!=object_digest(tx,'transaction_digest'):raise SystemExit('incident transaction digest mismatch')
+        if tx.get('event_type')!='INCIDENT_RECORDED':raise SystemExit('incident transaction type mismatch')
+        updated=tx.get('updated_case');errs=valid(updated)
+        if errs:raise SystemExit('incident transaction case invalid: '+'; '.join(errs))
+        events=load_events(ledger);errs=validate_events(events,updated['case_id'])+validate_anchor(ledger,anchor,events,updated['case_id'],key,False)
+        if errs:raise SystemExit('incident transaction ledger invalid: '+'; '.join(errs))
+        payload=tx['event_payload']
+        if not any(e.get('event_type')=='INCIDENT_RECORDED' and e.get('payload')==payload for e in events):append_event(ledger,updated['case_id'],'INCIDENT_RECORDED',payload,anchor_path=anchor,hmac_key=key,key_id=key_id if key else None)
+        _atomic_json(p,updated);errs=bundle_errors(updated,ledger,anchor,False,key)
+        if errs:raise SystemExit('recovered incident bundle invalid: '+'; '.join(errs))
+        Path(tx_path).unlink(missing_ok=True)
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--case',required=True);ap.add_argument('--ledger',required=True);ap.add_argument('--anchor');ap.add_argument('--ledger-hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');ap.add_argument('--incident-ref',required=True);ap.add_argument('--kind',choices=['incident','regression'],default='incident');ap.add_argument('--failure-family');ns=ap.parse_args();p=Path(ns.case);ledger=Path(ns.ledger);anchor=Path(ns.anchor) if ns.anchor else canonical_anchor_path(ledger);key=os.environ.get(ns.ledger_hmac_key_env);request={'incident_ref':ns.incident_ref,'kind':ns.kind,'failure_family':ns.failure_family};tx_path=p.parent/'incident-transaction.json'
     if tx_path.exists():
