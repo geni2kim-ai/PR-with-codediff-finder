@@ -55,10 +55,18 @@ def _pid_alive(pid):
     except ProcessLookupError:return False
     except PermissionError:return True
 
-def lock_host_id():
-    explicit=os.environ.get('MAESTRO_LOCK_HOST_ID')
-    if explicit:return explicit
+def lock_local_fingerprint():
     return f'{socket.gethostname()}:{uuid.getnode():012x}'
+
+def lock_host_id():
+    # MAESTRO_LOCK_HOST_ID is an operator namespace/salt, not a replacement for
+    # the local machine fingerprint. Reusing the same configured value on two
+    # hosts must not make either host eligible to reclaim the other's live lock.
+    local=lock_local_fingerprint()
+    explicit=(os.environ.get('MAESTRO_LOCK_HOST_ID') or '').strip()
+    if not explicit:return local
+    digest=hashlib.sha256((explicit+'\0'+local).encode('utf-8')).hexdigest()[:24]
+    return f'{explicit}:{digest}'
 
 def _lock_owner(raw):
     raw=raw.strip()
