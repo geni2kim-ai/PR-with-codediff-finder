@@ -624,3 +624,59 @@ section 19에서는 다른 case의 ledger append 중간 상태를 막았지만 a
 
 이 보완은 review budget 의미를 바꾸지 않고, multi-file case bundle을 실제 transaction boundary와 일치시키는 동시성 보완이다.
 
+### 23. 다중 PC가 같은 shared output을 사용할 때 host-local lock이 무력화되는 문제
+
+현재 구조를 PC1/PC2가 같은 campaign/output storage를 각각 다른 로컬 경로로 mount하는 상황으로 시뮬레이션했다.
+
+기존 문제:
+- campaign single-writer lock과 case-bundle lock이 각 호스트의 `%TEMP%` / `/tmp` 아래에 존재
+- PC1과 PC2는 같은 case/output을 실행해도 서로의 temp lock을 보지 못함
+- 실제 ledger lock도 owner가 PID 하나뿐이어서 원격 호스트 PID를 로컬에서 조회한 뒤 "죽은 PID"로 오판하여 활성 lock을 삭제할 수 있음
+
+반례 A — campaign budget oversubscription:
+1. PC1과 PC2가 같은 shared campaign root와 case ID 사용
+2. 각자 자기 temp의 case lock 획득
+3. 둘 다 같은 history에서 remaining worker budget을 읽음
+4. reviewer가 중복 시작되어 campaign-wide 9-call ceiling을 초과할 수 있음
+
+반례 B — attempt allocation collision:
+1. 두 호스트가 서로 다른 local temp allocation lock을 획득
+2. 둘 다 같은 next `attempt-000N` 계산
+3. 디렉터리 생성/실행이 충돌하거나 한쪽이 partial attempt를 남김
+
+반례 C — ledger lock 원격 PID 오판:
+1. PC1이 shared ledger의 `.lock`에 자기 PID 기록
+2. PC2에서 동일 PID가 존재하지 않음
+3. 기존 `_pid_alive(remote_pid)`는 false
+4. PC2가 PC1의 active ledger lock을 stale로 오판해 삭제 가능
+
+보완:
+- lock owner를 단순 PID에서 `host_id + pid + token` JSON metadata로 변경
+- 기본 host ID는 `hostname + node identifier`; 필요하면 `MAESTRO_LOCK_HOST_ID`로 명시 가능
+- 동일 host ID의 dead PID만 자동 stale recovery 허용
+- 다른 host ID의 lock은 local PID 상태와 무관하게 절대 자동 삭제하지 않음
+- lock release 시 자기 host/pid/token이 모두 일치할 때만 unlink하여 교체된 다른 owner lock을 지우지 않음
+- owner metadata는 exclusive-create 후 flush/fsync하여 기록
+- legacy PID-only / malformed lock은 host identity를 증명할 수 없으므로 자동 회수하지 않음
+
+공유 경로 보완:
+- campaign case lock과 allocation lock을 local temp에서 shared campaign root의 `.codediff-control/`로 이동
+- root freshness 판단에서 `.codediff-control`을 control metadata로 제외하여 최초 실행 semantics 유지
+- case-bundle lock도 case-record와 같은 shared parent의 `.codediff-control/`로 이동
+- 따라서 서로 다른 드라이브 문자/경로 표현을 사용하더라도 같은 shared folder를 보는 PC들은 동일 lock file을 경쟁
+- actual ledger append lock도 동일한 host-aware owner semantics를 사용
+
+추가 회귀:
+- 같은 host ID + 명백히 dead PID lock → 정상 자동 회수
+- foreign host ID + 로컬에 존재하지 않는 PID → timeout/fail-closed, lock bytes 보존
+- foreign campaign same-case lock → reviewer 시작 전 차단
+- foreign allocation lock → 새 attempt 생성 전 차단
+- foreign bundle lock → local bundle access 차단
+- 서로 다른 case lock은 기존처럼 같은 root에서 병렬 허용
+
+잔여 운영 NOTE:
+- remote host가 강제 종료되어 shared lock만 남은 경우, 외부 coordinator 없이 원격 process death를 신뢰성 있게 증명할 수 없다.
+- 이 경우 age 기반 자동 삭제는 split-brain을 다시 열 수 있으므로 사용하지 않는다.
+- stale foreign lock은 운영자가 공유 스토리지/노드 상태를 확인한 뒤 제거하거나, 향후 외부 lease/coordinator 계층에서 증명된 recovery를 제공해야 한다.
+- SHADOW v2.7에서는 fail-closed를 선택하며 자동 retry loop를 만들지 않는다.
+
