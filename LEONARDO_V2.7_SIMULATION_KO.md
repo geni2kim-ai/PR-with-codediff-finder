@@ -703,3 +703,30 @@ multi-host shared lock 보완 후 exact-HEAD canonical validation에서 실제 �
 
 이 보완 후 waiter는 parent namespace가 사라지는 race 없이 다음 lock acquisition을 계속할 수 있다.
 
+### 25. 동일 MAESTRO_LOCK_HOST_ID 오배포가 cross-host lock reclaim domain을 합치는 문제
+
+section 23의 multi-host lock을 다시 설정 오류 관점에서 공격했다.
+
+기존 `lock_host_id()`는 `MAESTRO_LOCK_HOST_ID`가 있으면 hostname/node fingerprint를 완전히 대체했다.
+
+반례:
+1. PC1과 PC2에 운영 자동화가 같은 `MAESTRO_LOCK_HOST_ID=production-review`를 배포
+2. PC1이 shared campaign lock을 보유
+3. PC2가 lock owner의 host_id를 자기 값과 동일하다고 판단
+4. PC1 PID는 PC2 로컬 process table에는 없음
+5. PC2가 PC1의 살아있는 lock을 "same-host dead PID"로 오판하여 삭제 가능
+6. same-case reviewer 중복 실행/worker budget oversubscription이 다시 열릴 수 있음
+
+보완:
+- 새 `lock_local_fingerprint()`는 hostname + node identifier를 로컬 machine fingerprint로 유지
+- `MAESTRO_LOCK_HOST_ID`는 fingerprint를 대체하지 않고 operator namespace/salt로만 사용
+- 최종 host_id는 configured namespace와 local fingerprint를 SHA-256으로 결합
+- 따라서 같은 configured label을 서로 다른 machine fingerprint에 배포해도 host_id는 다름
+- foreign lock stale recovery 규칙은 그대로: 최종 host_id가 완전히 같은 경우에만 local PID liveness를 사용
+- 회귀 테스트에서 동일 configured label + 동일 hostname + 서로 다른 node identifier가 서로 다른 host_id를 생성하는지 확인
+
+잔여 NOTE:
+- 완전히 복제된 VM처럼 hostname, node identifier, configured namespace까지 모두 동일하게 복제하면 소프트웨어만으로 물리 host 차이를 증명할 수 없다.
+- 그런 환경에서는 VM별로 서로 다른 `MAESTRO_LOCK_HOST_ID` namespace를 반드시 부여해야 한다.
+- 이 제한은 일반 PC/정상적으로 고유화된 VM에서는 발생하지 않는다.
+
