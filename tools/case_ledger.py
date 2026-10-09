@@ -454,19 +454,26 @@ def recover_pending_append_if_present(ledger,anchor_path=None,hmac_key=None,requ
     return True
 
 def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
+    expected_key_id=_expected_ledger_key_id()
+    if expected_key_id and key_id!=expected_key_id:raise ValueError('ledger key_id does not match external expectation')
+    if key_id and not hmac_key:raise ValueError('ledger key_id requires HMAC key')
     core=_anchor_core(ledger,case_id,events,key_id);obj={**core,'hmac_sha256':_mac(core,hmac_key) if hmac_key else None}
     p=Path(anchor);tmp=p.with_suffix(p.suffix+'.tmp');write_json(tmp,obj);os.replace(tmp,p);return obj
 
-def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac=False):
-    p=Path(anchor);errs=[]
-    try:require_hmac=bool(require_hmac) or _witness_requires_hmac(ledger,case_id)
+def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac=False,expected_key_id=None):
+    p=Path(anchor);errs=[];expected_key_id=_expected_ledger_key_id(expected_key_id)
+    try:require_hmac=bool(require_hmac) or bool(expected_key_id) or _witness_requires_hmac(ledger,case_id)
     except ValueError as exc:errs.append(str(exc))
     if not p.is_file():return errs+(['ledger anchor missing'] if events or require_hmac else [])
     try:a=json.loads(p.read_text())
     except Exception:return errs+['ledger anchor invalid JSON']
     if a.get('schema_version') not in {'2.4','2.6','2.7'}:errs.append('ledger anchor schema mismatch')
     cid=case_id or (events[0]['case_id'] if events else a.get('case_id'))
-    core=_anchor_core(ledger,cid,events,a.get('key_id'),a.get('schema_version','2.7'))
+    anchor_key_id=a.get('key_id')
+    if anchor_key_id is not None and (not isinstance(anchor_key_id,str) or not anchor_key_id):errs.append('ledger anchor key_id invalid')
+    if expected_key_id and anchor_key_id!=expected_key_id:errs.append('ledger anchor key_id mismatch')
+    if anchor_key_id:require_hmac=True
+    core=_anchor_core(ledger,cid,events,anchor_key_id,a.get('schema_version','2.7'))
     for k,v in core.items():
         if a.get(k)!=v:errs.append(f'anchor {k} mismatch')
     mac=a.get('hmac_sha256')
@@ -478,10 +485,14 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
         if not mac or not hmac.compare_digest(mac,exp):errs.append('ledger anchor HMAC mismatch')
     return errs
 
-def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None,hmac_key=None,key_id=None,event_instance_id=None):
+def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None,hmac_key=None,key_id=None,event_instance_id=None,expected_key_id=None):
+    expected_key_id=_expected_ledger_key_id(expected_key_id)
     if hmac_key is None:
         hmac_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY')
-        if hmac_key and key_id is None:key_id='MAESTRO_LEDGER_HMAC_KEY'
+        if hmac_key and key_id is None:key_id=expected_key_id or 'MAESTRO_LEDGER_HMAC_KEY'
+    if expected_key_id and key_id!=expected_key_id:raise ValueError('ledger key_id does not match external expectation')
+    if expected_key_id and not hmac_key:raise ValueError('ledger HMAC key unavailable for external expectation')
+    if key_id and not hmac_key:raise ValueError('ledger key_id requires HMAC key')
     if event_instance_id is not None and (not isinstance(event_instance_id,str) or not event_instance_id or len(event_instance_id)>256):
         raise ValueError('event_instance_id must be a non-empty string up to 256 chars')
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
@@ -490,8 +501,8 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         if anchor.is_file():
             try:visible_anchor_hmac=bool(json.loads(anchor.read_text(encoding='utf-8')).get('hmac_sha256'))
             except Exception:pass
-        witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac,key_id)
-        require_hmac=bool(witness.get('hmac_required'))
+        witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac or bool(expected_key_id),key_id or expected_key_id)
+        require_hmac=bool(witness.get('hmac_required')) or bool(expected_key_id)
         if require_hmac and not hmac_key:raise ValueError('ledger HMAC key unavailable for signed-history witness')
         if tx_path.exists():
             try:pending_tx=json.loads(tx_path.read_text(encoding='utf-8'))
@@ -509,7 +520,7 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         # from a brand-new history and silently resets seq/hash state.
         if ledger_preexisting and not anchor.exists():raise ValueError(f'existing ledger anchor missing: {anchor}')
         if anchor.exists():
-            ae=validate_anchor(p,anchor,events,case_id,hmac_key,require_hmac=bool(hmac_key))
+            ae=validate_anchor(p,anchor,events,case_id,hmac_key,require_hmac=require_hmac,expected_key_id=expected_key_id)
             if ae:raise ValueError('invalid existing ledger anchor: '+'; '.join(ae))
         prev=events[-1]['event_hash'] if events else ZERO
         ev={'schema_version':'2.4','case_id':case_id,'seq':len(events)+1,'event_type':event_type,'timestamp':timestamp or utc(),'payload':payload,'prev_hash':prev,'event_hash':''}
@@ -525,12 +536,12 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
 def main():
     ap=argparse.ArgumentParser();sub=ap.add_subparsers(dest='cmd',required=True)
     a=sub.add_parser('append');a.add_argument('--ledger',required=True);a.add_argument('--case-id',required=True);a.add_argument('--event-type',required=True);a.add_argument('--payload-json',required=True);a.add_argument('--anchor');a.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');a.add_argument('--key-id');a.add_argument('--event-instance-id')
-    v=sub.add_parser('validate');v.add_argument('--ledger',required=True);v.add_argument('--case-id');v.add_argument('--anchor');v.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');v.add_argument('--require-hmac',action='store_true')
+    v=sub.add_parser('validate');v.add_argument('--ledger',required=True);v.add_argument('--case-id');v.add_argument('--anchor');v.add_argument('--hmac-key-env',default='MAESTRO_LEDGER_HMAC_KEY');v.add_argument('--require-hmac',action='store_true');v.add_argument('--expected-key-id')
     ns=ap.parse_args();key=os.environ.get(ns.hmac_key_env)
     if ns.cmd=='append':
         payload=json.loads(Path(ns.payload_json).read_text());print(json.dumps(append_event(ns.ledger,ns.case_id,ns.event_type,payload,anchor_path=ns.anchor,hmac_key=key,key_id=ns.key_id,event_instance_id=ns.event_instance_id),ensure_ascii=False))
     else:
-        events=load_events(ns.ledger);errs=validate_events(events,ns.case_id);anchor=ns.anchor or canonical_anchor_path(ns.ledger);errs+=validate_anchor(ns.ledger,anchor,events,ns.case_id,key,ns.require_hmac)
+        events=load_events(ns.ledger);errs=validate_events(events,ns.case_id);anchor=ns.anchor or canonical_anchor_path(ns.ledger);errs+=validate_anchor(ns.ledger,anchor,events,ns.case_id,key,ns.require_hmac,ns.expected_key_id)
         if errs:[print('INVALID',x) for x in errs];raise SystemExit(1)
         print('VALID')
 if __name__=='__main__':main()
