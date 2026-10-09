@@ -155,6 +155,27 @@ class LedgerHardeningTests(unittest.TestCase):
             start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
             self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
 
+    def test_same_host_reused_pid_is_reclaimed_when_process_instance_changed(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':424242,'token':'old-owner','process_instance':'proc:old-boot:123'}))
+            with mock.patch.object(case_ledger,'_process_instance_id',return_value='proc:new-boot:456'), mock.patch.object(case_ledger,'_pid_alive',return_value=True):
+                with case_ledger.ledger_lock(p,timeout=0.2):
+                    owner=json.loads(lock.read_text())
+                    self.assertEqual(owner['process_instance'],'proc:new-boot:456')
+                    self.assertNotEqual(owner['token'],'old-owner')
+            self.assertFalse(lock.exists())
+
+    def test_malformed_process_instance_metadata_is_not_auto_reclaimed(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            bad={'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'bad','process_instance':{'unexpected':'object'}}
+            lock.write_text(json.dumps(bad))
+            with self.assertRaises(TimeoutError):
+                with case_ledger.ledger_lock(p,timeout=0.08):
+                    self.fail('malformed lock metadata was reclaimed')
+            self.assertEqual(json.loads(lock.read_text()),bad)
+
     def test_configured_lock_host_id_cannot_collapse_distinct_machine_fingerprints(self):
         with mock.patch.dict(os.environ,{'MAESTRO_LOCK_HOST_ID':'shared-label'},clear=False):
             with mock.patch.object(case_ledger.socket,'gethostname',return_value='clone-host'):
