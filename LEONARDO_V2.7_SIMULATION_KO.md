@@ -926,3 +926,117 @@ material repeat key의 path를 raw reviewer 문자열 그대로 사용하면 동
 - legacy key-missing record는 기존 state-only 의미론 유지
 
 이 보완으로 런타임 authority path와 Leonardo 장기 학습이 같은 material identity를 사용하게 된다.
+
+### 33. Windows path alias 보완이 Git literal backslash 파일을 같은 finding으로 합치는 문제
+
+#31에서 `src/module.py`와 `src\\module.py`를 같은 경로 표기로 취급했지만, Git의 repository path 의미론에서는 backslash가 separator가 아니라 **파일명에 포함될 수 있는 literal 문자**다.
+
+반례:
+1. 저장소에 `src/module.py`와 `src\\module.py`가 둘 다 존재
+2. L1은 전자의 결함, L2는 후자의 결함을 보고
+3. 기존 `material_finding_key()`가 policy path normalization을 재사용하여 backslash를 slash로 변환
+4. 두 개의 실제 다른 Git path가 같은 finding key로 합쳐짐
+5. L1/L2 disagreement가 사라지거나 same-material repeat로 잘못 집계될 수 있음
+
+보완:
+- reviewer finding identity 전용 `canonical_finding_path()` 도입
+- Git exact path semantics를 따르며 backslash를 slash로 바꾸지 않음
+- `./` presentation prefix만 안전하게 제거
+- task `changed_paths`에 exact path가 있으면 exact spelling을 authority로 사용
+- 기존 policy matcher의 backslash normalization은 protected-path 방어 목적에만 남기고 finding identity에는 사용하지 않음
+
+회귀:
+- `src/module.py`와 `src\\module.py`는 서로 다른 material finding key
+- `src/module.py`와 `./src/module.py`는 같은 identity
+- 두 literal Git path를 L1/L2가 각각 보고하면 disagreement=true
+
+### 34. unsafe finding path가 reviewer validation 뒤에서 HARNESS_EXCEPTION으로 변하는 문제
+
+기존 reviewer-stage schema는 finding `path`가 non-empty string인지까지만 확인했다.
+
+반례:
+1. reviewer가 `../outside.py`, absolute path, Windows drive path 등을 finding path로 반환
+2. stage validation 통과
+3. 이후 material identity 계산에서 path normalization 예외 발생
+4. reviewer 계약 위반이 `REVIEW_INVALID_RESULT`가 아니라 일반 harness exception으로 분류될 수 있음
+
+보완:
+- stage semantic validation에서 finding path를 즉시 검증
+- NUL, absolute/UNC/drive path, empty/`.`/`..` repository segment를 fail-closed
+- identity 계산 전에 invalid reviewer result로 차단
+- path validation과 material identity가 동일 helper를 사용하여 validation/use 의미론을 일치시킴
+
+회귀:
+- `../src/a.py` → invalid finding path
+- `C:\\repo\\src\\a.py` → invalid finding path
+- 정상 repository-relative path는 계속 허용
+
+### 35. changed_paths 밖의 무관한 finding이 escalation/calibration을 오염할 수 있는 문제
+
+review worker 지침은 “변경이 활성화하거나 악화시키지 않은 pre-existing issue를 보고하지 말라”고 되어 있었지만 harness가 이를 강제하지 않았다.
+
+반례:
+1. 실제 변경은 `src/a.py`
+2. reviewer가 무관한 `src/unrelated.py`의 major finding을 반환
+3. 기존 stage validation은 path 범위를 확인하지 않아 결과를 수락
+4. L2/adversarial escalation, campaign repeat budget, Leonardo calibration에 무관한 finding이 들어갈 수 있음
+5. 반복 시 불필요한 검토 시간 또는 false HUMAN escalation 가능
+
+보완:
+- changed file finding은 task `changed_paths`의 exact Git path(또는 `./` presentation alias)여야 함
+- changed_paths 밖 finding은 **`preexisting=true` AND `activated_or_worsened=true`**일 때만 허용
+- 따라서 cross-file impact는 보존하면서 unrelated pre-existing issue는 차단
+- reviewer worker core에도 exact `changed_paths` spelling과 off-diff 예외 규칙을 명시
+
+회귀:
+- changed path `./src/a.py` → 허용
+- unrelated `src/other.py` + preexisting=false → 거부
+- unrelated `src/other.py` + preexisting=true + activated_or_worsened=true → 허용
+- traversal path → 범위 예외 여부와 무관하게 거부
+
+이번 보완은 reviewer가 볼 수 있는 결함 범위를 단순히 diff line으로 좁히지 않는다. **직접 변경된 파일 + 변경으로 실제 활성화/악화된 기존 코드**까지는 유지하되, 그 밖의 무관한 finding이 리뷰 예산과 Leonardo 학습을 흔드는 경로만 제거한다.
+
+### 36. Windows absolute-path heuristic가 exact changed Git filename을 오탐하는 문제
+
+Git exact path 보존을 다시 검증하면서 host-path 차단 순서의 반대 경계를 확인했다.
+
+반례:
+1. Linux 저장소의 실제 tracked filename이 literal `C:\\literal.py`
+2. task `changed_paths`에도 exact 동일 문자열이 존재
+3. host-path heuristic가 exact task authority보다 먼저 실행되면 Windows drive path처럼 보여 invalid 처리
+4. 실제 changed Git file의 정당한 finding이 차단될 수 있음
+
+보완:
+- NUL, leading `/`, empty/`.`/`..` segment 같은 Git-구조상 unsafe 조건은 항상 먼저 차단
+- 그 다음 task `changed_paths` exact/canonical-`./` match를 authority로 인정
+- exact task path가 아닌 경우에만 Windows drive/UNC 형태를 host absolute path로 거부
+
+회귀:
+- task 밖 `C:\\repo\\src\\a.py` → invalid host path
+- exact changed path인 literal `C:\\literal.py` → 허용
+
+따라서 path 검증은 host OS 문법을 Git identity 위에 덮어쓰지 않고, **task가 증명한 exact Git path를 우선**한다.
+
+### 37. 새 path-scope 계약이 내장 mock reviewer의 고정 경로를 실제 invalid result로 드러낸 회귀
+
+#35 보완 후 canonical full validation에서 다수 기존 review-cycle 테스트가 `REVIEW_INVALID_RESULT`로 실패했다.
+
+원인:
+- production contract는 finding path를 task `changed_paths`에 묶도록 강화됨
+- 그러나 `tools/mock_reviewer.py`는 과거부터 모든 finding에 고정 `src/example.py`를 사용
+- 대부분의 test fixture 실제 변경 path는 `a.py` 등 다른 경로
+- 따라서 새 validator가 mock output을 올바르게 범위 밖 finding으로 거부
+- downstream triage/budget/recovery 테스트가 본래 검증하려던 단계에 도달하기 전에 차단됨
+
+보완:
+- mock reviewer는 task의 첫 `changed_paths` 값을 finding path로 사용
+- changed path가 없는 synthetic task에만 기존 `src/example.py` fallback 유지
+- major/minor/nit/novel/security/test-integrity/unsafe-output mock mode 모두 동일 path binding 적용
+- production validator를 느슨하게 되돌리지 않음
+
+실행 결과가 보여준 의미:
+- 새 path-scope 검증은 실제로 enforcement되고 있었음
+- 실패는 policy false positive가 아니라 test double의 계약 불일치였음
+- mock도 production reviewer와 동일 output contract를 따르게 되어 회귀 테스트의 신뢰도가 오히려 높아짐
+
+이 항목은 보안 규칙을 테스트 때문에 완화하지 않고 **test double을 실제 계약에 맞추는 방향**으로 해결한다.
