@@ -464,9 +464,9 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
     p=Path(anchor);errs=[]
     try:require_hmac=bool(require_hmac) or _witness_requires_hmac(ledger,case_id)
     except ValueError as exc:errs.append(str(exc))
-    if not p.is_file():return ['ledger anchor missing'] if events or require_hmac else []
+    if not p.is_file():return errs+(['ledger anchor missing'] if events or require_hmac else [])
     try:a=json.loads(p.read_text())
-    except Exception:return ['ledger anchor invalid JSON']
+    except Exception:return errs+['ledger anchor invalid JSON']
     if a.get('schema_version') not in {'2.4','2.6','2.7'}:errs.append('ledger anchor schema mismatch')
     cid=case_id or (events[0]['case_id'] if events else a.get('case_id'))
     core=_anchor_core(ledger,cid,events,a.get('key_id'),a.get('schema_version','2.7'))
