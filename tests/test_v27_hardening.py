@@ -149,6 +149,22 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             bad_count['receipt_digest']=__import__('common').object_digest(bad_count,'receipt_digest')
             self.assertIn('source package receipt manifest_entries invalid',validate_package_receipt(bad_count))
 
+    def test_source_package_receipt_can_bind_ci_validation_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);package=root/'pkg.zip';package.write_bytes(b'zip-bytes')
+            manifest=root/'MANIFEST.sha256';payload=root/'file.txt';payload.write_text('x',encoding='utf-8')
+            manifest.write_text(__import__('hashlib').sha256(payload.read_bytes()).hexdigest()+'  ./file.txt\n',encoding='utf-8')
+            receipt=create_package_receipt(package,manifest,'a'*40,clean_extract_verified=True,canonical_validation_passed=True,
+                                           validation_run_id=12345,validation_run_attempt=2,validation_workflow_ref='owner/repo/.github/workflows/harness-validation.yml@refs/pull/5/merge')
+            self.assertEqual(receipt['validation_run_id'],12345);self.assertEqual(receipt['validation_run_attempt'],2)
+            self.assertEqual(validate_package_receipt(receipt,package,manifest),[])
+            tampered=json.loads(json.dumps(receipt));tampered['validation_run_id']=999;tampered['receipt_digest']=''
+            tampered['receipt_digest']=__import__('common').object_digest(tampered,'receipt_digest')
+            self.assertEqual(tampered['validation_run_id'],999)
+            # The digest binds run metadata, while external GitHub artifact/run
+            # metadata remains the authority for whether that run actually existed.
+            self.assertEqual(validate_package_receipt(tampered,package,manifest),[])
+
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
         human=create_human_attestation('CASE','owner','CONFIRMED','a'*40,key,'b'*64,'c'*64)
