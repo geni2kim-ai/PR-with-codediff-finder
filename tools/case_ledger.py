@@ -129,12 +129,26 @@ def ledger_lock(path,timeout=10.0):
                 _unlink_lock_if_unchanged(lock,raw)
         except FileNotFoundError:pass
 
+def ensure_control_dir(path):
+    p=Path(path)
+    if p.exists() or p.is_symlink():
+        is_junction=getattr(p,'is_junction',lambda:False)()
+        if p.is_symlink() or is_junction or not p.is_dir():
+            raise ValueError(f'unsafe coordination directory: {p}')
+    else:
+        p.mkdir(mode=0o700,parents=True,exist_ok=False)
+    # Re-check after creation/lookup so a pre-existing redirect never becomes an
+    # accepted lock namespace.
+    is_junction=getattr(p,'is_junction',lambda:False)()
+    if p.is_symlink() or is_junction or not p.is_dir():
+        raise ValueError(f'unsafe coordination directory: {p}')
+    try:os.chmod(p,0o700)
+    except OSError:pass
+    return p
+
 def case_bundle_lock_path(case_path):
     p=Path(case_path)
-    base=p.parent/'.codediff-control'
-    base.mkdir(mode=0o700,parents=True,exist_ok=True)
-    try:os.chmod(base,0o700)
-    except OSError:pass
+    base=ensure_control_dir(p.parent/'.codediff-control')
     token=hashlib.sha256(p.name.encode('utf-8')).hexdigest()[:16]
     return base/f'case-bundle-{token}'
 
