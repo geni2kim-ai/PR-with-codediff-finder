@@ -584,6 +584,22 @@ class ReviewCampaignBudgetTests(unittest.TestCase):
         self.assertEqual(json.loads(lock.read_text()),foreign)
         self.assertFalse((out/'case-events.jsonl').exists())
 
+    def test_redirected_coordination_directory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            base=Path(td);external=base/'external';external.mkdir()
+            campaign=base/'campaign';campaign.mkdir()
+            try:(campaign/'.codediff-control').symlink_to(external,target_is_directory=True)
+            except (OSError,NotImplementedError):self.skipTest('directory symlink unavailable')
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory'):
+                campaign_control_path(campaign,'case','SYMLINK-CAMPAIGN')
+        with tempfile.TemporaryDirectory() as td:
+            base=Path(td);external=base/'external';external.mkdir();bundle=base/'bundle';bundle.mkdir()
+            try:(bundle/'.codediff-control').symlink_to(external,target_is_directory=True)
+            except (OSError,NotImplementedError):self.skipTest('directory symlink unavailable')
+            case_path=bundle/'case-record.json';case_path.write_text('{}')
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory'):
+                case_bundle_lock_path(case_path)
+
     def test_foreign_host_case_bundle_lock_blocks_local_bundle_access(self):
         with tempfile.TemporaryDirectory() as td:
             case_path=Path(td)/'case-record.json';case_path.write_text('{}')
