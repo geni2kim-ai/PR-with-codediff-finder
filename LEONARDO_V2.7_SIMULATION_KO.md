@@ -995,3 +995,24 @@ review worker 지침은 “변경이 활성화하거나 악화시키지 않은 p
 - traversal path → 범위 예외 여부와 무관하게 거부
 
 이번 보완은 reviewer가 볼 수 있는 결함 범위를 단순히 diff line으로 좁히지 않는다. **직접 변경된 파일 + 변경으로 실제 활성화/악화된 기존 코드**까지는 유지하되, 그 밖의 무관한 finding이 리뷰 예산과 Leonardo 학습을 흔드는 경로만 제거한다.
+
+### 36. Windows absolute-path heuristic가 exact changed Git filename을 오탐하는 문제
+
+Git exact path 보존을 다시 검증하면서 host-path 차단 순서의 반대 경계를 확인했다.
+
+반례:
+1. Linux 저장소의 실제 tracked filename이 literal `C:\\literal.py`
+2. task `changed_paths`에도 exact 동일 문자열이 존재
+3. host-path heuristic가 exact task authority보다 먼저 실행되면 Windows drive path처럼 보여 invalid 처리
+4. 실제 changed Git file의 정당한 finding이 차단될 수 있음
+
+보완:
+- NUL, leading `/`, empty/`.`/`..` segment 같은 Git-구조상 unsafe 조건은 항상 먼저 차단
+- 그 다음 task `changed_paths` exact/canonical-`./` match를 authority로 인정
+- exact task path가 아닌 경우에만 Windows drive/UNC 형태를 host absolute path로 거부
+
+회귀:
+- task 밖 `C:\\repo\\src\\a.py` → invalid host path
+- exact changed path인 literal `C:\\literal.py` → 허용
+
+따라서 path 검증은 host OS 문법을 Git identity 위에 덮어쓰지 않고, **task가 증명한 exact Git path를 우선**한다.
