@@ -155,6 +155,42 @@ class LedgerHardeningTests(unittest.TestCase):
             start=time.monotonic();ev=append_event(p,'C','CASE_OPENED',{});elapsed=time.monotonic()-start
             self.assertEqual(ev['seq'],1);self.assertLess(elapsed,2.0);self.assertFalse(lock.exists())
 
+    def test_stale_reclaim_guard_serializes_reclaimers(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock');guard=Path(str(lock)+'.reclaim')
+            stale={'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'stale'}
+            lock.write_text(json.dumps(stale))
+            guard.mkdir()
+            try:
+                self.assertFalse(case_ledger._reclaim_stale_lock(lock,case_ledger.lock_host_id()))
+                self.assertEqual(json.loads(lock.read_text()),stale)
+            finally:
+                guard.rmdir()
+            self.assertTrue(case_ledger._reclaim_stale_lock(lock,case_ledger.lock_host_id()))
+            self.assertFalse(lock.exists())
+
+    def test_concurrent_stale_reclaimers_do_not_overlap_critical_section(self):
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
+            lock.write_text(json.dumps({'schema_version':'2.7','host':case_ledger.lock_host_id(),'pid':2147483647,'token':'stale'}))
+            gate=threading.Barrier(3);mu=threading.Lock();active=0;peak=0;errors=[]
+            def worker():
+                nonlocal active,peak
+                try:
+                    gate.wait()
+                    with case_ledger.ledger_lock(p,timeout=1.0):
+                        with mu:
+                            active+=1;peak=max(peak,active)
+                        time.sleep(0.08)
+                        with mu:active-=1
+                except Exception as exc:errors.append(exc)
+            threads=[threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:t.start()
+            gate.wait()
+            for t in threads:t.join(2.0)
+            self.assertFalse(errors,errors);self.assertEqual(peak,1)
+            self.assertTrue(all(not t.is_alive() for t in threads));self.assertFalse(lock.exists())
+
     def test_same_host_reused_pid_is_reclaimed_when_process_instance_changed(self):
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/'case-events.jsonl';lock=Path(str(p)+'.lock')
