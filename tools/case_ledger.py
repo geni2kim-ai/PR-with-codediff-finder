@@ -119,12 +119,38 @@ def _lock_owner(raw):
     if raw.isdigit():return {'legacy_pid':int(raw)}
     return None
 
+def _same_host_lock_is_stale(existing,host):
+    if not existing or existing.get('host')!=host:return False
+    pid=existing.get('pid')
+    expected_instance=existing.get('process_instance')
+    observed_instance=_process_instance_id(pid)
+    if expected_instance and observed_instance is not None:
+        return expected_instance!=observed_instance
+    return not _pid_alive(pid)
+
 def _unlink_lock_if_unchanged(lock,expected_raw):
     try:
         current=lock.read_text(encoding='utf-8')
         if current!=expected_raw:return False
         lock.unlink();return True
     except FileNotFoundError:return False
+
+def _reclaim_stale_lock(lock,host):
+    # Stale reclamation needs its own atomic guard. Without this, two
+    # reclaimers can both validate an old lock; one may then delete the fresh
+    # lock installed by the other between compare and unlink.
+    guard=Path(str(lock)+'.reclaim')
+    try:guard.mkdir(mode=0o700)
+    except FileExistsError:return False
+    try:
+        try:raw=lock.read_text(encoding='utf-8')
+        except FileNotFoundError:return False
+        existing=_lock_owner(raw)
+        if not _same_host_lock_is_stale(existing,host):return False
+        return _unlink_lock_if_unchanged(lock,raw)
+    finally:
+        try:guard.rmdir()
+        except OSError:pass
 
 @contextmanager
 def ledger_lock(path,timeout=10.0):
@@ -153,16 +179,7 @@ def ledger_lock(path,timeout=10.0):
             try:
                 raw=lock.read_text(encoding='utf-8')
                 existing=_lock_owner(raw)
-                if existing and existing.get('host')==host:
-                    pid=existing.get('pid')
-                    expected_instance=existing.get('process_instance')
-                    observed_instance=_process_instance_id(pid)
-                    stale=False
-                    if expected_instance and observed_instance is not None:
-                        stale=expected_instance!=observed_instance
-                    elif not _pid_alive(pid):
-                        stale=True
-                    if stale and _unlink_lock_if_unchanged(lock,raw):continue
+                if _same_host_lock_is_stale(existing,host) and _reclaim_stale_lock(lock,host):continue
             except FileNotFoundError:
                 continue
             if time.monotonic()>=deadline:raise TimeoutError(f'ledger lock timeout: {lock}')
