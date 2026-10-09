@@ -18,19 +18,20 @@ def _trail_material_state(row):
 
 def _trail_material_signature(row):
     state=_trail_material_state(row)
-    if state!='FINDINGS':return (state,())
+    if state!='FINDINGS':return (state,None,None)
     signatures=row.get('material_finding_signatures')
-    if isinstance(signatures,list) and signatures:
-        return (state,('severity_keys',tuple(sorted(str(x) for x in signatures if x))))
+    exact=tuple(sorted(str(x) for x in signatures if x)) if isinstance(signatures,list) and signatures else None
     keys=row.get('material_finding_keys')
-    if isinstance(keys,list) and keys:
-        return (state,('keys',tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))))
-    return (state,None)
+    coarse=(tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))) if isinstance(keys,list) and keys else None
+    return (state,exact,coarse)
 
 def _trail_material_agrees(a,b):
     sa=_trail_material_signature(a);sb=_trail_material_signature(b)
-    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
-    return sa==sb
+    if sa[0]!=sb[0]:return False
+    if sa[0]!='FINDINGS':return True
+    if sa[1] is not None and sb[1] is not None:return sa[1]==sb[1]
+    if sa[2] is not None and sb[2] is not None:return sa[2]==sb[2]
+    return True
 
 def reasons_for(case,rsi=None):
     labels=set(case.get('labels',[]));trail=case.get('review_trail',[]);reasons=[];by={}
