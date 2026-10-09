@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -22,11 +23,14 @@ ALLOWED = {
     "manifest_entries",
     "clean_extract_verified",
     "canonical_validation_passed",
+    "validation_run_id",
+    "validation_run_attempt",
+    "validation_workflow_ref",
     "receipt_digest",
 }
 
 
-def create(package, manifest, head_sha, *, clean_extract_verified, canonical_validation_passed):
+def create(package, manifest, head_sha, *, clean_extract_verified, canonical_validation_passed, validation_run_id=None, validation_run_attempt=None, validation_workflow_ref=None):
     package = Path(package)
     manifest = Path(manifest)
     head_sha = str(head_sha).lower()
@@ -50,6 +54,9 @@ def create(package, manifest, head_sha, *, clean_extract_verified, canonical_val
         "manifest_entries": len(entries),
         "clean_extract_verified": bool(clean_extract_verified),
         "canonical_validation_passed": bool(canonical_validation_passed),
+        "validation_run_id": int(validation_run_id) if validation_run_id not in {None,""} else None,
+        "validation_run_attempt": int(validation_run_attempt) if validation_run_attempt not in {None,""} else None,
+        "validation_workflow_ref": str(validation_workflow_ref) if validation_workflow_ref not in {None,""} else None,
         "receipt_digest": "",
     }
     obj["receipt_digest"] = object_digest(obj, "receipt_digest")
@@ -86,6 +93,15 @@ def validate(obj, package=None, manifest=None):
         errors.append("source package receipt clean_extract_verified must be true")
     if obj.get("canonical_validation_passed") is not True:
         errors.append("source package receipt canonical_validation_passed must be true")
+    run_id=obj.get("validation_run_id");run_attempt=obj.get("validation_run_attempt");workflow_ref=obj.get("validation_workflow_ref")
+    if run_id is not None and (type(run_id) is not int or run_id<1):
+        errors.append("source package receipt validation_run_id invalid")
+    if run_attempt is not None and (type(run_attempt) is not int or run_attempt<1):
+        errors.append("source package receipt validation_run_attempt invalid")
+    if workflow_ref is not None and (not isinstance(workflow_ref,str) or not workflow_ref or len(workflow_ref)>512):
+        errors.append("source package receipt validation_workflow_ref invalid")
+    if (run_id is None)!=(run_attempt is None):
+        errors.append("source package receipt validation run id/attempt must be provided together")
     if obj.get("receipt_digest") != object_digest(obj, "receipt_digest"):
         errors.append("source package receipt digest mismatch")
 
@@ -127,6 +143,9 @@ def main():
     create_parser.add_argument("--output", required=True)
     create_parser.add_argument("--clean-extract-verified", action="store_true")
     create_parser.add_argument("--canonical-validation-passed", action="store_true")
+    create_parser.add_argument("--validation-run-id",default=os.environ.get("GITHUB_RUN_ID"))
+    create_parser.add_argument("--validation-run-attempt",default=os.environ.get("GITHUB_RUN_ATTEMPT"))
+    create_parser.add_argument("--validation-workflow-ref",default=os.environ.get("GITHUB_WORKFLOW_REF"))
 
     validate_parser = sub.add_parser("validate")
     validate_parser.add_argument("--receipt", required=True)
@@ -141,6 +160,9 @@ def main():
             ns.head_sha,
             clean_extract_verified=ns.clean_extract_verified,
             canonical_validation_passed=ns.canonical_validation_passed,
+            validation_run_id=ns.validation_run_id,
+            validation_run_attempt=ns.validation_run_attempt,
+            validation_workflow_ref=ns.validation_workflow_ref,
         )
         write_json(ns.output, obj)
         print(ns.output)
