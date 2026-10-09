@@ -7,7 +7,7 @@ from common import canonical_bytes,object_digest,sha256_bytes,write_json
 from validate_case_record import semantic_errors as case_semantic_errors
 from validate_review_cycle import semantic_errors as cycle_semantic_errors
 from validate_case_bundle import errors as bundle_errors
-from case_ledger import append_event,default_anchor_path,load_events,validate_events,validate_anchor
+from case_ledger import append_event,default_anchor_path,load_events,validate_events,validate_anchor,case_bundle_lock
 from human_decision_attestation import validate as validate_human_attestation,digest as human_attestation_digest,consume_nonce as consume_human_nonce
 
 CASE_SCHEMA=json.loads((ROOT/'schemas/case-record.schema.json').read_text())
@@ -42,54 +42,55 @@ def _transaction_hmac(tx,key):
     return hmac.new(key.encode('utf-8'),canonical_bytes(core),hashlib.sha256).hexdigest()
 
 def _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,repo,att_path,ledger_key,human_key,ledger_key_id,replay_dir):
-    tx=json.loads(Path(tx_path).read_text())
-    if tx.get('transaction_digest')!=object_digest({k:v for k,v in tx.items() if k!='transaction_hmac'},'transaction_digest'):raise SystemExit('human transaction digest mismatch')
-    if not human_key:raise SystemExit('human transaction HMAC key unavailable')
-    mac=tx.get('transaction_hmac')
-    if not mac or not hmac.compare_digest(mac,_transaction_hmac(tx,human_key)):raise SystemExit('human transaction HMAC mismatch')
-    req=tx['request'];head=git_head(repo)
-    expected_transaction_id=sha256_bytes(canonical_bytes({'case_id':req.get('case_id'),'review_id':req.get('review_id'),'attestation_digest':req.get('attestation_digest'),'source_cycle_digest':req.get('source_cycle_digest')}))
-    if req.get('transaction_id')!=expected_transaction_id:raise SystemExit('human transaction id mismatch')
-    if head!=req['head_sha']:raise SystemExit('repository HEAD changed since human transaction; recovery refused')
-    att=tx['attestation']
-    ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key,enforce_freshness=False)
-    if ae:raise SystemExit('invalid human decision attestation during recovery: '+'; '.join(ae))
-    if human_attestation_digest(att)!=req['attestation_digest']:raise SystemExit('human transaction attestation digest mismatch')
-    replay_error,_=consume_human_nonce(att,replay_dir,req['transaction_id'])
-    if replay_error:raise SystemExit(replay_error)
-    updated_case=tx['updated_case'];updated_cycle=tx['updated_cycle']
-    ce=_validate_case(updated_case)+_validate_cycle(updated_cycle)
-    if ce:raise SystemExit('human transaction state invalid: '+'; '.join(ce))
-    if updated_case.get('case_id')!=req['case_id'] or updated_case.get('binding',{}).get('head_sha')!=head:raise SystemExit('human transaction case binding mismatch')
-    expected_state='HUMAN_CONFIRMED' if req['verdict']=='CONFIRMED' else 'HUMAN_REJECTED'
-    expected_gate='success' if req['verdict']=='CONFIRMED' else 'failure'
-    if updated_cycle.get('state')!=expected_state or updated_cycle.get('gate_conclusion')!=expected_gate or updated_cycle.get('achieved_level')!='HUMAN':
-        raise SystemExit('human transaction terminal state mismatch')
-
-    events=load_events(ledger)
-    errs=validate_events(events,req['case_id'])+validate_anchor(ledger,anchor,events,req['case_id'],ledger_key,require_hmac=(updated_cycle.get('execution_mode')=='ENFORCED'))
-    if errs:raise SystemExit('invalid ledger during human transaction recovery: '+'; '.join(errs))
-
-    hp=tx['human_event_payload'];cp=tx['close_event_payload']
-    human=_matching_event(events,'HUMAN_DECISION',lambda p:p.get('review_id')==req['review_id'])
-    if human:
-        if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
-    else:
-        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+    with case_bundle_lock(case_path):
+        tx=json.loads(Path(tx_path).read_text())
+        if tx.get('transaction_digest')!=object_digest({k:v for k,v in tx.items() if k!='transaction_hmac'},'transaction_digest'):raise SystemExit('human transaction digest mismatch')
+        if not human_key:raise SystemExit('human transaction HMAC key unavailable')
+        mac=tx.get('transaction_hmac')
+        if not mac or not hmac.compare_digest(mac,_transaction_hmac(tx,human_key)):raise SystemExit('human transaction HMAC mismatch')
+        req=tx['request'];head=git_head(repo)
+        expected_transaction_id=sha256_bytes(canonical_bytes({'case_id':req.get('case_id'),'review_id':req.get('review_id'),'attestation_digest':req.get('attestation_digest'),'source_cycle_digest':req.get('source_cycle_digest')}))
+        if req.get('transaction_id')!=expected_transaction_id:raise SystemExit('human transaction id mismatch')
+        if head!=req['head_sha']:raise SystemExit('repository HEAD changed since human transaction; recovery refused')
+        att=tx['attestation']
+        ae=validate_human_attestation(att,case_id=req['case_id'],actor_id=req['node_id'],verdict=req['verdict'],head_sha=head,cycle_digest=req['source_cycle_digest'],evidence_digest=req['evidence_digest'],key=human_key,enforce_freshness=False)
+        if ae:raise SystemExit('invalid human decision attestation during recovery: '+'; '.join(ae))
+        if human_attestation_digest(att)!=req['attestation_digest']:raise SystemExit('human transaction attestation digest mismatch')
+        replay_error,_=consume_human_nonce(att,replay_dir,req['transaction_id'])
+        if replay_error:raise SystemExit(replay_error)
+        updated_case=tx['updated_case'];updated_cycle=tx['updated_cycle']
+        ce=_validate_case(updated_case)+_validate_cycle(updated_cycle)
+        if ce:raise SystemExit('human transaction state invalid: '+'; '.join(ce))
+        if updated_case.get('case_id')!=req['case_id'] or updated_case.get('binding',{}).get('head_sha')!=head:raise SystemExit('human transaction case binding mismatch')
+        expected_state='HUMAN_CONFIRMED' if req['verdict']=='CONFIRMED' else 'HUMAN_REJECTED'
+        expected_gate='success' if req['verdict']=='CONFIRMED' else 'failure'
+        if updated_cycle.get('state')!=expected_state or updated_cycle.get('gate_conclusion')!=expected_gate or updated_cycle.get('achieved_level')!='HUMAN':
+            raise SystemExit('human transaction terminal state mismatch')
+    
         events=load_events(ledger)
-
-    close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
-    if close:
-        if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
-    else:
-        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
-
-    _atomic_json(case_path,updated_case)
-    _atomic_json(cycle_path,updated_cycle)
-    _atomic_json(att_path,att)
-    Path(tx_path).unlink(missing_ok=True)
-    return updated_cycle
-
+        errs=validate_events(events,req['case_id'])+validate_anchor(ledger,anchor,events,req['case_id'],ledger_key,require_hmac=(updated_cycle.get('execution_mode')=='ENFORCED'))
+        if errs:raise SystemExit('invalid ledger during human transaction recovery: '+'; '.join(errs))
+    
+        hp=tx['human_event_payload'];cp=tx['close_event_payload']
+        human=_matching_event(events,'HUMAN_DECISION',lambda p:p.get('review_id')==req['review_id'])
+        if human:
+            if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
+        else:
+            append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+            events=load_events(ledger)
+    
+        close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
+        if close:
+            if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
+        else:
+            append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+    
+        _atomic_json(case_path,updated_case)
+        _atomic_json(cycle_path,updated_cycle)
+        _atomic_json(att_path,att)
+        Path(tx_path).unlink(missing_ok=True)
+        return updated_cycle
+    
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--case',required=True);ap.add_argument('--cycle',required=True);ap.add_argument('--ledger',required=True);ap.add_argument('--anchor')
