@@ -4,7 +4,7 @@
   "title": "Source package receipt v2.7",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version","kind","authority_effect","head_sha","package_name","package_sha256","manifest_sha256","manifest_entries","clean_extract_verified","canonical_validation_passed","receipt_digest"],
+  "required": ["schema_version","kind","authority_effect","head_sha","package_name","package_sha256","manifest_sha256","manifest_entries","clean_extract_verified","canonical_validation_passed","validation_run_id","validation_run_attempt","validation_workflow_ref","receipt_digest"],
   "properties": {
     "schema_version": {"const":"2.7"},
     "kind": {"const":"source-package-receipt"},
@@ -16,6 +16,9 @@
     "manifest_entries": {"type":"integer","minimum":1},
     "clean_extract_verified": {"const":true},
     "canonical_validation_passed": {"const":true},
+    "validation_run_id": {"type":["integer","null"],"minimum":1},
+    "validation_run_attempt": {"type":["integer","null"],"minimum":1},
+    "validation_workflow_ref": {"type":["string","null"],"minLength":1,"maxLength":512},
     "receipt_digest": {"type":"string","pattern":"^[0-9a-f]{64}$"}
   }
 }
