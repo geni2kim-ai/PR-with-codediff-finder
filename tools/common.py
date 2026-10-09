@@ -40,15 +40,19 @@ def canonical_finding_path(path, changed_paths=None) -> str:
         candidate=candidate[2:]
     if "\x00" in candidate:
         raise ValueError("finding path contains NUL")
-    if candidate.startswith("/") or candidate.startswith("\\\\") or re.match(r"^[A-Za-z]:[\\/]",candidate):
+    if candidate.startswith("/"):
         raise ValueError("finding path must be repository-relative")
     parts=candidate.split("/")
     if not candidate or any(part in {"",".",".."} for part in parts):
         raise ValueError("finding path contains unsafe repository segments")
+    # Exact task paths are authoritative Git identities, even if their literal
+    # filename happens to resemble a Windows host path.
     if path in changed:
         return path
     if candidate in changed:
         return candidate
+    if candidate.startswith("\\\\") or re.match(r"^[A-Za-z]:[\\/]",candidate):
+        raise ValueError("finding path must not be a host absolute path")
     return candidate
 
 
