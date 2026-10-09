@@ -124,3 +124,4 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - pending append의 exact torn JSONL tail을 `pre_ledger_sha256` 검증 후 truncate/replay하고, 일치하지 않는 malformed tail은 `LedgerTornWriteError`로 fail-closed.
 - recovery idempotency에 `event_instance_id`를 도입하여 같은 instance의 재시도만 흡수하고, 동일 type/payload라도 다른 instance의 의도적 이벤트는 별도 seq로 기록.
 - source-package receipt에 Actions run ID/attempt/workflow ref를 추가해 ZIP/HEAD와 검증 실행의 추적 연결을 강화(실행 존재 자체의 외부 증명 권한은 아님).
+- source-package receipt의 CI traceability 필드는 신규 생성물에는 기록하되 optional v2.7 extension으로 유지하여 기존 v2.7 receipt 검증 호환성을 보존.
