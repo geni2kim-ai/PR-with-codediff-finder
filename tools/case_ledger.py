@@ -133,12 +133,11 @@ def case_bundle_lock_path(case_path):
 @contextmanager
 def case_bundle_lock(case_path,timeout=10.0):
     target=case_bundle_lock_path(case_path)
-    try:
-        with ledger_lock(target,timeout=timeout):
-            yield
-    finally:
-        try:target.parent.rmdir()
-        except OSError:pass
+    # The shared control directory is intentionally persistent. Removing it on
+    # unlock races with waiters on another process/host that are about to create
+    # the next lock file.
+    with ledger_lock(target,timeout=timeout):
+        yield
 
 def _anchor_core(ledger,case_id,events,key_id=None,schema_version='2.7'):
     p=Path(ledger);last=events[-1]['event_hash'] if events else ZERO
