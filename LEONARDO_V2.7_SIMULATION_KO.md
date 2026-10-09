@@ -586,3 +586,41 @@ section 17~18의 HMAC 격리를 다시 공격했다.
 
 이 수정은 source authority나 review policy가 아니라 검증 파이프라인의 결정성을 높이는 회귀 보완이다.
 
+### 22. active case의 ledger/anchor와 case-record 사이 torn bundle snapshot
+
+section 19에서는 다른 case의 ledger append 중간 상태를 막았지만 active case의 최종 history reconstruction은 초기 분류 lock을 푼 뒤 다시 ledger/anchor/case-record를 읽고 있었다.
+
+동시에 `ingest_outcome.py`, `ingest_incident.py`, `record_human_decision.py`는 다음처럼 bundle을 여러 파일에 걸쳐 갱신한다.
+
+1. transaction file 확인/생성
+2. ledger event append + anchor 갱신
+3. case-record/cycle/attestation replace
+4. transaction 제거
+
+반례 A — torn read:
+- outcome writer가 `OUTCOME_RECORDED`를 ledger에 append
+- case-record 교체 직전
+- active campaign history가 ledger/anchor는 새 상태, case-record는 이전 상태로 읽음
+- bundle semantic validation이 일시적 mismatch를 영구 corruption으로 오판
+
+반례 B — transaction preparation race:
+- 두 post-review writer가 동시에 같은 bundle을 읽음
+- 둘 다 자기 transaction이 없다고 판단하고 stale case snapshot에서 서로 다른 update를 준비
+- finish 단계만 lock하면 transaction 준비/교체 구간의 stale update 경쟁은 남음
+
+보완:
+- `case_ledger.py`에 외부 temp control 영역 기반 `case_bundle_lock()` 추가
+- lock key는 canonical case-record path SHA-256으로 생성하여 reviewed repo/output tree에 control file을 남기지 않음
+- campaign history의 active-case 최종 reconstruction은 `bundle lock → ledger lock` 순서로 ledger/anchor/case-record를 같은 snapshot에서 검증
+- pending ledger recovery도 bundle lock 안에서 수행
+- outcome/incident/HUMAN writer는 transaction 존재 확인부터 case 읽기, transaction 생성, ledger append, case/cycle replace, transaction cleanup까지 전체 lifecycle을 동일 bundle lock으로 직렬화
+- lock order를 항상 bundle → ledger로 고정하여 history/writer 간 교착 가능성을 줄임
+- unrelated case의 빠른 classification은 기존 per-ledger lock 경로를 유지
+
+추가 회귀:
+- active case bundle lock 동안 case-record를 partial JSON으로 바꾸고 history reader 실행 → reader가 partial file을 소비하지 않고 lock 해제 후 정상 history 재구성
+- outcome writer를 bundle lock 바깥 프로세스로 실행하면서 lock을 선점 → writer가 ledger event를 먼저 쓰지 않고 대기, 해제 후 OUTCOME_RECORDED + case-record가 함께 정상 반영
+- bundle control path가 reviewed temporary repository 내부가 아님을 확인
+
+이 보완은 review budget 의미를 바꾸지 않고, multi-file case bundle을 실제 transaction boundary와 일치시키는 동시성 보완이다.
+
