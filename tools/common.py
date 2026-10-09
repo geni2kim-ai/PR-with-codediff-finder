@@ -35,13 +35,9 @@ def canonical_finding_path(path, changed_paths=None) -> str:
     if not isinstance(path,str) or not path:
         raise ValueError("finding path must be a non-empty string")
     changed=set(changed_paths or [])
-    if path in changed:
-        return path
     candidate=path
     while candidate.startswith("./"):
         candidate=candidate[2:]
-    if candidate in changed:
-        return candidate
     if "\x00" in candidate:
         raise ValueError("finding path contains NUL")
     if candidate.startswith("/") or candidate.startswith("\\\\") or re.match(r"^[A-Za-z]:[\\/]",candidate):
@@ -49,6 +45,10 @@ def canonical_finding_path(path, changed_paths=None) -> str:
     parts=candidate.split("/")
     if not candidate or any(part in {"",".",".."} for part in parts):
         raise ValueError("finding path contains unsafe repository segments")
+    if path in changed:
+        return path
+    if candidate in changed:
+        return candidate
     return candidate
 
 
