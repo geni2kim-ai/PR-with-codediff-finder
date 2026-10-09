@@ -4,7 +4,7 @@
   "title": "Source package receipt v2.7",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version","kind","authority_effect","head_sha","package_name","package_sha256","manifest_sha256","manifest_entries","clean_extract_verified","canonical_validation_passed","validation_run_id","validation_run_attempt","validation_workflow_ref","receipt_digest"],
+  "required": ["schema_version","kind","authority_effect","head_sha","package_name","package_sha256","manifest_sha256","manifest_entries","clean_extract_verified","canonical_validation_passed","receipt_digest"],
   "properties": {
     "schema_version": {"const":"2.7"},
     "kind": {"const":"source-package-receipt"},
