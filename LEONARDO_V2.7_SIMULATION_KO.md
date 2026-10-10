@@ -1294,3 +1294,17 @@ GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.tes
 - 범위: 일반 append의 예기치 않은 witness 변경 차단이며 운영자 승인된 과거 signed migration을 새로 자동화하지 않는다.
 
 판정: 운영 중 쓰기 거부 상태를 지속시키는 결함으로 MATERIAL, 단일 묶음 수정. CI 성공 여부와 독립 검증은 최신 HEAD에서 확인한다. 작은 NOTE_ONLY 항목을 추가 자동 수정 루프에 넣지 않는다.
+
+### 52. 서명처럼 보이는 anchor로 signed witness가 선기록되는 경계
+
+최신 post-#51 구현은 `visible_anchor_hmac`가 진짜 MAC 검증 완료를 뜻하지 않는데도, 이 truthy marker로 HMAC preflight를 생략했다. 공격자가 기존 unsigned anchor의 `hmac_sha256`을 가짜 문자열로 바꾸면, 이후 append가 실패하더라도 signed-required witness가 남아 정상 복구를 차단할 수 있었다. 별도로 signed anchor의 witness가 없는 경우 요청 key_id의 drift가 anchor 검증보다 먼저 witness를 오염시키는 문제도 있었다.
+
+보완: 기존 ledger/anchor는 실제 HMAC·hash-chain·key-ID 검증을 통과한 뒤 witness 변경 허용. pending journal이 있으면 anchor가 구버전 상태일 수 있으므로 journal을 먼저 검증하고 key ID drift를 막음. 회귀 시나리오: forged HMAC marker, 잘못된 key-ID 복구, unsigned pending + forged marker.
+
+### 53. 신규 ledger 이벤트의 스키마/직렬화 검증 누락
+
+기존 append writer는 앞선 이벤트를 검증하지만 새로 쓸 `event_type`, `case_id`, `payload`를 파일에 쓰기 전에 스키마 검증하지 않았다. 무효 이벤트 타입이나 비직렬화 payload가 들어가면 원장/append journal에 복구 불가능한 데이터를 남길 수 있었다.
+
+보완: 새 이벤트 입력을 v2.4 schema 및 canonical JSON 직렬화에 대해 **파일 생성 전에** 검증. 새 ledger와 기존 정상 ledger에 대한 회귀 추가.
+
+범위: 이 경계는 코드 기반 시뮬레이션에서 도출한 MATERIAL 결함이며 새로운 실행 테스트는 최신 GitHub Actions로 검증할 것. ENFORCED로 자동 승격하지 않음.

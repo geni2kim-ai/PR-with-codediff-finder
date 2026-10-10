@@ -489,5 +489,85 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertFalse(case_ledger.canonical_auth_witness_path(ledger).exists())
 
 
+    def test_forged_hmac_marker_does_not_poison_unsigned_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            original_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            original_witness=witness.read_bytes()
+            forged=json.loads(original_anchor);forged['key_id']='key-v1';forged['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(forged),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'HMAC mismatch'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key='real-key',key_id='key-v1')
+            self.assertEqual(witness.read_bytes(),original_witness)
+            anchor.write_bytes(original_anchor)
+            ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3})
+            self.assertEqual(ev['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_signed_anchor_key_id_change_cannot_poison_missing_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            key='ledger-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='old-key')
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            witness.unlink();original=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'key_id change requires explicit migration'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key=key,key_id='new-key')
+            self.assertFalse(witness.exists());self.assertEqual(anchor.read_bytes(),original)
+            ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3},
+                            hmac_key=key,key_id='old-key')
+            self.assertEqual(ev['seq'],2)
+            self.assertEqual(case_ledger.load_auth_witness(ledger,'CASE')['key_id'],'old-key')
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE',key,True))
+
+    def test_unsigned_pending_with_forged_hmac_anchor_keeps_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            old_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger);old_witness=witness.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2')
+            forged=json.loads(old_anchor);forged['key_id']='key-v1';forged['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(forged),encoding='utf-8')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC missing'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2',
+                             hmac_key='real-key',key_id='key-v1')
+            self.assertEqual(witness.read_bytes(),old_witness)
+            self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+            anchor.write_bytes(old_anchor)
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2')
+            self.assertEqual(recovered['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_invalid_new_event_cannot_mutate_ledger_or_witness(self):
+        invalid=[('CASE','UNRECOGNIZED_EVENT',{'v':1}),('BAD/CASE','CASE_OPENED',{'v':1}),
+                 ('CASE','CASE_OPENED',['not-an-object']),('CASE','CASE_OPENED',{'nonjson':{1,2}})]
+        for cid,kind,payload in invalid:
+            with self.subTest(cid=cid,kind=kind,payload=str(payload)):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with self.assertRaises(ValueError):append_event(ledger,cid,kind,payload)
+                    for path in (ledger,default_anchor_path(ledger),
+                                 case_ledger.canonical_auth_witness_path(ledger),
+                                 case_ledger.pending_append_path(ledger)):
+                        self.assertFalse(path.exists(),path)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            orig_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger);orig_witness=witness.read_bytes()
+            with self.assertRaisesRegex(ValueError,'invalid event input'):
+                append_event(ledger,'CASE','UNRECOGNIZED_EVENT',{'v':2})
+            self.assertEqual(len(case_ledger.load_events(ledger)),1)
+            self.assertEqual(anchor.read_bytes(),orig_anchor)
+            self.assertEqual(witness.read_bytes(),orig_witness)
+
+
 if __name__=='__main__':
     unittest.main()

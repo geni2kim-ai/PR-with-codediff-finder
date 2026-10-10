@@ -502,30 +502,54 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
     if key_id and not hmac_key:raise ValueError('ledger key_id requires HMAC key')
     if event_instance_id is not None and (not isinstance(event_instance_id,str) or not event_instance_id or len(event_instance_id)>256):
         raise ValueError('event_instance_id must be a non-empty string up to 256 chars')
+    probe={'schema_version':'2.4','case_id':case_id,'seq':1,'event_type':event_type,
+           'timestamp':timestamp or utc(),'payload':payload,'prev_hash':ZERO,'event_hash':ZERO}
+    bad=[error.message for error in Draft202012Validator(SCHEMA).iter_errors(probe)]
+    if bad:raise ValueError('invalid event input: '+'; '.join(bad))
+    try:object_digest(probe,'event_hash')
+    except (TypeError,ValueError,OverflowError) as exc:
+        raise ValueError('event input must be JSON serializable') from exc
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);anchor=Path(anchor_path) if anchor_path else canonical_anchor_path(p);tx_path=pending_append_path(p)
     with ledger_lock(p):
+        # Do not alter a sticky witness before authenticating preexisting state.
+        # A forged anchor HMAC marker is NOT a successful signature check.
+        existing_witness=load_auth_witness(p,case_id)
         visible_anchor_hmac=False
         if anchor.is_file():
             try:visible_anchor_hmac=bool(json.loads(anchor.read_text(encoding='utf-8')).get('hmac_sha256'))
-            except Exception:pass
-        # All preflight rejections below precede auth-witness mutation. Otherwise
-        # a failed unsigned-to-signed attempt can permanently poison a healthy
-        # unsigned ledger by writing a sticky signed-required witness first.
+            except (ValueError,TypeError):pass
         if p.exists() and not anchor.is_file() and not tx_path.exists():
             raise ValueError(f'existing ledger anchor missing: {anchor}')
-        if hmac_key and not visible_anchor_hmac and (p.exists() or tx_path.exists()):
-            existing_witness=load_auth_witness(p,case_id)
-            if not (existing_witness and existing_witness.get('hmac_required')):
-                if not tx_path.is_file():
-                    raise ValueError('existing unsigned ledger requires explicit HMAC migration')
-                # A crash-before-anchor signed journal can authorize recovery even
-                # without a preexisting witness, but only after MAC verification.
-                try:pending_candidate=json.loads(tx_path.read_text(encoding='utf-8'))
-                except Exception as exc:
-                    raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
-                preflight_errors=_validate_append_tx(pending_candidate,hmac_key,True,expected_key_id)
-                if preflight_errors:
-                    raise LedgerRecoveryError('invalid pending append before HMAC witness change: '+'; '.join(preflight_errors))
+        if not tx_path.exists() and anchor.is_file():
+            existing_anchor=json.loads(anchor.read_text(encoding='utf-8'))
+            if hmac_key and not existing_anchor.get('hmac_sha256'):
+                raise ValueError('existing unsigned ledger requires explicit HMAC migration')
+            if hmac_key and existing_anchor.get('key_id')!=key_id:
+                raise ValueError('existing signed ledger key_id change requires explicit migration')
+            previous=load_events(p)
+            preflight_errors=validate_events(previous,case_id)
+            preflight_errors+=validate_anchor(
+                p,anchor,previous,case_id,hmac_key,
+                require_hmac=bool(existing_witness and existing_witness.get('hmac_required')),
+                expected_key_id=expected_key_id)
+            if preflight_errors:
+                raise ValueError('invalid existing ledger anchor: '+'; '.join(preflight_errors))
+        if tx_path.exists():
+            # The anchor can legitimately lag the ledger during a crash.
+            # Validate the pending transaction before creating a witness.
+            try:pending_candidate=json.loads(tx_path.read_text(encoding='utf-8'))
+            except Exception as exc:
+                raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
+            preflight_errors=_validate_append_tx(
+                pending_candidate,hmac_key,
+                bool(visible_anchor_hmac or (existing_witness and existing_witness.get('hmac_required'))),
+                expected_key_id)
+            if preflight_errors:
+                raise LedgerRecoveryError('invalid pending append before HMAC witness change: '+'; '.join(preflight_errors))
+            if hmac_key and pending_candidate.get('key_id')!=key_id:
+                raise ValueError('pending ledger key_id change requires explicit migration')
+        if existing_witness and existing_witness.get('hmac_required') and existing_witness.get('key_id') and key_id and existing_witness['key_id']!=key_id:
+            raise ValueError('ledger auth witness key_id change requires explicit migration')
         witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac or bool(expected_key_id),key_id or expected_key_id)
         require_hmac=bool(witness.get('hmac_required')) or bool(expected_key_id)
         if require_hmac and not hmac_key:raise ValueError('ledger HMAC key unavailable for signed-history witness')
