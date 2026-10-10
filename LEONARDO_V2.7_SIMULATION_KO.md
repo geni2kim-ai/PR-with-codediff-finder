@@ -1378,3 +1378,17 @@ HEAD `ca71139661783b1f52f8a3815b48ae7dea9e184c`에서 신규 `case-events.jsonl`
 대응: coordination path와 case-record path의 전체 조상 경로를 symlink/junction/traversal 관점에서 검사, control dir 생성 직전 및 chmod 직전에 재검사. 상위 리디렉션/직접 case-record symlink에서 외부 파일·디렉터리 무생성을 검증하고 정상 lock 획득의 역회귀를 확인한다.
 
 범위: Leonardo 기준 코드 경계 시뮬레이션 및 Python hardlink 동작 재현으로 도출했고 별도 Leonardo 실시간 에이전트 호출은 아니다. 공격자의 동시 경로 교체 TOCTOU, Windows host E2E, HUMAN/ENFORCED 승격은 별도 게이트. 최신 HEAD CI 검증 이전에는 PASS라고 기재하지 않는다.
+
+### 64. 손상된 대형 append tail에서 이차 시간 복구 검사
+
+기준 HEAD `f8e5bc62502f1afe0fa5da36f46ab5e4bf5b176c` (CI #794 FULL PASS). 기존 `_repair_exact_torn_tail()`은 유효한 pending 이벤트가 아니라 손상된 JSONL tail을 만나면 `event_bytes[:size]`를 큰 길이부터 1까지 생성하고 비교한다. 입력이 약 1MiB일 때 Python 재현에서는 약 14초, 256KiB에서도 반복 스캔 비용이 커지는 현상을 확인. 반복적인 업무/복구 시 불필요한 CPU 점유와 런타임 장시간 지연을 유발할 수 있는 성능 경계.
+
+보완: KMP failure table로 raw suffix와 event prefix의 겹침을 선형 시간에 찾아 필요한 prefix border만 확인하며, 전제 ledger SHA256은 후보 prefix 길이 증가 순서로 incremental hashing하여 중복 해시를 방지. 정확히 증명된 prefix+pre-ledger digest만 truncate하는 안전조건은 동일. 무작위 160개 반례에서 기존 알고리즘과 완전 동일한 truncation/거부 결과를 비교하며 1MiB 손상 tail의 무변경·제한 시간 검증 추가.
+
+### 65. lock 생성 과정에서 KeyboardInterrupt/SystemExit가 고아 잠금 파일을 남김
+
+`ledger_lock()`은 O_EXCL로 `.lock`을 만든 뒤 flush/fsync까지 수행한다. 이 도중 Ctrl+C(`KeyboardInterrupt`)나 프로세스 논리 종료(`SystemExit`)가 일어나면 `except Exception`은 실행되지 않아 lock 파일이 남는다. 이후 같은 PID/프로세스는 살아 있으므로 정상 stale-reclaim 정책도 이를 제거할 수 없고 후속 ledger 작업이 timeout 된다.
+
+보완: 잠금 초기 생성 코드의 정리 경계를 `except BaseException`으로 확장하고 보유 파일 디스크립터 정리·원래 lock 제거 후 반드시 원래 예외를 재전달. 신규 회귀는 fsync 지점에서 두 예외를 각각 주입하고 lock 파일 부재와 즉시 재획득을 확인. 기존 정상/외부 프로세스 잠금 권한은 바꾸지 않음.
+
+범위: Leonardo 방식 코드 시뮬레이션·Python 반례·GitHub 회귀 테스트. 별도 Leonardo 런타임 직접 실행은 불가. 이 2건만 묶어 수정하고 전체 HEAD 검증 이후에만 PASS 판단하며, Windows/다중 호스트 운영 환경과 HUMAN/ENFORCED 승인 경계는 그대로 남겨둔다.

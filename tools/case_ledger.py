@@ -262,7 +262,10 @@ def ledger_lock(path,timeout=10.0):
             try:
                 with os.fdopen(fd,'wb',closefd=True) as f:
                     fd=None;f.write(encoded);f.flush();os.fsync(f.fileno())
-            except Exception:
+            except BaseException:
+                # KeyboardInterrupt/SystemExit during lock initialization must
+                # not leave a live-process lock that stale-owner reclamation
+                # correctly refuses to steal. Re-raise after best-effort cleanup.
                 if fd is not None:
                     try:os.close(fd)
                     except OSError:pass
@@ -438,11 +441,36 @@ def _repair_exact_torn_tail(ledger,event,pre_ledger_sha256):
     if hashlib.sha256(raw).hexdigest()==pre_ledger_sha256:return False
     if len(raw)>=len(event_bytes) and raw.endswith(event_bytes) and hashlib.sha256(raw[:-len(event_bytes)]).hexdigest()==pre_ledger_sha256:return False
     limit=min(len(raw),max(0,len(event_bytes)-1))
-    for size in range(limit,0,-1):
-        if raw.endswith(event_bytes[:size]) and hashlib.sha256(raw[:-size]).hexdigest()==pre_ledger_sha256:
+    if not limit:return False
+    # A corrupt tail could previously cause O(limit**2) temporary byte copies:
+    # event_bytes[:size] was allocated for every possible suffix length.
+    # KMP finds all viable prefix/suffix borders in linear time.
+    border=[0]*limit
+    for i in range(1,limit):
+        k=border[i-1]
+        while k and event_bytes[i]!=event_bytes[k]:
+            k=border[k-1]
+        if event_bytes[i]==event_bytes[k]:k+=1
+        border[i]=k
+    size=0
+    for value in raw[-limit:]:
+        while size and (size==limit or value!=event_bytes[size]):
+            size=border[size-1]
+        if size<limit and value==event_bytes[size]:size+=1
+    # Compare the pre-ledger digest only at actual borders. Hash candidates
+    # incrementally as prefix length grows, so repeated-prefix inputs cannot
+    # repeatedly re-hash the unchanged ledger.
+    prefix_end=len(raw)-size
+    digest=hashlib.sha256(raw[:prefix_end])
+    while size:
+        if digest.hexdigest()==pre_ledger_sha256:
             with p.open('r+b') as fh:
                 fh.truncate(len(raw)-size);fh.flush();os.fsync(fh.fileno())
             return True
+        shorter=border[size-1]
+        digest.update(raw[prefix_end:len(raw)-shorter])
+        prefix_end=len(raw)-shorter
+        size=shorter
     return False
 
 def _append_tx_digest(tx):

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,os,subprocess,sys,tempfile,unittest,zipfile
+import json,os,random,subprocess,sys,tempfile,time,unittest,zipfile
 from unittest import mock
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -1063,6 +1063,71 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             with case_ledger.case_bundle_lock(record,timeout=1.0):
                 self.assertTrue((root/'.codediff-control').is_dir())
             self.assertEqual(original.read_text(encoding='utf-8'),'{}')
+
+
+    def test_large_corrupted_torn_tail_rejection_is_bounded_and_nonmutating(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            ev={'event_type':'SENSOR_ACCEPTED',
+                'payload':{'blob':'A'*(1024*1024)}}
+            event_bytes=case_ledger._events_bytes([ev])
+            before=b'unchanged-prefix\n'+b'Z'*len(event_bytes)
+            ledger.write_bytes(before)
+            pre_sha=case_ledger.hashlib.sha256(b'unchanged-prefix\n').hexdigest()
+            start=time.monotonic()
+            changed=case_ledger._repair_exact_torn_tail(ledger,ev,pre_sha)
+            elapsed=time.monotonic()-start
+            self.assertFalse(changed)
+            self.assertEqual(ledger.read_bytes(),before)
+            # Previous descending-slice algorithm took ~14s for 1 MiB
+            # unmatched data in a controlled Python reproduction.
+            self.assertLess(elapsed,5.0,'malformed recovery tail scan is unbounded')
+
+    def test_torn_tail_linear_match_preserves_reference_recovery_semantics(self):
+        rng=random.Random(47691)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            for _ in range(160):
+                payload=''.join(rng.choice('a{"b}:') for _ in range(rng.randrange(8,100)))
+                event={'event_type':'SENSOR_ACCEPTED','payload':{'text':payload}}
+                event_bytes=case_ledger._events_bytes([event])
+                prefix=b'PREV-LEDGER-BYTES\n'
+                prefix_len=rng.randrange(0,len(event_bytes))
+                tail=event_bytes[:prefix_len]
+                if rng.choice((True,False)) and tail:
+                    # A plausible near-prefix tail that may have multiple
+                    # shorter overlapping prefix/suffix borders.
+                    tail=tail[:-1]+rng.choice((b'?',b'{',b'a'))
+                raw=prefix+tail
+                pre_sha=case_ledger.hashlib.sha256(prefix).hexdigest()
+                expected_size=0
+                for size in range(min(len(raw),len(event_bytes)-1),0,-1):
+                    if (raw.endswith(event_bytes[:size]) and
+                        case_ledger.hashlib.sha256(raw[:-size]).hexdigest()==pre_sha):
+                        expected_size=size
+                        break
+                ledger.write_bytes(raw)
+                changed=case_ledger._repair_exact_torn_tail(ledger,event,pre_sha)
+                self.assertEqual(changed,bool(expected_size))
+                self.assertEqual(ledger.read_bytes(),
+                                 raw[:-expected_size] if expected_size else raw)
+
+    def test_interrupted_lock_initialization_cleans_owned_lock_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            lock=Path(str(ledger)+'.lock')
+            for signal in (KeyboardInterrupt,SystemExit):
+                with self.subTest(signal=signal.__name__):
+                    with mock.patch.object(case_ledger.os,'fsync',side_effect=signal('simulated')):
+                        with self.assertRaises(signal):
+                            with case_ledger.ledger_lock(ledger,timeout=0.05):
+                                self.fail('lock should fail during fsync')
+                    # Process remains alive, so PID-based lock reclamation
+                    # cannot remove a lock orphaned during initialization.
+                    self.assertFalse(lock.exists())
+                    with case_ledger.ledger_lock(ledger,timeout=0.1):
+                        self.assertTrue(lock.exists())
+                    self.assertFalse(lock.exists())
 
 
 if __name__=='__main__':
