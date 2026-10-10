@@ -514,6 +514,10 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         # Do not alter a sticky witness before authenticating preexisting state.
         # A forged anchor HMAC marker is NOT a successful signature check.
         existing_witness=load_auth_witness(p,case_id)
+        # Preserve the existing fail-closed error contract before other checks:
+        # existing signed histories without a key are rejected without mutation.
+        if existing_witness and existing_witness.get('hmac_required') and not hmac_key:
+            raise ValueError('ledger HMAC key unavailable for signed-history witness')
         visible_anchor_hmac=False
         if anchor.is_file():
             try:visible_anchor_hmac=bool(json.loads(anchor.read_text(encoding='utf-8')).get('hmac_sha256'))
