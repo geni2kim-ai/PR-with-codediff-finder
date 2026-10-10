@@ -50,13 +50,21 @@ def load_events(path):
     return out
 
 def validate_events(events,case_id=None):
-    errs=[];prev=ZERO;seq=0
+    errs=[];prev=ZERO;seq=0;expected_case_id=case_id
     for ev in events:
-        for x in Draft202012Validator(SCHEMA).iter_errors(ev):errs.append(x.message)
         seq+=1
+        if not isinstance(ev,dict):
+            errs.append(f'ledger event must be an object at {seq}')
+            continue
+        for x in Draft202012Validator(SCHEMA).iter_errors(ev):errs.append(x.message)
         if ev.get('seq')!=seq:errs.append(f'seq mismatch at {seq}')
         if ev.get('prev_hash')!=prev:errs.append(f'prev_hash mismatch at {seq}')
-        if case_id and ev.get('case_id')!=case_id:errs.append(f'case_id mismatch at {seq}')
+        # A ledger has exactly one case even when the caller omitted an
+        # expected case ID. Infer it from the first usable record.
+        if expected_case_id is None and isinstance(ev.get('case_id'),str):
+            expected_case_id=ev['case_id']
+        if expected_case_id is not None and ev.get('case_id')!=expected_case_id:
+            errs.append(f'case_id mismatch at {seq}')
         if ev.get('event_hash')!=object_digest(ev,'event_hash'):errs.append(f'event_hash mismatch at {seq}')
         prev=ev.get('event_hash',ZERO)
     return errs
@@ -512,6 +520,9 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
     if not p.is_file():return errs+(['ledger anchor missing'] if events or require_hmac else [])
     try:a=json.loads(p.read_text())
     except Exception:return errs+['ledger anchor invalid JSON']
+    if not isinstance(a,dict):return errs+['ledger anchor invalid object']
+    if any(not isinstance(ev,dict) or 'event_hash' not in ev or 'case_id' not in ev for ev in events):
+        return errs+['ledger events malformed for anchor validation']
     if a.get('schema_version') not in {'2.4','2.6','2.7'}:errs.append('ledger anchor schema mismatch')
     cid=case_id or (events[0]['case_id'] if events else a.get('case_id'))
     anchor_key_id=a.get('key_id')
@@ -523,7 +534,11 @@ def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac
         if a.get(k)!=v:errs.append(f'anchor {k} mismatch')
     mac=a.get('hmac_sha256')
     try:witness=load_auth_witness(ledger,cid)
-    except ValueError as exc:witness=None
+    except ValueError as exc:
+        # A malformed/mismatched existing witness is an integrity failure,
+        # not proof that the witness was never present.
+        errs.append('ledger auth witness invalid: '+str(exc))
+        witness=None
     if witness and witness.get('hmac_required') and witness.get('key_id') is not None and a.get('key_id')!=witness.get('key_id'):
         errs.append('ledger anchor key_id disagrees with auth witness')
     if mac and not hmac_key:errs.append('ledger HMAC key unavailable for existing HMAC anchor')

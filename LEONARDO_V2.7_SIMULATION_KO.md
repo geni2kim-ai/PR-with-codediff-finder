@@ -1322,3 +1322,17 @@ GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.tes
 54번의 직접 복구 `_recover_pending_append()`는 검증을 강화했으나 `append_event()`는 유효한 pending journal을 찾으면 기존 anchor 확인 전 `ensure_auth_witness()`를 호출했다. 이전 signed history의 witness가 유실되고 anchor HMAC이 손상된 경우, 복구 자체는 `APPEND_ANCHOR_INVALID`로 막히지만 실패한 재시도에서 signed witness를 먼저 새로 작성하는 side effect가 발생할 수 있었다.
 
 보완: `append_event()`의 pending preflight에도 54번 anchor snapshot 검증을 적용한 후에만 `ensure_auth_witness()`를 허용한다. 새로운 회귀 테스트는 signed history + pending crash + witness 누락 + 가짜 anchor HMAC 조합에서 실패 시 witness/anchor/journal/ledger 바이트가 그대로임을 확인하고, anchor 복원 뒤 정상 복구 및 witness 재생성을 확인한다.
+
+### 56. 단독 ledger 검사에서 생략된 case ID가 혼합 이벤트를 놓침
+
+기준 HEAD `4002f8800fec6b33152ce3c9cdd467a20108fdb2`, GitHub Actions #789 FULL PASS. `campaign_history()`는 case ID 혼합 여부를 별도로 검증하지만, `validate_events(events,case_id=None)`는 각 이벤트의 schema/hash/seq만 확인한다. `case_ledger.py validate --ledger`에서는 `--case-id`가 선택 사항이라, 서로 다른 case ID를 가진 unsigned events와 재계산된 anchor를 정상으로 판정할 수 있었다.
+
+수정: 명시적 case ID가 없으면 첫 유효 이벤트에서 ID를 추론하고 이후 모든 이벤트의 ID가 동일한지 검증. hash-chain과 anchor가 자체 일관성을 지녀도 타 case ID 혼입은 차단한다. CLI를 실제 호출해 실패 branch/message를 검증하는 회귀 테스트 추가.
+
+### 57. 인증 witness가 손상돼도 anchor 검증이 이를 무시함
+
+기존 `validate_anchor()`가 `load_auth_witness()`의 `ValueError`를 `witness=None`으로 무시했다. witness digest가 손상되어도 정상 anchor만 있으면 검증이 통과할 수 있다.
+
+수정: existing witness의 schema, digest, case ID 불일치를 오류로 반환. signed/unsigned 정상 anchor를 각각 준비해 witness digest만 훼손했을 때 거부하고, 원본 witness로 되돌리면 정상 검증되는지 회귀 테스트 추가. 유효한 JSON이지만 event object가 아닌 입력이나 잘못된 anchor object는 예외 대신 검증 오류로 처리한다.
+
+범위: Leonardo 검토 기준으로 정적 반례를 도출하고 CI에 실행 가능한 회귀를 추가한다. 별도 Leonardo 런타임 에이전트 호출은 불가하여 독립 실행 검토로 주장하지 않는다. 오직 이 두 무결성 결함과 입력 분류 회귀만 한 번에 보완하며 자동 ENFORCED 승격은 하지 않는다.

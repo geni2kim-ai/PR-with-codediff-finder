@@ -73,3 +73,7 @@ v2.7 does not claim completion of:
 - GitHub required-check/ruleset production E2E;
 - production post-merge incident connector/calibration;
 - Windows-specific process/path/GUI packaging E2E.
+
+### Standalone ledger validation invariants
+
+An individual ledger must contain one case ID even when the caller does not supply `--case-id`. The common validator infers the first valid case ID and rejects later cross-case events, including when unsigned event hashes and the local anchor have been recomputed consistently. Existing malformed/mismatched auth-witness files cause anchor-validation errors instead of being treated as absent; legitimately absent witnesses retain their existing compatibility behavior. Non-object JSON event values and non-object anchors produce validation errors rather than unhandled attribute-access exceptions.

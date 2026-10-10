@@ -691,5 +691,57 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertFalse(tx.exists())
 
 
+    def test_standalone_validator_rejects_mixed_case_ledger_with_valid_local_anchor(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            first=append_event(ledger,'ALPHA','CASE_OPENED',{'v':1})
+            second={'schema_version':'2.4','case_id':'BETA','seq':2,
+                    'event_type':'SENSOR_ACCEPTED','timestamp':first['timestamp'],
+                    'payload':{'v':2},'prev_hash':first['event_hash'],'event_hash':''}
+            second['event_hash']=object_digest(second,'event_hash')
+            events=[first,second]
+            ledger.write_bytes(case_ledger._events_bytes(events))
+            case_ledger.write_anchor(ledger,anchor,'ALPHA',events)
+            errors=case_ledger.validate_events(case_ledger.load_events(ledger))
+            self.assertTrue(any('case_id mismatch at 2' in e for e in errors),errors)
+            env={**os.environ}
+            env.pop('MAESTRO_LEDGER_HMAC_KEY',None)
+            env.pop('MAESTRO_LEDGER_EXPECT_KEY_ID',None)
+            cp=subprocess.run([sys.executable,str(TOOLS/'case_ledger.py'),'validate',
+                               '--ledger',str(ledger)],capture_output=True,text=True,env=env)
+            self.assertNotEqual(cp.returncode,0)
+            self.assertIn('case_id mismatch at 2',cp.stdout+cp.stderr)
+
+    def test_anchor_validator_rejects_corrupt_existing_auth_witness(self):
+        for signed in (False,True):
+            with self.subTest(signed=signed):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+                    key='signed-secret' if signed else None
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='kid' if signed else None)
+                    witness=case_ledger.canonical_auth_witness_path(ledger)
+                    clean=witness.read_bytes()
+                    corrupt=json.loads(clean)
+                    corrupt['witness_digest']='0'*64
+                    witness.write_text(json.dumps(corrupt),encoding='utf-8')
+                    events=case_ledger.load_events(ledger)
+                    errors=case_ledger.validate_anchor(ledger,anchor,events,'CASE',key)
+                    self.assertTrue(any('auth witness digest mismatch' in e for e in errors),errors)
+                    witness.write_bytes(clean)
+                    self.assertEqual(case_ledger.validate_anchor(ledger,anchor,events,'CASE',key),[])
+
+    def test_json_nonobject_event_and_anchor_rejected_without_attribute_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{})
+            ledger.write_text('["not-a-case-event"]\\n',encoding='utf-8')
+            events=case_ledger.load_events(ledger)
+            errors=case_ledger.validate_events(events)
+            self.assertTrue(any('event must be an object at 1' in e for e in errors),errors)
+            anchor_errors=case_ledger.validate_anchor(ledger,anchor,events)
+            self.assertIn('ledger events malformed for anchor validation',anchor_errors)
+
+
 if __name__=='__main__':
     unittest.main()
