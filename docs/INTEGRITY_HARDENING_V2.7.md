@@ -91,3 +91,9 @@ v2.7 does not claim completion of:
 ### Standalone ledger validation invariants
 
 An individual ledger must contain one case ID even when the caller does not supply `--case-id`. The common validator infers the first valid case ID and rejects later cross-case events, including when unsigned event hashes and the local anchor have been recomputed consistently. Existing malformed/mismatched auth-witness files cause anchor-validation errors instead of being treated as absent; legitimately absent witnesses retain their existing compatibility behavior. Non-object JSON event values and non-object anchors produce validation errors rather than unhandled attribute-access exceptions.
+
+### Hard-linked in-place ledger protection and lock ancestor paths
+
+Filesystem symlink checks are not sufficient for a ledger that is mutated *in place*: a second hard link shares the same inode and outside file contents are changed by ordinary append or torn-tail recovery. Existing ledger files with `st_nlink > 1` are now rejected before append/recovery/validation-side effects. This is intentionally limited to the in-place ledger, not files replaced atomically; a legitimate externally hard-linked ledger must be disentangled by its operator before resuming. This check does not claim to prevent adversarial concurrent inode substitution or prove directory-wide isolation.
+
+The case-bundle coordination directory now checks **all existing ancestor path components** and the case-record path for symlinks and junction redirects before creating or chmod-ing its control directory, then rechecks before mutation. Merely checking `.codediff-control` itself would allow a symlinked parent to redirect lock creation/chmod outside the workspace. Tests cover redirected ancestors and case-record symlinks, plus ordinary lock acquisition.

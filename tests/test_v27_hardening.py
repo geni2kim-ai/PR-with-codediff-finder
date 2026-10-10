@@ -968,5 +968,102 @@ class V27ReleaseInvariantTests(unittest.TestCase):
                 case_ledger.load_events(ledger)
 
 
+    def test_existing_ledger_hardlink_cannot_mutate_external_inode(self):
+        for signed in (False,True):
+            with self.subTest(signed=signed):
+                with tempfile.TemporaryDirectory() as td:
+                    root=Path(td);ledger=root/'case-events.jsonl'
+                    anchor=default_anchor_path(ledger)
+                    key='ledger-key' if signed else None
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='kid' if signed else None)
+                    outside=root/'outside-ledger.jsonl'
+                    try:os.link(ledger,outside)
+                    except (OSError,NotImplementedError) as exc:
+                        self.skipTest(f'hard links unavailable: {exc}')
+                    self.assertGreater(ledger.stat().st_nlink,1)
+                    old=ledger.read_bytes();old_anchor=anchor.read_bytes()
+                    with self.assertRaisesRegex(ValueError,'unsafe ledger hardlink'):
+                        append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                     hmac_key=key,key_id='kid' if signed else None)
+                    self.assertEqual(outside.read_bytes(),old)
+                    self.assertEqual(ledger.read_bytes(),old)
+                    self.assertEqual(anchor.read_bytes(),old_anchor)
+                    self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+                    # Explicitly remove only the unsafe external alias and
+                    # confirm that ordinary appends resume without migration.
+                    outside.unlink()
+                    ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                    hmac_key=key,key_id='kid' if signed else None)
+                    self.assertEqual(ev['seq'],2)
+                    self.assertFalse(case_ledger.validate_anchor(
+                        ledger,anchor,case_ledger.load_events(ledger),'CASE',key))
+
+    def test_pending_recovery_refuses_hardlinked_ledger_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ledger=root/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            key='signed-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            journal=case_ledger.pending_append_path(ledger)
+            before=ledger.read_bytes();old_anchor=anchor.read_bytes();old_journal=journal.read_bytes()
+            outside=root/'outside-ledger.jsonl'
+            try:os.link(ledger,outside)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'hard links unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe ledger hardlink'):
+                case_ledger.recover_pending_append_if_present(ledger,hmac_key=key)
+            self.assertEqual(outside.read_bytes(),before)
+            self.assertEqual(ledger.read_bytes(),before)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertEqual(journal.read_bytes(),old_journal)
+            outside.unlink()
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger,hmac_key=key))
+            self.assertFalse(journal.exists())
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+            self.assertFalse(case_ledger.validate_anchor(
+                ledger,anchor,case_ledger.load_events(ledger),'CASE',key))
+
+    def test_case_bundle_lock_rejects_symlinked_parent_before_external_creation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);outside=root/'outside';outside.mkdir()
+            redirected=root/'redirected'
+            try:redirected.symlink_to(outside,target_is_directory=True)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'symlink unavailable: {exc}')
+            case=redirected/'case-record.json'
+            control=outside/'.codediff-control'
+            self.assertFalse(control.exists())
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.case_bundle_lock_path(case)
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                with case_ledger.case_bundle_lock(case):
+                    self.fail('lock acquired outside requested directory')
+            self.assertFalse(control.exists())
+            self.assertFalse((outside/'case-record.json').exists())
+            # Direct ensure_control_dir must be equally conservative.
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.ensure_control_dir(redirected/'.codediff-control')
+            self.assertFalse(control.exists())
+
+    def test_case_bundle_lock_rejects_redirected_record_but_normal_lock_works(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);original=root/'outside-record.json';original.write_text('{}',encoding='utf-8')
+            record=root/'case-record.json'
+            try:record.symlink_to(original)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'symlink unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.case_bundle_lock_path(record)
+            self.assertFalse((root/'.codediff-control').exists())
+            record.unlink()
+            with case_ledger.case_bundle_lock(record,timeout=1.0):
+                self.assertTrue((root/'.codediff-control').is_dir())
+            self.assertEqual(original.read_text(encoding='utf-8'),'{}')
+
+
 if __name__=='__main__':
     unittest.main()

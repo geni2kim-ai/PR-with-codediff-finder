@@ -289,16 +289,28 @@ def ledger_lock(path,timeout=10.0):
                 _unlink_lock_if_unchanged(lock,raw)
         except FileNotFoundError:pass
 
+def _check_coordination_path_components(path):
+    """Reject lexical traversal and existing redirected ancestors of lock paths."""
+    p=Path(path)
+    if '..' in p.parts:
+        raise ValueError(f'unsafe coordination directory traversal: {p}')
+    absolute=p.absolute()
+    for component in (absolute,*absolute.parents):
+        if component.is_symlink() or getattr(component,'is_junction',lambda:False)():
+            raise ValueError(f'unsafe coordination directory redirect: {component}')
+
 def ensure_control_dir(path):
     p=Path(path)
+    _check_coordination_path_components(p)
     if p.exists() or p.is_symlink():
         is_junction=getattr(p,'is_junction',lambda:False)()
         if p.is_symlink() or is_junction or not p.is_dir():
             raise ValueError(f'unsafe coordination directory: {p}')
     else:
         p.mkdir(mode=0o700,parents=True,exist_ok=False)
-    # Re-check after creation/lookup so a pre-existing redirect never becomes an
-    # accepted lock namespace.
+    # Recheck each component before chmod: a redirected ancestor is as
+    # dangerous as a redirected final coordination directory.
+    _check_coordination_path_components(p)
     is_junction=getattr(p,'is_junction',lambda:False)()
     if p.is_symlink() or is_junction or not p.is_dir():
         raise ValueError(f'unsafe coordination directory: {p}')
@@ -308,6 +320,7 @@ def ensure_control_dir(path):
 
 def case_bundle_lock_path(case_path):
     p=Path(case_path)
+    _check_coordination_path_components(p)
     base=ensure_control_dir(p.parent/'.codediff-control')
     token=hashlib.sha256(p.name.encode('utf-8')).hexdigest()[:16]
     return base/f'case-bundle-{token}'
@@ -347,6 +360,11 @@ def _reject_redirected_ledger_paths(ledger,anchor=None):
         for component in (absolute,*absolute.parents):
             if component.is_symlink() or getattr(component,'is_junction',lambda:False)():
                 raise ValueError('unsafe ledger path redirect: '+str(component))
+    # The ledger is appended/truncated *in place*. An existing hard link can
+    # share its inode with a file outside this case directory. Unlike a
+    # symlink, it does not fail is_symlink() and must be explicitly refused.
+    if p.is_file() and p.stat().st_nlink>1:
+        raise ValueError('unsafe ledger hardlink: multiple filesystem names')
 
 
 def _events_bytes(events):

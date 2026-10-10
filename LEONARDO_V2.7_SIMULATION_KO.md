@@ -1364,3 +1364,17 @@ HEAD `ca71139661783b1f52f8a3815b48ae7dea9e184c`에서 신규 `case-events.jsonl`
 `json.loads`는 같은 객체에 `"case_id": "ATTACKER"`와 `"case_id": "CASE"`가 있으면 마지막 값을 사용한다. 서명된 anchor 및 pending transaction에 먼저 중복 필드를 삽입하면 Python이 재구성하는 객체는 기존과 동일하므로 HMAC 검증이 통과할 수 있지만, 외부 파서는 첫 키나 중복 오류를 사용해 해석이 달라질 수 있다.
 
 대응: `_strict_json_loads`에 object_pairs_hook 기반 중복 키 차단. 중첩 payload를 포함해 전체 신뢰 경로에서 파싱 단계에서 실패하며, 테스트는 signed anchor/transaction, auth witness, 중첩 ledger 이벤트 등 4개 신규 회귀로 구성. 에이전트 직접 실행은 불가했고 Leonardo 방식의 코드 경로 시뮬레이션·로컬 Python 반례 및 CI 테스트를 사용한다. 새 HEAD full/ZIP 검증 전엔 PASS 주장하지 않음.
+
+### 62. 기존 ledger 하드링크가 외부 동일 inode 파일까지 변경
+
+기준 HEAD `379ed48cb213a79bade2d8cf7ff205f48ffb32af` (CI #793 FULL PASS). 기존 서명/무서명 case-events.jsonl 파일에 `os.link(ledger, outside)`로 하드링크를 만들면 두 경로가 하나의 inode를 가리킨다. `Path.is_symlink()`는 False이지만 `append_event`는 기존 anchor를 확인한 뒤 `open('a')`로 동일 inode를 변경하므로 외부 별칭 파일도 함께 덧붙여진다. Pending append 복구 시 `r+b/truncate`도 동일한 위험을 갖는다.
+
+대응: in-place ledger 파일이 존재하고 `st_nlink > 1`이면 인증 전 사전 검증에서 차단하고, 복구/검증의 공통 경로에서도 거부. 신규 회귀는 signed/unsigned 기존 ledger + 외부 하드링크에서 원장/anchor/외부 파일/journal 무변경을 검사하고 별칭 해제 후 정상 append를 확인. 서명된 pending recovery도 하드링크 상태에서 바이트 불변을 검사하고 해제 후 정상 복구한다.
+
+### 63. case bundle 잠금의 링크된 상위 디렉터리가 외부에 lock을 생성
+
+기존 `ensure_control_dir`는 최종 `.codediff-control`의 symlink/junction만 검사했으며, `case_bundle_lock_path`가 가리키는 case-record.json의 부모 경로가 symlink여도 `p.mkdir(parents=True)`와 chmod는 링크를 따라 외부에 control directory를 만들 수 있었다. 일반 ledger path의 이전 symlink guard와는 다른 경로다.
+
+대응: coordination path와 case-record path의 전체 조상 경로를 symlink/junction/traversal 관점에서 검사, control dir 생성 직전 및 chmod 직전에 재검사. 상위 리디렉션/직접 case-record symlink에서 외부 파일·디렉터리 무생성을 검증하고 정상 lock 획득의 역회귀를 확인한다.
+
+범위: Leonardo 기준 코드 경계 시뮬레이션 및 Python hardlink 동작 재현으로 도출했고 별도 Leonardo 실시간 에이전트 호출은 아니다. 공격자의 동시 경로 교체 TOCTOU, Windows host E2E, HUMAN/ENFORCED 승격은 별도 게이트. 최신 HEAD CI 검증 이전에는 PASS라고 기재하지 않는다.
