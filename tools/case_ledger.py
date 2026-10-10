@@ -508,6 +508,24 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
         if anchor.is_file():
             try:visible_anchor_hmac=bool(json.loads(anchor.read_text(encoding='utf-8')).get('hmac_sha256'))
             except Exception:pass
+        # All preflight rejections below precede auth-witness mutation. Otherwise
+        # a failed unsigned-to-signed attempt can permanently poison a healthy
+        # unsigned ledger by writing a sticky signed-required witness first.
+        if p.exists() and not anchor.is_file() and not tx_path.exists():
+            raise ValueError(f'existing ledger anchor missing: {anchor}')
+        if hmac_key and not visible_anchor_hmac and (p.exists() or tx_path.exists()):
+            existing_witness=load_auth_witness(p,case_id)
+            if not (existing_witness and existing_witness.get('hmac_required')):
+                if not tx_path.is_file():
+                    raise ValueError('existing unsigned ledger requires explicit HMAC migration')
+                # A crash-before-anchor signed journal can authorize recovery even
+                # without a preexisting witness, but only after MAC verification.
+                try:pending_candidate=json.loads(tx_path.read_text(encoding='utf-8'))
+                except Exception as exc:
+                    raise LedgerRecoveryError(f'append transaction unreadable: {type(exc).__name__}') from exc
+                preflight_errors=_validate_append_tx(pending_candidate,hmac_key,True,expected_key_id)
+                if preflight_errors:
+                    raise LedgerRecoveryError('invalid pending append before HMAC witness change: '+'; '.join(preflight_errors))
         witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac or bool(expected_key_id),key_id or expected_key_id)
         require_hmac=bool(witness.get('hmac_required')) or bool(expected_key_id)
         if require_hmac and not hmac_key:raise ValueError('ledger HMAC key unavailable for signed-history witness')

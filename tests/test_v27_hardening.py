@@ -399,16 +399,94 @@ class V27ReleaseInvariantTests(unittest.TestCase):
                         with self.assertRaisesRegex(RuntimeError,'anchor crash'):
                             append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='stable-id')
                     self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+                    if requested_case!='CASE':
+                        # The earlier sticky case-ID witness is the correct
+                        # first fail-closed boundary; recovery must not run.
+                        with self.assertRaisesRegex(ValueError,'auth witness case_id mismatch'):
+                            append_event(ledger,requested_case,kind,payload,
+                                         timestamp=stamp,event_instance_id='stable-id')
+                        self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+                        self.assertFalse(default_anchor_path(ledger).exists())
+                        continue
                     with self.assertRaises(case_ledger.LedgerRecoveryError) as ctx:
                         append_event(ledger,requested_case,kind,payload,
                                      timestamp=stamp,event_instance_id='stable-id')
-                    self.assertIn('EVENT_INSTANCE_CONFLICT',str(ctx.exception))
+                    self.assertEqual(ctx.exception.code,'EVENT_INSTANCE_CONFLICT')
                     events=case_ledger.load_events(ledger)
                     self.assertEqual(len(events),1)
                     self.assertEqual(events[0]['payload'],{'v':1})
                     self.assertFalse(case_ledger.validate_events(events,'CASE'))
                     self.assertFalse(case_ledger.validate_anchor(ledger,default_anchor_path(ledger),events,'CASE'))
                     self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+
+
+    def test_failed_unsigned_to_signed_upgrade_preserves_existing_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='first')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            old_witness=witness_path.read_bytes()
+            old_anchor=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'explicit HMAC migration'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key='new-key',key_id='key-v1',event_instance_id='second')
+            self.assertEqual(witness_path.read_bytes(),old_witness)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertFalse(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            appended=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3},event_instance_id='third')
+            self.assertEqual(appended['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_unsigned_pending_cannot_poison_witness_on_signed_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='first')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            original_witness=witness_path.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC missing'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2',
+                             hmac_key='new-key',key_id='key-v1')
+            self.assertEqual(witness_path.read_bytes(),original_witness)
+            self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2')
+            self.assertEqual(recovered['seq'],2)
+            self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_untrusted_signed_pending_does_not_create_sticky_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='ledger-key'
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            witness_path.unlink()  # legacy/missing witness; journal must prove its own MAC
+            tx_path=case_ledger.pending_append_path(ledger)
+            signed_bytes=tx_path.read_bytes()
+            bad=json.loads(signed_bytes)
+            bad['hmac_sha256']='0'*64
+            tx_path.write_text(json.dumps(bad),encoding='utf-8')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC mismatch'):
+                append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                             hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            self.assertFalse(witness_path.exists())
+            tx_path.write_bytes(signed_bytes)
+            recovered=append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                   hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            self.assertEqual(recovered['seq'],1)
+            self.assertTrue(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE',key,True))
+
+    def test_preexisting_anchorless_ledger_does_not_create_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';ledger.write_text('',encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'existing ledger anchor missing'):
+                append_event(ledger,'CASE','CASE_OPENED',{},hmac_key='key',key_id='key-v1')
+            self.assertFalse(case_ledger.canonical_auth_witness_path(ledger).exists())
 
 
 if __name__=='__main__':

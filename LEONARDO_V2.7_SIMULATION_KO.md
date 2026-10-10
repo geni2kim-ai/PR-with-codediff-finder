@@ -1266,3 +1266,31 @@ M1 보완으로 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 추가한 뒤 실제 review-cy
 - 현재 instance ID는 pending journal에만 유지되므로 **성공적으로 완료되어 journal이 제거된 후** 동일 ID를 재사용한 요청에는 durable dedup을 제공하지 않는다. 이를 일반적 exactly-once 보장으로 홍보해서는 안 된다.
 - 완료 후 replay까지 막으려면 이벤트 스키마의 버전드 확장 또는 HMAC/anchor로 바인딩된 durable receipt/index를 설계하고 레거시 migration/거버넌스 검증을 거쳐야 한다.
 - 이번 수정은 좁은 정합성 경계를 보완하는 1회 배치이며, 자동 재수정 루프나 ENFORCED 승격은 수행하지 않는다.
+
+### 50. 이전 #49 회귀 테스트에서 cross-case 충돌의 실제 검증 순서를 잘못 기대
+
+GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.test_v27_hardening` 단위 그룹에서 실패했다. case ID가 `OTHER`인 테스트는 `EVENT_INSTANCE_CONFLICT`에 도달하기 전에 sticky witness의 `case_id` 검사에서 `ValueError: ledger auth witness case_id mismatch`로 차단되었다. 이는 인증 경계를 지키는 동작이다.
+
+대응:
+- 동일 case ID에서 payload/type/timestamp가 충돌하는 경로는 `EVENT_INSTANCE_CONFLICT`로 검증.
+- 다른 case ID는 별도 fail-closed 경계로 검증하고 기존 pending transaction/anchor 상태가 변하지 않는지 확인.
+- 인증 경계를 통과시키려고 코어 코드를 약화하지 않음.
+
+### 51. 실패한 HMAC 모드 전환이 signed-required witness를 먼저 기록하는 문제
+
+정적 코드 경로 시뮬레이션:
+1. unsigned ledger와 unsigned anchor, `hmac_required=false` witness가 정상 존재.
+2. HMAC key를 전달해 append를 호출.
+3. 기존 순서는 anchor HMAC 검증보다 먼저 `ensure_auth_witness(..., True)`를 호출해 sticky witness를 변경.
+4. unsigned anchor는 signed 검증에 실패하므로 append는 실패하지만, witness는 signed-required로 남아 기존 정상 unsigned append까지 차단.
+
+더 위험한 변형은 unsigned pending journal이 있는데 새 요청에 HMAC key를 주거나, signed pending journal의 witness가 사라진 뒤 위조된 HMAC을 넣는 경우다.
+
+대응:
+- 기존 ledger에서 anchor가 사라졌고 복구 journal이 없으면 witness 작성 이전에 차단.
+- 기존 unsigned ledger를 일반 append로 signed 상태로 전환하려는 시도는 명시적 migration 요구로 사전 차단.
+- pending 상태에서 signed-mode 전환을 시도하면 기존 signed witness를 확인하거나, journal HMAC을 **실제로 검증**한 후에만 witness 상태 변경 허용.
+- 4개 신규 회귀: 정상 unsigned ledger 전환 실패 후 쓰기 재개, unsigned pending 보호, 위조된 signed pending/witness 누락, preexisting anchorless 파일.
+- 범위: 일반 append의 예기치 않은 witness 변경 차단이며 운영자 승인된 과거 signed migration을 새로 자동화하지 않는다.
+
+판정: 운영 중 쓰기 거부 상태를 지속시키는 결함으로 MATERIAL, 단일 묶음 수정. CI 성공 여부와 독립 검증은 최신 HEAD에서 확인한다. 작은 NOTE_ONLY 항목을 추가 자동 수정 루프에 넣지 않는다.

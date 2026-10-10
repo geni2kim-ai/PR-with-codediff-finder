@@ -20,7 +20,7 @@ The ledger lock records owner PID, a process-instance identifier where the OS ex
 
 When an HMAC-backed ledger is created, v2.7 writes a sticky local `case-events.auth.json` witness outside the anchor. Validation also treats a non-null anchor/transaction `key_id` as an HMAC requirement. Deployments that need the requirement to survive deletion or rewriting of every local ledger-side trust file must provide an external expectation through `MAESTRO_LEDGER_EXPECT_KEY_ID` or the validation CLI `--expected-key-id`, together with the HMAC key. This external expectation is the fail-closed authority boundary; a fully mutable local bundle cannot cryptographically prove that an attacker deleted evidence of earlier HMAC use.
 
-Unsigned journals therefore provide digest/hash-chain integrity and deterministic crash recovery, not authentication. “Authenticated recovery journal” applies only to the HMAC-configured path.
+Unsigned journals therefore provide digest/hash-chain integrity and deterministic crash recovery, not authentication. “Authenticated recovery journal” applies only to the HMAC-configured path. An existing unsigned ledger cannot switch to signed mode implicitly via `append_event()`: such a request is rejected **before** writing a sticky auth witness, so a failed signing attempt cannot lock out subsequent legitimate unsigned writes. Pending journal recovery with a missing witness authenticates the signed transaction **before** establishing a replacement witness; malformed/unsigned journals cannot promote the HMAC requirement by self-declaration. Signed-mode migration of existing unsigned history requires an explicit operator-approved procedure.
 
 ### Duplicate append semantics
 
