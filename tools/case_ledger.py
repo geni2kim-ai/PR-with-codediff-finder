@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime,timezone
 from pathlib import Path
 from jsonschema import Draft202012Validator
-from common import canonical_bytes,object_digest,sha256_file,write_json
+from common import canonical_bytes,object_digest,sha256_file
 ROOT=Path(__file__).resolve().parents[1]
 SCHEMA=json.loads((ROOT/'schemas/case-event.schema.json').read_text())
 ZERO='0'*64
@@ -32,8 +32,17 @@ def utc():return datetime.now(timezone.utc).isoformat().replace('+00:00','Z')
 def _nonfinite_json_constant(value):
     raise ValueError('non-finite JSON literal: '+value)
 
+def _reject_duplicate_json_keys(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result:
+            raise ValueError('duplicate JSON object key: '+key)
+        result[key]=value
+    return result
+
 def _strict_json_loads(raw):
-    obj=json.loads(raw,parse_constant=_nonfinite_json_constant)
+    obj=json.loads(raw,parse_constant=_nonfinite_json_constant,
+                   object_pairs_hook=_reject_duplicate_json_keys)
     # A syntactically valid exponent (1e9999) also overflows Python floats.
     # Refuse a parsed Infinity even if parse_constant was never called.
     json.dumps(obj,allow_nan=False)
@@ -359,12 +368,19 @@ def _pre_ledger_sha256_from_current(ledger,event,pre_seq,current_len):
         return hashlib.sha256(raw[:-len(tail)]).hexdigest()
     raise ValueError('append transaction ledger length mismatch')
 
-def _atomic_json_fsync(path,obj):
-    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);tmp=Path(str(p)+'.tmp')
-    data=(json.dumps(obj,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode('utf-8')
-    with tmp.open('wb') as f:
-        f.write(data);f.flush();os.fsync(f.fileno())
-    os.replace(tmp,p)
+def _atomic_json_fsync(path,obj,sort_keys=True):
+    p=Path(path);p.parent.mkdir(parents=True,exist_ok=True)
+    data=(json.dumps(obj,ensure_ascii=False,sort_keys=sort_keys,indent=2)+'\n').encode('utf-8')
+    # Never open a fixed <target>.tmp for truncation: an attacker may preplant
+    # a symlink pointing at an otherwise unrelated existing file.
+    fd,tmp_name=tempfile.mkstemp(prefix='.'+p.name+'.',suffix='.tmp',dir=p.parent)
+    temp_path=Path(tmp_name)
+    try:
+        with os.fdopen(fd,'wb') as f:
+            f.write(data);f.flush();os.fsync(f.fileno())
+        os.replace(temp_path,p)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 def _auth_witness_digest(obj):
     return object_digest({k:v for k,v in obj.items() if k!='witness_digest'})
@@ -552,7 +568,7 @@ def write_anchor(ledger,anchor,case_id,events,hmac_key=None,key_id=None):
     if expected_key_id and key_id!=expected_key_id:raise ValueError('ledger key_id does not match external expectation')
     if key_id and not hmac_key:raise ValueError('ledger key_id requires HMAC key')
     core=_anchor_core(ledger,case_id,events,key_id);obj={**core,'hmac_sha256':_mac(core,hmac_key) if hmac_key else None}
-    p=Path(anchor);tmp=p.with_suffix(p.suffix+'.tmp');write_json(tmp,obj);os.replace(tmp,p);return obj
+    p=Path(anchor);_atomic_json_fsync(p,obj,sort_keys=False);return obj
 
 def validate_anchor(ledger,anchor,events,case_id=None,hmac_key=None,require_hmac=False,expected_key_id=None):
     p=Path(anchor);errs=[];expected_key_id=_expected_ledger_key_id(expected_key_id)

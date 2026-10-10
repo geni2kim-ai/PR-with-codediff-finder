@@ -66,6 +66,14 @@ The ledger writer now requires strict finite JSON values before creating any led
 
 Before append, recovery, anchor write and anchor validation, existing ledger/anchor/journal/witness/lock paths and their ancestor components are checked for symlinks or Windows junction redirects. Dangling ledger symlinks are rejected before any file creation; a redirected parent directory cannot silently turn local writes into external writes. Checks repeat inside the ledger lock on mutation paths. These are conservative filesystem checks, **not** a claim of race-free containment against hostile concurrent directory replacement: full sandbox enforcement and descriptor-relative protections remain external promotion gates.
 
+### Non-predictable temporary writes
+
+The previous JSON atomic writer opened fixed `<target>.tmp` names with truncate permission. Even when the target ledger, anchor, journal and auth witness paths had passed redirect checks, a planted `<target>.tmp` symbolic link could overwrite an unrelated external file. Atomic journal/witness/anchor writes now use uniquely named, exclusive 0600 `tempfile.mkstemp` files in the destination directory, fsync and replace. Anchor writes preserve the previous unsorted JSON serialization order; journal/witness retain sorted serialization. A preexisting legacy `<target>.tmp` regular file or symlink remains untouched. This closes predictable temporary-name exploitation without claiming protection against hostile concurrent directory swaps.
+
+### Duplicate JSON keys before HMAC
+
+Python JSON parsing ordinarily accepts duplicate keys with last-key-wins semantics, but other parser implementations may choose first-key-wins or reject duplicates. Signed anchors and journals bind the parsed canonical object, so adding a duplicate conflicting earlier field can leave the HMAC valid under Python while exposing another meaning elsewhere. The strict JSON loader now rejects duplicate keys at every nested level before hash/HMAC validation. Valid existing files and interrupted recoveries remain supported.
+
 ## Review invariant
 
 The repository-level default is **Latest-HEAD review**. A previous PASS cannot authorize a newer HEAD.

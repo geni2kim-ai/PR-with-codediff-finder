@@ -1352,3 +1352,15 @@ HEAD `ca71139661783b1f52f8a3815b48ae7dea9e184c`에서 신규 `case-events.jsonl`
 대응: 신규 이벤트는 `allow_nan=False`로 사전 직렬화 검사하고, ledger/anchor/witness/journal/CLI 입력은 non-finite constant 및 overflow 숫자를 거부하는 parser를 사용한다. 잘못된 journal dict/array는 내용 검증 전에 fail-closed 처리한다. 회귀: NaN/Infinity/-Infinity 신규/기존 ledger 거부, 비표준 pending 데이터 무변경 거부 후 정상 복구, overflow exponent 파싱 거부, non-object transaction typed rejection.
 
 범위: Leonardo 검토 방식의 코드 분석과 실제 Python 직렬화 반례, GitHub 테스트 실행을 결합했다. 별도 Leonardo 런타임/독립 모델 세션 실행으로 해석하지 않는다. 신규 코드 HEAD CI 통과 전까지는 PASS로 표시하지 않는다.
+
+### 60. 고정 임시 파일 이름의 symlink가 외부 파일을 truncate
+
+기준 HEAD `9787a194713cbb0d6983f43df22821a211f14150` (Actions #792 PASS). 58번에서는 최종 ledger/anchor/journal/witness 경로의 링크를 차단했으나, `_atomic_json_fsync`와 `write_anchor`는 `<target>.tmp`를 고정 이름으로 `wb` 모드로 열었다. 별도로 심어 놓은 `<target>.tmp` 링크는 최종 경로 preflight에 포함되지 않았고 외부 파일의 원본 바이트가 교체 이전에 손상될 수 있었다. Python 파일 열기·symlink 반례로 재현.
+
+대응: journal/anchor/auth witness atomic writer에 same-directory `tempfile.mkstemp` 사용 (O_EXCL·0600·fsync·os.replace); anchor JSON 키 출력 순서 유지. 구 고정 `.tmp` 링크나 일반 파일은 손대지 않음. 신규 회귀 2개에서 3개 writer의 링크 우회 및 기존 파일 보존 확인. 동시 경로 교체 TOCTOU는 여전히 외부 샌드박스 과제.
+
+### 61. 서명된 JSON 객체의 중복 키를 통한 파서 불일치
+
+`json.loads`는 같은 객체에 `"case_id": "ATTACKER"`와 `"case_id": "CASE"`가 있으면 마지막 값을 사용한다. 서명된 anchor 및 pending transaction에 먼저 중복 필드를 삽입하면 Python이 재구성하는 객체는 기존과 동일하므로 HMAC 검증이 통과할 수 있지만, 외부 파서는 첫 키나 중복 오류를 사용해 해석이 달라질 수 있다.
+
+대응: `_strict_json_loads`에 object_pairs_hook 기반 중복 키 차단. 중첩 payload를 포함해 전체 신뢰 경로에서 파싱 단계에서 실패하며, 테스트는 signed anchor/transaction, auth witness, 중첩 ledger 이벤트 등 4개 신규 회귀로 구성. 에이전트 직접 실행은 불가했고 Leonardo 방식의 코드 경로 시뮬레이션·로컬 Python 반례 및 CI 테스트를 사용한다. 새 HEAD full/ZIP 검증 전엔 PASS 주장하지 않음.
