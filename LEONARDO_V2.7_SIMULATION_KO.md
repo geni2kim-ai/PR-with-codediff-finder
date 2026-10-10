@@ -1308,3 +1308,11 @@ GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.tes
 보완: 새 이벤트 입력을 v2.4 schema 및 canonical JSON 직렬화에 대해 **파일 생성 전에** 검증. 새 ledger와 기존 정상 ledger에 대한 회귀 추가.
 
 범위: 이 경계는 코드 기반 시뮬레이션에서 도출한 MATERIAL 결함이며 새로운 실행 테스트는 최신 GitHub Actions로 검증할 것. ENFORCED로 자동 승격하지 않음.
+
+### 54. Pending 복구가 기존 anchor 변조 증거를 새 정상 anchor로 덮어쓰는 문제
+
+정확한 기준 HEAD는 `47fb7544a7b8` (#787 FULL PASS). 중단 경로: 기존 이벤트 seq=1의 anchor가 정상인 상태에서 seq=2 append가 JSONL까지 완료되었지만 새 anchor 저장 전에 중단. 저장장치 오류/위조로 기존 anchor의 HMAC·seq/ledger digest가 손상되거나 파일이 삭제됨. 과거 `_recover_pending_append()`는 journal과 ledger만 확인하고 기존 anchor를 읽지 않은 채 새 anchor를 써서 변조 증거를 소거했다.
+
+수정은 pending transaction 검증 직후, torn-tail 수정 직전에 기존 anchor를 독립 검증한다. 허용하는 anchor는 pre-append(seq=n)와 post-append(seq=n+1, anchor 저장 후 journal 제거 직전 중단) 두 상태뿐이다. 기존 이력이 있을 때 anchor 누락은 `APPEND_ANCHOR_INVALID`로 차단하고, 최초 이벤트는 anchor가 없을 수 있다. pending event 자체에도 v2.4 schema 검사를 적용한다.
+
+회귀 4개: signed anchor HMAC 위조 시 바이트·journal 무변경, 선행 anchor 삭제 차단 및 복원 후 재개, 정당한 post-anchor 중단 복구에서 중복 append 없음, 스키마가 유효하지 않은 unsigned journal 복구 사전 차단. HEAD별 CI 검증을 완료하기 전에는 결과를 PASS라 부르지 않는다.

@@ -395,14 +395,55 @@ def _validate_append_tx(tx,hmac_key=None,require_hmac=False,expected_key_id=None
     if hmac_expected and not hmac_key:errs.append('append transaction HMAC key unavailable')
     if hmac_expected and not mac:errs.append('append transaction HMAC missing')
     if hmac_key and mac and not hmac.compare_digest(mac,_append_tx_mac(tx,hmac_key)):errs.append('append transaction HMAC mismatch')
+    pre_seq=tx.get('pre_seq')
+    if type(pre_seq) is not int or pre_seq<0:errs.append('append transaction pre_seq invalid')
     ev=tx.get('event')
     if not isinstance(ev,dict):errs.append('append transaction event missing')
     else:
+        errs.extend('append transaction event schema: '+e.message for e in Draft202012Validator(SCHEMA).iter_errors(ev))
         if ev.get('event_hash')!=object_digest(ev,'event_hash'):errs.append('append transaction event hash mismatch')
         if ev.get('case_id')!=tx.get('case_id'):errs.append('append transaction case_id mismatch')
-        if ev.get('seq')!=int(tx.get('pre_seq',-1))+1:errs.append('append transaction seq mismatch')
+        if type(pre_seq) is int and ev.get('seq')!=pre_seq+1:errs.append('append transaction seq mismatch')
         if ev.get('prev_hash')!=tx.get('pre_event_hash'):errs.append('append transaction prev_hash mismatch')
     return errs
+
+def _verify_pending_anchor_before_recovery(ledger,anchor,tx,hmac_key=None,require_hmac=False):
+    """Verify either legitimate pre/post anchor snapshot before repairing bytes."""
+    path=Path(anchor);n=tx['pre_seq'];case_id=tx['case_id']
+    if path.is_symlink():
+        raise LedgerRecoveryError('pending append anchor symlink forbidden','APPEND_ANCHOR_INVALID')
+    if not path.is_file():
+        if n>0:
+            raise LedgerRecoveryError('pending append existing pre-append anchor missing','APPEND_ANCHOR_INVALID')
+        return
+    try:a=json.loads(path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        raise LedgerRecoveryError(f'pending append anchor unreadable: {type(exc).__name__}','APPEND_ANCHOR_INVALID') from exc
+    if not isinstance(a,dict):
+        raise LedgerRecoveryError('pending append anchor invalid object','APPEND_ANCHOR_INVALID')
+    errs=[];version=a.get('schema_version');key_id=a.get('key_id')
+    if version not in {'2.4','2.6','2.7'}:errs.append('schema mismatch')
+    if key_id!=tx.get('key_id'):errs.append('key_id mismatch with pending journal')
+    expected=_expected_ledger_key_id()
+    if expected and key_id!=expected:errs.append('key_id mismatch with external expectation')
+    if a.get('seq')==n:
+        seq=n;event_hash=tx['pre_event_hash'];digest=tx['pre_ledger_sha256']
+    elif a.get('seq')==n+1:
+        seq=n+1;event_hash=tx['event']['event_hash'];digest=_file_sha_or_empty(ledger)
+    else:
+        errs.append('seq not pre-append or post-append')
+        seq=n;event_hash=tx['pre_event_hash'];digest=tx['pre_ledger_sha256']
+    core={'schema_version':version,'case_id':case_id,'seq':seq,
+          'event_hash':event_hash,'ledger_sha256':digest,'key_id':key_id}
+    for field,value in core.items():
+        if a.get(field)!=value:errs.append(field+' mismatch')
+    mac=a.get('hmac_sha256')
+    if (require_hmac or expected or key_id or hmac_key) and not mac:errs.append('HMAC missing')
+    if mac and not hmac_key:errs.append('HMAC key unavailable')
+    if hmac_key and mac and not hmac.compare_digest(mac,_mac(core,hmac_key)):errs.append('HMAC mismatch')
+    if errs:
+        raise LedgerRecoveryError('pending append existing anchor invalid: '+'; '.join(errs),'APPEND_ANCHOR_INVALID')
+
 
 def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None,require_hmac=False):
     try:tx=json.loads(Path(tx_path).read_text(encoding='utf-8'))
@@ -411,7 +452,8 @@ def _recover_pending_append(ledger,anchor,tx_path,hmac_key=None,require_hmac=Fal
     effective_require=bool(require_hmac) or bool(expected_key_id) or _witness_requires_hmac(ledger,tx.get('case_id'))
     errs=_validate_append_tx(tx,hmac_key,effective_require,expected_key_id)
     if errs:raise LedgerRecoveryError('invalid append transaction: '+'; '.join(errs))
-    p=Path(ledger);n=int(tx['pre_seq']);ev=tx['event']
+    p=Path(ledger);n=tx['pre_seq'];ev=tx['event']
+    _verify_pending_anchor_before_recovery(p,anchor,tx,hmac_key,effective_require)
     _repair_exact_torn_tail(p,ev,tx.get('pre_ledger_sha256'))
     try:events=load_events(p)
     except (json.JSONDecodeError,UnicodeDecodeError) as exc:
