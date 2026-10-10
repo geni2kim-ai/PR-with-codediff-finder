@@ -1,5 +1,6 @@
 from __future__ import annotations
-import json,subprocess,sys,tempfile,unittest,zipfile
+import json,os,random,subprocess,sys,tempfile,time,unittest,zipfile
+from unittest import mock
 from pathlib import Path
 from jsonschema import Draft202012Validator
 
@@ -7,6 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'tools'
 sys.path.insert(0,str(TOOLS))
 
+import case_ledger
 from case_ledger import append_event,default_anchor_path
 from human_decision_attestation import create as create_human_attestation
 from runtime_attestation import create as create_runtime_attestation
@@ -15,10 +17,13 @@ from verify_manifest import filesystem_errors
 from source_package_receipt import create as create_package_receipt,validate as validate_package_receipt
 from verify_package_hygiene import generated_paths
 from build_source_package import build as build_source_package
-from run_review_cycle import disagreement,material_finding_key
+from run_review_cycle import disagreement,material_finding_key,material_finding_signature
 from common import canonical_finding_path,object_digest
 from validate_stage_result import semantic_errors as stage_semantic_errors
 from sanitize_review_text import scan_stage_result
+from calibration_report import material_agrees
+from route_case import reasons_for
+from validate_case_record import semantic_errors as case_semantic_errors
 
 
 class V27ReleaseInvariantTests(unittest.TestCase):
@@ -134,6 +139,11 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             schema=json.loads((ROOT/'schemas/source-package-receipt.schema.json').read_text(encoding='utf-8'))
             self.assertEqual(list(Draft202012Validator(schema).iter_errors(receipt)),[])
             self.assertEqual(validate_package_receipt(receipt,pkg,manifest),[])
+            legacy=json.loads(json.dumps(receipt))
+            for k in ('validation_run_id','validation_run_attempt','validation_workflow_ref'):legacy.pop(k,None)
+            legacy['receipt_digest']='';legacy['receipt_digest']=__import__('common').object_digest(legacy,'receipt_digest')
+            self.assertEqual(list(Draft202012Validator(schema).iter_errors(legacy)),[])
+            self.assertEqual(validate_package_receipt(legacy,pkg,manifest),[])
             pkg.write_bytes(b'tampered')
             self.assertIn('source package sha256 mismatch',validate_package_receipt(receipt,pkg,manifest))
             pkg.write_bytes(b'zip-bytes');leaked=json.loads(json.dumps(receipt));leaked['path']='secret';leaked['receipt_digest']=''
@@ -145,6 +155,22 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             bad_count=json.loads(json.dumps(receipt));bad_count['manifest_entries']=True;bad_count['receipt_digest']=''
             bad_count['receipt_digest']=__import__('common').object_digest(bad_count,'receipt_digest')
             self.assertIn('source package receipt manifest_entries invalid',validate_package_receipt(bad_count))
+
+    def test_source_package_receipt_can_bind_ci_validation_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);package=root/'pkg.zip';package.write_bytes(b'zip-bytes')
+            manifest=root/'MANIFEST.sha256';payload=root/'file.txt';payload.write_text('x',encoding='utf-8')
+            manifest.write_text(__import__('hashlib').sha256(payload.read_bytes()).hexdigest()+'  ./file.txt\n',encoding='utf-8')
+            receipt=create_package_receipt(package,manifest,'a'*40,clean_extract_verified=True,canonical_validation_passed=True,
+                                           validation_run_id=12345,validation_run_attempt=2,validation_workflow_ref='owner/repo/.github/workflows/harness-validation.yml@refs/pull/5/merge')
+            self.assertEqual(receipt['validation_run_id'],12345);self.assertEqual(receipt['validation_run_attempt'],2)
+            self.assertEqual(validate_package_receipt(receipt,package,manifest),[])
+            tampered=json.loads(json.dumps(receipt));tampered['validation_run_id']=999;tampered['receipt_digest']=''
+            tampered['receipt_digest']=__import__('common').object_digest(tampered,'receipt_digest')
+            self.assertEqual(tampered['validation_run_id'],999)
+            # The digest binds run metadata, while external GitHub artifact/run
+            # metadata remains the authority for whether that run actually existed.
+            self.assertEqual(validate_package_receipt(tampered,package,manifest),[])
 
     def test_v27_integrity_artifacts_emit_current_schema(self):
         key='k'
@@ -172,6 +198,47 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertTrue(disagreement(review('src/a.py'),review('src/b.py')))
         self.assertFalse(disagreement(review('src/a.py'),review('./src/a.py')))
         self.assertTrue(disagreement(review('src/a.py'),review(r'src\\a.py'),changed_paths=['src/a.py',r'src\\a.py']))
+
+    def test_material_agreement_preserves_severity_and_duplicate_multiplicity(self):
+        def finding(severity='major'):
+            return {'severity':severity,'failure_family':'SECURITY-CRITICAL','axis':'correctness_security','path':'src/a.py'}
+        one={'verdict':'FINDINGS','findings':[finding()]}
+        two={'verdict':'FINDINGS','findings':[finding(),finding()]}
+        minor={'verdict':'FINDINGS','findings':[finding('minor')]}
+        self.assertTrue(disagreement(one,two,changed_paths=['src/a.py']))
+        self.assertTrue(disagreement(one,minor,changed_paths=['src/a.py']))
+        self.assertEqual(material_finding_key(finding()),material_finding_key(finding('minor')))
+        self.assertNotEqual(material_finding_signature(finding()),material_finding_signature(finding('minor')))
+
+    def test_calibration_and_route_use_persisted_material_signatures(self):
+        key=material_finding_key({'severity':'major','failure_family':'SECURITY-CRITICAL','axis':'correctness_security','path':'src/a.py'})
+        l1={'level':'L1','verdict':'FINDINGS','confidence':'high','material_finding_count':1,'material_finding_keys':[key],
+            'material_finding_signatures':['major|'+key]}
+        l2={'level':'L2','verdict':'FINDINGS','confidence':'high','material_finding_count':1,'material_finding_keys':[key],
+            'material_finding_signatures':['minor|'+key]}
+        self.assertFalse(material_agrees(l1,l2))
+        self.assertIn('L1_L2_DISAGREEMENT',reasons_for({'review_trail':[l1,l2],'labels':[],'failure_families':[]}))
+
+        # Mixed old/new rows compare at the best identity level both possess.
+        legacy_same=dict(l1);legacy_same.pop('material_finding_signatures')
+        self.assertTrue(material_agrees(l1,legacy_same))
+        self.assertNotIn('L1_L2_DISAGREEMENT',reasons_for({'review_trail':[l1,dict(legacy_same,level='L2')],'labels':[],'failure_families':[]}))
+
+        # Pre-signature v2.7 records cannot recover severity mapping, but count
+        # still prevents a two-vs-one same-key omission from becoming agreement.
+        old_two=dict(l1);old_two.pop('material_finding_signatures');old_two['material_finding_count']=2
+        old_one=dict(l2);old_one.pop('material_finding_signatures');old_one['material_finding_count']=1
+        self.assertFalse(material_agrees(old_two,old_one))
+
+    def test_case_record_rejects_inconsistent_material_signatures(self):
+        key='finding:'+'a'*24
+        row={'review_id':'R1','parent_review_id':None,'level':'L1','model':{'family':'mock','version':'1'},'reviewed_head_sha':'b'*40,
+             'evidence_digest':'c'*64,'achieved_level':'L1','requested_level':'L1','independent_context':False,
+             'material_finding_count':2,'material_finding_keys':[key],'material_finding_signatures':['major|'+key],
+             'major_finding_count':1,'blocker_finding_count':0}
+        case={'binding':{'head_sha':'b'*40},'sensor':{'evidence_digest':'c'*64},'review_trail':[row],'labels':[]}
+        errs=case_semantic_errors(case)
+        self.assertTrue(any('material_finding_signatures count mismatch' in x for x in errs),errs)
 
     def test_material_finding_identity_preserves_exact_git_backslash_paths(self):
         base={'severity':'major','failure_family':'CORRECTNESS','axis':'correctness_security'}
@@ -210,6 +277,857 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         self.assertTrue(any('path invalid' in x for x in unsafe_even_if_listed),unsafe_even_if_listed)
         wrong_separator=self._stage_path_errors(r'src\\a.py',changed_paths=['src/a.py'])
         self.assertTrue(any('outside changed_paths' in x for x in wrong_separator),wrong_separator)
+
+
+    def test_hmac_history_downgrade_is_rejected_by_witness_key_id_and_external_expectation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='ledger-key'
+            append_event(ledger,'CASE','CASE_OPENED',{},hmac_key=key,key_id='key-v1')
+            events=case_ledger.load_events(ledger)
+
+            forged=json.loads(anchor.read_text(encoding='utf-8'));forged['hmac_sha256']=None
+            anchor.write_text(json.dumps(forged),encoding='utf-8')
+            errs=case_ledger.validate_anchor(ledger,anchor,events,'CASE')
+            self.assertTrue(any('HMAC' in x for x in errs),errs)
+
+            case_ledger.canonical_auth_witness_path(ledger).unlink()
+            errs=case_ledger.validate_anchor(ledger,anchor,events,'CASE')
+            self.assertTrue(any('HMAC' in x for x in errs),errs)
+
+            forged['key_id']=None;anchor.write_text(json.dumps(forged),encoding='utf-8')
+            with mock.patch.dict(os.environ,{'MAESTRO_LEDGER_EXPECT_KEY_ID':'key-v1'},clear=False):
+                errs=case_ledger.validate_anchor(ledger,anchor,events,'CASE')
+            self.assertTrue(any('key_id mismatch' in x for x in errs),errs)
+            self.assertTrue(any('HMAC key unavailable' in x for x in errs),errs)
+
+    def test_signed_append_journal_cannot_be_downgraded_to_unsigned(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='ledger-key';txp=case_ledger.pending_append_path(ledger)
+            original=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='key-v1',event_instance_id='req-1')
+            finally:
+                case_ledger.write_anchor=original
+            case_ledger.canonical_auth_witness_path(ledger).unlink()
+            tx=json.loads(txp.read_text(encoding='utf-8'));tx['hmac_sha256']=None
+            txp.write_text(json.dumps(tx),encoding='utf-8')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC key unavailable'):
+                case_ledger.recover_pending_append_if_present(ledger,anchor)
+
+            tx['key_id']=None;tx['transaction_digest']=case_ledger._append_tx_digest(tx)
+            txp.write_text(json.dumps(tx),encoding='utf-8')
+            with mock.patch.dict(os.environ,{'MAESTRO_LEDGER_EXPECT_KEY_ID':'key-v1'},clear=False):
+                with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'key_id mismatch|HMAC key unavailable'):
+                    case_ledger.recover_pending_append_if_present(ledger,anchor)
+
+    def test_pending_append_repairs_exact_torn_event_tail(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            original=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='req-torn')
+            finally:
+                case_ledger.write_anchor=original
+            raw=ledger.read_bytes();self.assertGreater(len(raw),20)
+            ledger.write_bytes(raw[:len(raw)//2])
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger,anchor))
+            events=case_ledger.load_events(ledger)
+            self.assertEqual(len(events),1)
+            self.assertFalse(case_ledger.validate_events(events,'CASE'))
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,events,'CASE'))
+
+    def test_unmatched_torn_tail_raises_typed_recovery_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            original=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='req-bad-torn')
+            finally:
+                case_ledger.write_anchor=original
+            raw=ledger.read_bytes();ledger.write_bytes(raw[:max(1,len(raw)//2)]+b'X')
+            with self.assertRaises(case_ledger.LedgerTornWriteError):
+                case_ledger.recover_pending_append_if_present(ledger,anchor)
+
+    def test_recovery_distinguishes_intentional_duplicate_from_same_request_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            original=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            finally:
+                case_ledger.write_anchor=original
+            second=append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            self.assertEqual(second['seq'],2)
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            original=case_ledger.write_anchor
+            case_ledger.write_anchor=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('anchor crash'))
+            try:
+                with self.assertRaises(RuntimeError):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='stable-request')
+            finally:
+                case_ledger.write_anchor=original
+            recovered=append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='stable-request')
+            self.assertEqual(recovered['seq'],1)
+            self.assertEqual(len(case_ledger.load_events(ledger)),1)
+
+
+    def test_recovered_event_instance_collision_rejects_conflicting_requests(self):
+        # A retry token must not cause a changed payload/type/case/timestamp
+        # to be mistaken for an already-applied logical request.
+        collisions=[
+            ('CASE','CASE_OPENED',{'v':2},None),
+            ('CASE','SENSOR_ACCEPTED',{'v':1},None),
+            ('OTHER','CASE_OPENED',{'v':1},None),
+            ('CASE','CASE_OPENED',{'v':1},'2026-01-01T00:00:00Z'),
+        ]
+        for requested_case,kind,payload,stamp in collisions:
+            with self.subTest(case=requested_case,kind=kind,payload=payload,timestamp=stamp):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                        with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='stable-id')
+                    self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+                    if requested_case!='CASE':
+                        # The earlier sticky case-ID witness is the correct
+                        # first fail-closed boundary; recovery must not run.
+                        with self.assertRaisesRegex(ValueError,'auth witness case_id mismatch'):
+                            append_event(ledger,requested_case,kind,payload,
+                                         timestamp=stamp,event_instance_id='stable-id')
+                        self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+                        self.assertFalse(default_anchor_path(ledger).exists())
+                        continue
+                    with self.assertRaises(case_ledger.LedgerRecoveryError) as ctx:
+                        append_event(ledger,requested_case,kind,payload,
+                                     timestamp=stamp,event_instance_id='stable-id')
+                    self.assertEqual(ctx.exception.code,'EVENT_INSTANCE_CONFLICT')
+                    events=case_ledger.load_events(ledger)
+                    self.assertEqual(len(events),1)
+                    self.assertEqual(events[0]['payload'],{'v':1})
+                    self.assertFalse(case_ledger.validate_events(events,'CASE'))
+                    self.assertFalse(case_ledger.validate_anchor(ledger,default_anchor_path(ledger),events,'CASE'))
+                    self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+
+
+    def test_failed_unsigned_to_signed_upgrade_preserves_existing_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='first')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            old_witness=witness_path.read_bytes()
+            old_anchor=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'explicit HMAC migration'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key='new-key',key_id='key-v1',event_instance_id='second')
+            self.assertEqual(witness_path.read_bytes(),old_witness)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertFalse(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            appended=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3},event_instance_id='third')
+            self.assertEqual(appended['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_unsigned_pending_cannot_poison_witness_on_signed_retry(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},event_instance_id='first')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            original_witness=witness_path.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC missing'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2',
+                             hmac_key='new-key',key_id='key-v1')
+            self.assertEqual(witness_path.read_bytes(),original_witness)
+            self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='pending-2')
+            self.assertEqual(recovered['seq'],2)
+            self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_untrusted_signed_pending_does_not_create_sticky_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='ledger-key'
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            witness_path=case_ledger.canonical_auth_witness_path(ledger)
+            witness_path.unlink()  # legacy/missing witness; journal must prove its own MAC
+            tx_path=case_ledger.pending_append_path(ledger)
+            signed_bytes=tx_path.read_bytes()
+            bad=json.loads(signed_bytes)
+            bad['hmac_sha256']='0'*64
+            tx_path.write_text(json.dumps(bad),encoding='utf-8')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC mismatch'):
+                append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                             hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            self.assertFalse(witness_path.exists())
+            tx_path.write_bytes(signed_bytes)
+            recovered=append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                   hmac_key=key,key_id='key-v1',event_instance_id='signed-1')
+            self.assertEqual(recovered['seq'],1)
+            self.assertTrue(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE',key,True))
+
+    def test_preexisting_anchorless_ledger_does_not_create_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';ledger.write_text('',encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'existing ledger anchor missing'):
+                append_event(ledger,'CASE','CASE_OPENED',{},hmac_key='key',key_id='key-v1')
+            self.assertFalse(case_ledger.canonical_auth_witness_path(ledger).exists())
+
+
+    def test_forged_hmac_marker_does_not_poison_unsigned_history(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            original_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            original_witness=witness.read_bytes()
+            forged=json.loads(original_anchor);forged['key_id']='key-v1';forged['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(forged),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'HMAC mismatch'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key='real-key',key_id='key-v1')
+            self.assertEqual(witness.read_bytes(),original_witness)
+            anchor.write_bytes(original_anchor)
+            ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3})
+            self.assertEqual(ev['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_signed_anchor_key_id_change_cannot_poison_missing_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            key='ledger-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='old-key')
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            witness.unlink();original=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'key_id change requires explicit migration'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key=key,key_id='new-key')
+            self.assertFalse(witness.exists());self.assertEqual(anchor.read_bytes(),original)
+            ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':3},
+                            hmac_key=key,key_id='old-key')
+            self.assertEqual(ev['seq'],2)
+            self.assertEqual(case_ledger.load_auth_witness(ledger,'CASE')['key_id'],'old-key')
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE',key,True))
+
+    def test_unsigned_pending_with_forged_hmac_anchor_keeps_witness(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            old_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger);old_witness=witness.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2')
+            forged=json.loads(old_anchor);forged['key_id']='key-v1';forged['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(forged),encoding='utf-8')
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'HMAC missing'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2',
+                             hmac_key='real-key',key_id='key-v1')
+            self.assertEqual(witness.read_bytes(),old_witness)
+            self.assertTrue(case_ledger.pending_append_path(ledger).exists())
+            anchor.write_bytes(old_anchor)
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='req-2')
+            self.assertEqual(recovered['seq'],2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_invalid_new_event_cannot_mutate_ledger_or_witness(self):
+        invalid=[('CASE','UNRECOGNIZED_EVENT',{'v':1}),('BAD/CASE','CASE_OPENED',{'v':1}),
+                 ('CASE','CASE_OPENED',['not-an-object']),('CASE','CASE_OPENED',{'nonjson':{1,2}})]
+        for cid,kind,payload in invalid:
+            with self.subTest(cid=cid,kind=kind,payload=str(payload)):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with self.assertRaises(ValueError):append_event(ledger,cid,kind,payload)
+                    for path in (ledger,default_anchor_path(ledger),
+                                 case_ledger.canonical_auth_witness_path(ledger),
+                                 case_ledger.pending_append_path(ledger)):
+                        self.assertFalse(path.exists(),path)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            orig_anchor=anchor.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger);orig_witness=witness.read_bytes()
+            with self.assertRaisesRegex(ValueError,'invalid event input'):
+                append_event(ledger,'CASE','UNRECOGNIZED_EVENT',{'v':2})
+            self.assertEqual(len(case_ledger.load_events(ledger)),1)
+            self.assertEqual(anchor.read_bytes(),orig_anchor)
+            self.assertEqual(witness.read_bytes(),orig_witness)
+
+
+    def test_pending_recovery_preserves_corrupted_signed_anchor(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='key-secret'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            valid_anchor=anchor.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            tx=case_ledger.pending_append_path(ledger)
+            ledger_bytes=ledger.read_bytes();tx_bytes=tx.read_bytes()
+            bad=json.loads(valid_anchor);bad['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(bad),encoding='utf-8');bad_bytes=anchor.read_bytes()
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as cm:
+                case_ledger.recover_pending_append_if_present(ledger,hmac_key=key)
+            self.assertEqual(cm.exception.code,'APPEND_ANCHOR_INVALID')
+            self.assertIn('HMAC mismatch',str(cm.exception))
+            self.assertEqual(ledger.read_bytes(),ledger_bytes)
+            self.assertEqual(anchor.read_bytes(),bad_bytes)
+            self.assertEqual(tx.read_bytes(),tx_bytes)
+            anchor.write_bytes(valid_anchor)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger,hmac_key=key))
+            self.assertFalse(tx.exists())
+            ev=case_ledger.load_events(ledger)
+            self.assertEqual(len(ev),2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,ev,'CASE',key,True))
+
+    def test_pending_recovery_does_not_recreate_deleted_prior_anchor(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            saved=anchor.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='two')
+            tx=case_ledger.pending_append_path(ledger);old_tx=tx.read_bytes();old_ledger=ledger.read_bytes()
+            anchor.unlink()
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as cm:
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(cm.exception.code,'APPEND_ANCHOR_INVALID')
+            self.assertEqual(tx.read_bytes(),old_tx)
+            self.assertEqual(ledger.read_bytes(),old_ledger)
+            self.assertFalse(anchor.exists())
+            anchor.write_bytes(saved)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger))
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+
+    def test_pending_recovery_accepts_committed_anchor_before_journal_cleanup(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='key-secret'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            tx=case_ledger.pending_append_path(ledger);original_unlink=Path.unlink
+            def crash_on_tx(path,*args,**kwargs):
+                if path==tx:raise RuntimeError('after anchor crash')
+                return original_unlink(path,*args,**kwargs)
+            with mock.patch.object(Path,'unlink',crash_on_tx):
+                with self.assertRaisesRegex(RuntimeError,'after anchor crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertTrue(tx.exists());anchor_before=anchor.read_bytes()
+            same=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                              hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertEqual(same['seq'],2)
+            self.assertFalse(tx.exists())
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+            self.assertEqual(anchor.read_bytes(),anchor_before)
+
+    def test_invalid_pending_event_schema_fails_before_replay(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            prior=ledger.read_bytes();old_anchor=anchor.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},event_instance_id='two')
+            tx_path=case_ledger.pending_append_path(ledger)
+            tx=json.loads(tx_path.read_text(encoding='utf-8'))
+            ledger.write_bytes(prior)
+            tx['event']['event_type']='INVALID_EVENT'
+            tx['event']['event_hash']=object_digest(tx['event'],'event_hash')
+            tx['transaction_digest']=case_ledger._append_tx_digest(tx)
+            tx_path.write_text(json.dumps(tx),encoding='utf-8')
+            dirty=tx_path.read_bytes()
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'event schema'):
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(ledger.read_bytes(),prior)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertEqual(tx_path.read_bytes(),dirty)
+
+
+    def test_append_retry_with_missing_witness_rejects_forged_prior_anchor_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='key-secret'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            old_anchor=anchor.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            tx=case_ledger.pending_append_path(ledger)
+            tx_bytes=tx.read_bytes();ledger_bytes=ledger.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            witness.unlink()
+            bad=json.loads(old_anchor);bad['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(bad),encoding='utf-8')
+            bad_anchor=anchor.read_bytes()
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as ctx:
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertEqual(ctx.exception.code,'APPEND_ANCHOR_INVALID')
+            self.assertFalse(witness.exists())
+            self.assertEqual(anchor.read_bytes(),bad_anchor)
+            self.assertEqual(ledger.read_bytes(),ledger_bytes)
+            self.assertEqual(tx.read_bytes(),tx_bytes)
+            anchor.write_bytes(old_anchor)
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                   hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertEqual(recovered['seq'],2)
+            self.assertTrue(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            self.assertFalse(tx.exists())
+
+
+    def test_standalone_validator_rejects_mixed_case_ledger_with_valid_local_anchor(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            first=append_event(ledger,'ALPHA','CASE_OPENED',{'v':1})
+            second={'schema_version':'2.4','case_id':'BETA','seq':2,
+                    'event_type':'SENSOR_ACCEPTED','timestamp':first['timestamp'],
+                    'payload':{'v':2},'prev_hash':first['event_hash'],'event_hash':''}
+            second['event_hash']=object_digest(second,'event_hash')
+            events=[first,second]
+            ledger.write_bytes(case_ledger._events_bytes(events))
+            case_ledger.write_anchor(ledger,anchor,'ALPHA',events)
+            errors=case_ledger.validate_events(case_ledger.load_events(ledger))
+            self.assertTrue(any('case_id mismatch at 2' in e for e in errors),errors)
+            env={**os.environ}
+            env.pop('MAESTRO_LEDGER_HMAC_KEY',None)
+            env.pop('MAESTRO_LEDGER_EXPECT_KEY_ID',None)
+            cp=subprocess.run([sys.executable,str(TOOLS/'case_ledger.py'),'validate',
+                               '--ledger',str(ledger)],capture_output=True,text=True,env=env)
+            self.assertNotEqual(cp.returncode,0)
+            self.assertIn('case_id mismatch at 2',cp.stdout+cp.stderr)
+
+    def test_anchor_validator_rejects_corrupt_existing_auth_witness(self):
+        for signed in (False,True):
+            with self.subTest(signed=signed):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+                    key='signed-secret' if signed else None
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='kid' if signed else None)
+                    witness=case_ledger.canonical_auth_witness_path(ledger)
+                    clean=witness.read_bytes()
+                    corrupt=json.loads(clean)
+                    corrupt['witness_digest']='0'*64
+                    witness.write_text(json.dumps(corrupt),encoding='utf-8')
+                    events=case_ledger.load_events(ledger)
+                    errors=case_ledger.validate_anchor(ledger,anchor,events,'CASE',key)
+                    self.assertTrue(any('auth witness digest mismatch' in e for e in errors),errors)
+                    witness.write_bytes(clean)
+                    self.assertEqual(case_ledger.validate_anchor(ledger,anchor,events,'CASE',key),[])
+
+    def test_json_nonobject_event_and_anchor_rejected_without_attribute_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{})
+            ledger.write_text('["not-a-case-event"]',encoding='utf-8')
+            events=case_ledger.load_events(ledger)
+            errors=case_ledger.validate_events(events)
+            self.assertTrue(any('event must be an object at 1' in e for e in errors),errors)
+            anchor_errors=case_ledger.validate_anchor(ledger,anchor,events)
+            self.assertIn('ledger events malformed for anchor validation',anchor_errors)
+
+
+    def test_nonfinite_new_event_payload_is_rejected_before_ledger_mutation(self):
+        for numeric in (float('nan'),float('inf'),float('-inf')):
+            with self.subTest(numeric=str(numeric)):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with self.assertRaisesRegex(ValueError,'finite strict JSON'):
+                        append_event(ledger,'CASE','CASE_OPENED',{'value':numeric})
+                    for path in (ledger,default_anchor_path(ledger),
+                                 case_ledger.canonical_auth_witness_path(ledger),
+                                 case_ledger.pending_append_path(ledger)):
+                        self.assertFalse(path.exists(),path)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            old_events=ledger.read_bytes();old_anchor=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'finite strict JSON'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'value':float('nan')})
+            self.assertEqual(ledger.read_bytes(),old_events)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+
+    def test_nonfinite_pending_journal_is_rejected_before_recovery_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'value':2},event_instance_id='tx2')
+            journal=case_ledger.pending_append_path(ledger)
+            original_journal=journal.read_bytes()
+            original_ledger=ledger.read_bytes();old_anchor=anchor.read_bytes()
+            corrupted=json.loads(original_journal)
+            corrupted['event']['payload']['value']=float('nan')
+            corrupted['event']['event_hash']=object_digest(corrupted['event'],'event_hash')
+            corrupted['transaction_digest']=case_ledger._append_tx_digest(corrupted)
+            journal.write_text(json.dumps(corrupted,allow_nan=True),encoding='utf-8')
+            tampered=journal.read_bytes()
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'unreadable'):
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(ledger.read_bytes(),original_ledger)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertEqual(journal.read_bytes(),tampered)
+            journal.write_bytes(original_journal)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger))
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_nonfinite_json_in_existing_ledger_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            prior=ledger.read_text(encoding='utf-8')
+            ledger.write_text(prior.replace('"value":1','"value":NaN'),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'non-finite JSON literal'):
+                case_ledger.load_events(ledger)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            ledger.write_text('{"payload":{"value":1e9999}}',encoding='utf-8')
+            with self.assertRaises(ValueError):
+                case_ledger.load_events(ledger)
+
+    def test_redirected_ledger_anchor_and_parent_paths_are_rejected_before_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);inside=root/'inside';inside.mkdir()
+            outside=root/'outside.jsonl'
+            ledger=inside/'case-events.jsonl'
+            try:ledger.symlink_to(outside)
+            except (OSError,NotImplementedError) as exc:self.skipTest(f'symlink unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            self.assertFalse(outside.exists())
+            self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+            self.assertFalse(case_ledger.canonical_auth_witness_path(ledger).exists())
+            ledger.unlink()
+            outside_anchor=root/'outside-anchor.json';anchor=default_anchor_path(ledger)
+            anchor.symlink_to(outside_anchor)
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            self.assertFalse(ledger.exists());self.assertFalse(outside_anchor.exists())
+            anchor.unlink()
+            redirected=root/'redirected'
+            redirected.symlink_to(inside,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(redirected/'case-events.jsonl','CASE','CASE_OPENED',{'value':1})
+            self.assertFalse((inside/'case-events.jsonl').exists())
+
+    def test_redirected_recovery_journal_fails_without_read_or_repair(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ledger=root/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','CASE_OPENED',{'value':1},event_instance_id='one')
+            journal=case_ledger.pending_append_path(ledger);original=journal.read_bytes()
+            external=root/'external-journal.json';external.write_bytes(original)
+            journal.unlink()
+            try:journal.symlink_to(external)
+            except (OSError,NotImplementedError) as exc:self.skipTest(f'symlink unavailable: {exc}')
+            ledger_original=ledger.read_bytes()
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(ledger.read_bytes(),ledger_original)
+            self.assertEqual(external.read_bytes(),original)
+            journal.unlink()
+            journal.write_bytes(original)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger))
+            self.assertFalse(journal.exists())
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_pending_transaction_nonobject_has_typed_recovery_rejection(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            journal=case_ledger.pending_append_path(ledger)
+            journal.write_text('[]',encoding='utf-8')
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as cm:
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(cm.exception.code,'APPEND_TRANSACTION_INVALID')
+            self.assertEqual(journal.read_text(encoding='utf-8'),'[]')
+
+
+    def test_preplanted_tmp_symlinks_cannot_corrupt_external_files(self):
+        for kind in ('journal','anchor','witness'):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as td:
+                    root=Path(td);ledger=root/'case-events.jsonl'
+                    victim=root/'outside.txt';sentinel=b'UNCHANGED_EXTERNAL_FILE'
+                    victim.write_bytes(sentinel)
+                    targets={
+                        'journal':case_ledger.pending_append_path(ledger),
+                        'anchor':default_anchor_path(ledger),
+                        'witness':case_ledger.canonical_auth_witness_path(ledger),
+                    }
+                    temp=Path(str(targets[kind])+'.tmp')
+                    try:temp.symlink_to(victim)
+                    except (OSError,NotImplementedError) as e:self.skipTest(f'symlinks unavailable: {e}')
+                    ev=append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+                    self.assertEqual(ev['seq'],1)
+                    self.assertEqual(victim.read_bytes(),sentinel)
+                    self.assertTrue(temp.is_symlink())
+                    self.assertFalse(case_ledger.validate_anchor(
+                        ledger,default_anchor_path(ledger),case_ledger.load_events(ledger),'CASE'))
+
+    def test_preexisting_regular_tmp_files_are_not_consumed(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            targets=[case_ledger.pending_append_path(ledger),
+                     default_anchor_path(ledger),
+                     case_ledger.canonical_auth_witness_path(ledger)]
+            temps=[Path(str(p)+'.tmp') for p in targets]
+            for p in temps:p.write_bytes(b'LEGACY_TMP_MUST_REMAIN')
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key='key',key_id='kid')
+            self.assertTrue(all(p.read_bytes()==b'LEGACY_TMP_MUST_REMAIN' for p in temps))
+            self.assertFalse(case_ledger.validate_anchor(
+                ledger,default_anchor_path(ledger),case_ledger.load_events(ledger),
+                'CASE','key',True))
+
+    def test_signed_anchor_duplicate_case_key_is_not_treated_as_authentic(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            key='protected-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            original=anchor.read_text(encoding='utf-8')
+            target='"case_id": "CASE",'
+            self.assertIn(target,original)
+            forged=original.replace(target,'"case_id": "ATTACKER",\n  '+target,1)
+            anchor.write_text(forged,encoding='utf-8')
+            self.assertEqual(json.loads(forged)['case_id'],'CASE')  # last-wins parse
+            events=case_ledger.load_events(ledger)
+            self.assertIn('ledger anchor invalid JSON',
+                          case_ledger.validate_anchor(ledger,anchor,events,'CASE',key,True))
+            anchor.write_text(original,encoding='utf-8')
+            self.assertEqual(case_ledger.validate_anchor(ledger,anchor,events,'CASE',key,True),[])
+
+    def test_signed_journal_duplicate_case_key_fails_before_mutating_ledger(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='protected-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            journal=case_ledger.pending_append_path(ledger);saved=journal.read_text(encoding='utf-8')
+            before=ledger.read_bytes();before_anchor=anchor.read_bytes()
+            needle='"case_id": "CASE",'
+            self.assertIn(needle,saved)
+            journal.write_text(saved.replace(needle,'"case_id": "ATTACKER",\n  '+needle,1),
+                               encoding='utf-8')
+            dirty=journal.read_bytes()
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'unreadable'):
+                case_ledger.recover_pending_append_if_present(ledger,hmac_key=key)
+            self.assertEqual(journal.read_bytes(),dirty)
+            self.assertEqual(ledger.read_bytes(),before)
+            self.assertEqual(anchor.read_bytes(),before_anchor)
+            journal.write_text(saved,encoding='utf-8')
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger,hmac_key=key))
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+
+    def test_duplicate_witness_keys_refuse_append_before_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='protected-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            saved=witness.read_text(encoding='utf-8')
+            needle='"hmac_required": true,'
+            self.assertIn(needle,saved)
+            witness.write_text(saved.replace(needle,'"hmac_required": false,\n  '+needle,1),
+                               encoding='utf-8')
+            before=ledger.read_bytes();anchored=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'auth witness unreadable'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},hmac_key=key,key_id='kid')
+            self.assertEqual(ledger.read_bytes(),before)
+            self.assertEqual(anchor.read_bytes(),anchored)
+            witness.write_text(saved,encoding='utf-8')
+            self.assertEqual(append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                          hmac_key=key,key_id='kid')['seq'],2)
+
+    def test_nested_duplicate_ledger_payload_is_rejected_before_validation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1})
+            original=ledger.read_text(encoding='utf-8')
+            self.assertIn('"v":1',original)
+            ledger.write_text(original.replace('"v":1','"v":999,"v":1',1),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'duplicate JSON object key'):
+                case_ledger.load_events(ledger)
+
+
+    def test_existing_ledger_hardlink_cannot_mutate_external_inode(self):
+        for signed in (False,True):
+            with self.subTest(signed=signed):
+                with tempfile.TemporaryDirectory() as td:
+                    root=Path(td);ledger=root/'case-events.jsonl'
+                    anchor=default_anchor_path(ledger)
+                    key='ledger-key' if signed else None
+                    append_event(ledger,'CASE','CASE_OPENED',{'v':1},
+                                 hmac_key=key,key_id='kid' if signed else None)
+                    outside=root/'outside-ledger.jsonl'
+                    try:os.link(ledger,outside)
+                    except (OSError,NotImplementedError) as exc:
+                        self.skipTest(f'hard links unavailable: {exc}')
+                    self.assertGreater(ledger.stat().st_nlink,1)
+                    old=ledger.read_bytes();old_anchor=anchor.read_bytes()
+                    with self.assertRaisesRegex(ValueError,'unsafe ledger hardlink'):
+                        append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                     hmac_key=key,key_id='kid' if signed else None)
+                    self.assertEqual(outside.read_bytes(),old)
+                    self.assertEqual(ledger.read_bytes(),old)
+                    self.assertEqual(anchor.read_bytes(),old_anchor)
+                    self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+                    # Explicitly remove only the unsafe external alias and
+                    # confirm that ordinary appends resume without migration.
+                    outside.unlink()
+                    ev=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                    hmac_key=key,key_id='kid' if signed else None)
+                    self.assertEqual(ev['seq'],2)
+                    self.assertFalse(case_ledger.validate_anchor(
+                        ledger,anchor,case_ledger.load_events(ledger),'CASE',key))
+
+    def test_pending_recovery_refuses_hardlinked_ledger_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ledger=root/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            key='signed-key'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            journal=case_ledger.pending_append_path(ledger)
+            before=ledger.read_bytes();old_anchor=anchor.read_bytes();old_journal=journal.read_bytes()
+            outside=root/'outside-ledger.jsonl'
+            try:os.link(ledger,outside)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'hard links unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe ledger hardlink'):
+                case_ledger.recover_pending_append_if_present(ledger,hmac_key=key)
+            self.assertEqual(outside.read_bytes(),before)
+            self.assertEqual(ledger.read_bytes(),before)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertEqual(journal.read_bytes(),old_journal)
+            outside.unlink()
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger,hmac_key=key))
+            self.assertFalse(journal.exists())
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+            self.assertFalse(case_ledger.validate_anchor(
+                ledger,anchor,case_ledger.load_events(ledger),'CASE',key))
+
+    def test_case_bundle_lock_rejects_symlinked_parent_before_external_creation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);outside=root/'outside';outside.mkdir()
+            redirected=root/'redirected'
+            try:redirected.symlink_to(outside,target_is_directory=True)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'symlink unavailable: {exc}')
+            case=redirected/'case-record.json'
+            control=outside/'.codediff-control'
+            self.assertFalse(control.exists())
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.case_bundle_lock_path(case)
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                with case_ledger.case_bundle_lock(case):
+                    self.fail('lock acquired outside requested directory')
+            self.assertFalse(control.exists())
+            self.assertFalse((outside/'case-record.json').exists())
+            # Direct ensure_control_dir must be equally conservative.
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.ensure_control_dir(redirected/'.codediff-control')
+            self.assertFalse(control.exists())
+
+    def test_case_bundle_lock_rejects_redirected_record_but_normal_lock_works(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);original=root/'outside-record.json';original.write_text('{}',encoding='utf-8')
+            record=root/'case-record.json'
+            try:record.symlink_to(original)
+            except (OSError,NotImplementedError) as exc:
+                self.skipTest(f'symlink unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe coordination directory redirect'):
+                case_ledger.case_bundle_lock_path(record)
+            self.assertFalse((root/'.codediff-control').exists())
+            record.unlink()
+            with case_ledger.case_bundle_lock(record,timeout=1.0):
+                self.assertTrue((root/'.codediff-control').is_dir())
+            self.assertEqual(original.read_text(encoding='utf-8'),'{}')
+
+
+    def test_large_corrupted_torn_tail_rejection_is_bounded_and_nonmutating(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            ev={'event_type':'SENSOR_ACCEPTED',
+                'payload':{'blob':'A'*(1024*1024)}}
+            event_bytes=case_ledger._events_bytes([ev])
+            before=b'unchanged-prefix\n'+b'Z'*len(event_bytes)
+            ledger.write_bytes(before)
+            pre_sha=case_ledger.hashlib.sha256(b'unchanged-prefix\n').hexdigest()
+            start=time.monotonic()
+            changed=case_ledger._repair_exact_torn_tail(ledger,ev,pre_sha)
+            elapsed=time.monotonic()-start
+            self.assertFalse(changed)
+            self.assertEqual(ledger.read_bytes(),before)
+            # Previous descending-slice algorithm took ~14s for 1 MiB
+            # unmatched data in a controlled Python reproduction.
+            self.assertLess(elapsed,5.0,'malformed recovery tail scan is unbounded')
+
+    def test_torn_tail_linear_match_preserves_reference_recovery_semantics(self):
+        rng=random.Random(47691)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            for _ in range(160):
+                payload=''.join(rng.choice('a{"b}:') for _ in range(rng.randrange(8,100)))
+                event={'event_type':'SENSOR_ACCEPTED','payload':{'text':payload}}
+                event_bytes=case_ledger._events_bytes([event])
+                prefix=b'PREV-LEDGER-BYTES\n'
+                prefix_len=rng.randrange(0,len(event_bytes))
+                tail=event_bytes[:prefix_len]
+                if rng.choice((True,False)) and tail:
+                    # A plausible near-prefix tail that may have multiple
+                    # shorter overlapping prefix/suffix borders.
+                    tail=tail[:-1]+rng.choice((b'?',b'{',b'a'))
+                raw=prefix+tail
+                pre_sha=case_ledger.hashlib.sha256(prefix).hexdigest()
+                expected_size=0
+                for size in range(min(len(raw),len(event_bytes)-1),0,-1):
+                    if (raw.endswith(event_bytes[:size]) and
+                        case_ledger.hashlib.sha256(raw[:-size]).hexdigest()==pre_sha):
+                        expected_size=size
+                        break
+                ledger.write_bytes(raw)
+                changed=case_ledger._repair_exact_torn_tail(ledger,event,pre_sha)
+                self.assertEqual(changed,bool(expected_size))
+                self.assertEqual(ledger.read_bytes(),
+                                 raw[:-expected_size] if expected_size else raw)
+
+    def test_interrupted_lock_initialization_cleans_owned_lock_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            lock=Path(str(ledger)+'.lock')
+            for signal in (KeyboardInterrupt,SystemExit):
+                with self.subTest(signal=signal.__name__):
+                    with mock.patch.object(case_ledger.os,'fsync',side_effect=signal('simulated')):
+                        with self.assertRaises(signal):
+                            with case_ledger.ledger_lock(ledger,timeout=0.05):
+                                self.fail('lock should fail during fsync')
+                    # Process remains alive, so PID-based lock reclamation
+                    # cannot remove a lock orphaned during initialization.
+                    self.assertFalse(lock.exists())
+                    with case_ledger.ledger_lock(ledger,timeout=0.1):
+                        self.assertTrue(lock.exists())
+                    self.assertFalse(lock.exists())
 
 
 if __name__=='__main__':

@@ -322,10 +322,10 @@ def disagreement(a,b,esc_cfg=None,changed_paths=None):
     if a['verdict']=='BLOCKED' or b['verdict']=='BLOCKED':return a['verdict']!=b['verdict']
     ma=material_findings(a,esc_cfg);mb=material_findings(b,esc_cfg)
     if bool(ma)!=bool(mb):return True
-    # Compare the same Git-aware semantic identity used by campaign repeat
-    # accounting. Backslash is a legal Git filename character and is not a
-    # separator alias here.
-    sa={(f['severity'],material_finding_key(f,changed_paths)) for f in ma};sb={(f['severity'],material_finding_key(f,changed_paths)) for f in mb}
+    # Agreement needs severity plus identity *with multiplicity*. A set would
+    # collapse two same-key defects into one and could hide an omitted finding.
+    sa=sorted(material_finding_signature(f,changed_paths) for f in ma)
+    sb=sorted(material_finding_signature(f,changed_paths) for f in mb)
     return sa!=sb
 
 def review_notes_obj(stage_rows,esc_cfg=None):
@@ -348,6 +348,10 @@ def material_finding_key(f,changed_paths=None):
            'axis':str(f.get('axis') or '').strip() or None,
            'path':normalized_path}
     return 'finding:'+sha256_bytes(canonical_bytes(basis))[:24]
+
+def material_finding_signature(f,changed_paths=None):
+    severity=str(f.get('severity') or '').strip()
+    return severity+'|'+material_finding_key(f,changed_paths)
 
 def _trail_authoritative_material(case):
     trail=[r for r in case.get('review_trail',[]) if r.get('level') in {'L1','L2','ADVERSARIAL'}]
@@ -405,7 +409,7 @@ def campaign_history(root,case_id,hmac_key=None):
                             if not anchor.is_file():raise ValueError('unrelated ledger anchor missing')
                             try:unrelated_anchor=json.loads(anchor.read_text())
                             except Exception as exc:raise ValueError('ledger_anchor_invalid_json') from exc
-                            anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(unrelated_anchor.get('hmac_sha256')) or bool(hmac_key))
+                            anchor_errs=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
                             if anchor_errs:raise ValueError('unrelated ledger invalid: '+'; '.join(anchor_errs[:8]))
                             continue
                     elif tx_path.is_file():
@@ -428,13 +432,13 @@ def campaign_history(root,case_id,hmac_key=None):
                             if len(event_case_ids)!=1 or None in event_case_ids:raise ValueError('ledger contains mixed or missing case_id')
                             event_case_id=next(iter(event_case_ids))
                             if event_case_id!=case_id:continue
-                            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(anchor_obj.get('hmac_sha256')))
+                            errs+=validate_anchor(ledger,anchor,events,event_case_id,hmac_key,require_hmac=bool(hmac_key))
                             if errs:raise ValueError('ledger_invalid: '+'; '.join(errs[:8]))
                             case=None
                             if case_path.is_file():
                                 case=json.loads(case_path.read_text())
                                 if case.get('case_id')!=case_id:raise ValueError('case_id mismatch')
-                                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(anchor_obj.get('hmac_sha256')),hmac_key)
+                                bundle_errs=case_bundle_errors(case,ledger,anchor,bool(hmac_key),hmac_key)
                                 if bundle_errs:raise ValueError('case_bundle_invalid: '+'; '.join(bundle_errs[:8]))
                     except TimeoutError as exc:
                         raise ValueError('campaign ledger busy during active bundle snapshot') from exc
@@ -576,10 +580,10 @@ def make_case(case_id,evidence,stage_rows,labels,families,esc_cfg=None):
     trail=[]
     for level,task,r,ref in stage_rows:
         material=material_findings(r,esc_cfg);notes=[f for f in r.get('findings',[]) if finding_disposition(f,esc_cfg)=='NOTE_ONLY'];changed_paths=task.get('changed_paths')
-        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f,changed_paths) for f in material})
+        ff=sorted({f.get('failure_family') for f in material if f.get('failure_family')});keys=sorted({material_finding_key(f,changed_paths) for f in material});signatures=sorted(material_finding_signature(f,changed_paths) for f in material)
         note_ff=sorted({f.get('failure_family') for f in notes if f.get('failure_family')});note_keys=sorted({material_finding_key(f,changed_paths) for f in notes})
         major_count=sum(f.get('severity')=='major' for f in material);blocker_count=sum(f.get('severity')=='blocker' for f in material)
-        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
+        trail.append({'review_id':task['task_id'],'parent_review_id':None,'level':level,'node_id':r['reviewer']['node_id'],'model':r['reviewer']['model'],'verdict':r['verdict'],'confidence':r['confidence'],'result_digest':r['result_digest'],'reviewed_head_sha':r['binding']['reviewed_head_sha'],'evidence_digest':r['evidence_digest'],'input_digest':object_digest(task),'prompt_digest':r['reviewer']['prompt_digest'],'skill_digest':r['reviewer']['skill_digest'],'policy_digest':r['reviewer']['policy_digest'],'standards_digest':r['reviewer']['standards_digest'],'worker_command_digest':r['reviewer']['worker_command_digest'],'independent_context':r['reviewer']['independent_context'],'requested_level':requested_target(r,esc_cfg),'achieved_level':level,'timestamp':None,'finding_families':ff,'material_finding_keys':keys,'material_finding_signatures':signatures,'note_only_finding_families':note_ff,'note_only_finding_keys':note_keys,'material_finding_count':len(material),'note_only_finding_count':len(notes),'major_finding_count':major_count,'blocker_finding_count':blocker_count})
     return {'schema_version':'2.4','case_id':case_id,'binding':{'repository':evidence['binding']['repository'],'pr_number':None,'work_unit':evidence['binding'].get('work_unit'),'base_sha':evidence['binding']['base_sha'],'head_sha':evidence['binding']['head_sha']},
       'sensor':{'evidence_digest':evidence['output_digest'],'semantic_digest':evidence['semantic_digest'],'tool_version':evidence['tool']['harness_api_version'],'quality_class':evidence['summary']['quality_class'],'score_ref':None},
       'review_trail':trail,'outcome':{'author_response':'no_response','merged':False,'merge_sha':None,'post_merge_status':'unknown','incident_ref':None},'failure_families':sorted(set(families)),'labels':sorted(set(labels)),'privacy':{'raw_source_centralized':False,'sanitized_fixture_created':False}}
@@ -647,7 +651,7 @@ def main():
             raise SystemExit('automated review attempt budget exhausted; HUMAN/owner decision required')
         if bootstrap_campaign.get('require_head_change_for_retry',True) and last.get('state')=='COMPLETE' and last.get('material_count'):
             if current_head==last.get('head_sha'):raise SystemExit('material remediation retry requires a new HEAD; batch fixes before re-reviewing')
-    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=(last_attempt_index if continuing_authority_path else last_attempt_index+1) if history else 1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
+    out=choose_out_dir(ns.output_dir,ns.retry);attempt_index=(last_attempt_index if continuing_authority_path else last_attempt_index+1) if history else 1;ledger=out/'case-events.jsonl';anchor=out/'case-events.anchor.json';ledger_key=os.environ.get('MAESTRO_LEDGER_HMAC_KEY');ledger_key_id=((os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip() or ('MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None));runtime_key=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_KEY');runtime_replay_dir=os.environ.get('MAESTRO_RUNTIME_ATTESTATION_REPLAY_DIR');audit_key=os.environ.get('MAESTRO_AUDIT_SEED')
     routing_source=Path(ns.routing_policy).resolve()
     if not routing_source.is_file():raise SystemExit(f'routing policy missing: {routing_source}')
     effective_routing=out/'reviewer-routing.effective.yml';shutil.copy2(routing_source,effective_routing)
@@ -678,7 +682,9 @@ def main():
         shadow_audit_unseeded=True
         ns.disable_random_audit=True
     binding={'repository':'unknown','base_sha':ZERO[:40],'head_sha':ZERO[:40],'pr_number':None,'work_unit':None};evidence={};git_ok=False;recomputed_ok=False;worktree_ok=False;ledger_ok=False;runtime_verified=False;runtime_att_digest=None;runtime_fresh_sessions={}
-    def ev(type_,payload):return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id='MAESTRO_LEDGER_HMAC_KEY' if ledger_key else None)
+    def ev(type_,payload):
+        instance='cycle:'+sha256_bytes(canonical_bytes({'case_id':ns.case_id,'attempt_index':attempt_index,'event_type':type_,'payload':payload}))[:40]
+        return append_event(ledger,ns.case_id,type_,payload,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id,event_instance_id=instance)
     def terminal_block(kind,msg,stage='HARNESS',required='L1',achieved='SENSOR',stage_rows=None,labels=None,families=None,reasons=None,current_stage=None):
         nonlocal ledger_ok
         stage_rows=stage_rows or [];labels=set(labels or []);families=set(families or []);reasons=list(reasons or [])+[kind];ledger_failures=[]

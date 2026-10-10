@@ -11,10 +11,10 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - HUMAN attestation freshness를 **신규 승인 시점의 acceptance window**와 **과거 확정 증명의 검증**으로 분리.
 - HUMAN recovery transaction 전체 digest + HUMAN authority-key HMAC 적용.
 - HUMAN recovery 시 transaction ID 재계산 및 변조된 복구 상태 거부.
-- ledger append에 authenticated recovery journal 도입.
-- journal을 exact pre-append ledger bytes, hash chain, optional ledger HMAC authority에 바인딩.
-- event fsync 후 anchor 교체 전 중단된 append를 재실행 시 idempotent하게 복구.
-- 죽은 프로세스가 남긴 ledger lock PID를 즉시 회수.
+- ledger append에 digest-bound recovery journal 도입(HMAC authority 구성 시 authenticated).
+- journal을 exact pre-append ledger bytes, hash chain, optional ledger HMAC authority와 event_instance_id에 바인딩.
+- no-write / event fsync 후 anchor 교체 전 / pending event의 exact torn-tail 중단을 복구하고, 일치하지 않는 malformed tail은 typed error로 fail-closed.
+- ledger lock 회수는 PID뿐 아니라 process-instance ID, machine/hostname/node identity와 reclaim guard를 함께 사용하며 불확실한 소유권은 회수하지 않음.
 - 동일 case_id 재사용 시 case-bank의 현재 case/binding/evidence와 immutable snapshot 일치 여부 확인.
 - standards/spec/test를 reviewer 실행 전에 `trusted-inputs/`로 동결.
 - policy/sensor policy를 cycle 시작 시 `effective-policy/`로 동결하고 생성·재계산·검증·reviewer provenance가 동일 snapshot을 사용.
@@ -28,7 +28,7 @@ v2.7은 v2.6의 authority/ledger/sensor/runtime hardening을 유지하면서, �
 - receipt semantic validator를 추가하고 top-level/item 필드를 exact allowlist로 제한해 path/content 같은 추가 필드를 digest 재계산으로 숨기는 우회를 차단.
 - `MANIFEST.sha256`을 `.git` 없는 추출 패키지에서 직접 검증하는 filesystem 모드 추가; missing/extra/hash mismatch와 unsafe POSIX 경로를 fail-closed.
 - PR/manual package를 clean extraction한 뒤 manifest 검증과 canonical full validation을 다시 실행하도록 release gate 강화.
-- exact HEAD + ZIP SHA-256 + manifest SHA-256 + entry count를 묶는 외부 source-package receipt 추가 (`authority_effect=NONE`).
+- exact HEAD + ZIP SHA-256 + manifest SHA-256 + entry count를 묶는 source-package receipt 추가 (`authority_effect=NONE`); CI 생성 시 Actions run ID/attempt/workflow ref도 traceability 필드로 결합.
 - source-package receipt semantic validator를 schema와 동일한 package-name/type 계약으로 맞춤.
 - tracked `.pytest_cache`, `__pycache__`, `*.pyc`, `*.pyo`를 manifest/package 생성 전에 거부하는 package hygiene gate 추가.
 - `git archive --format=zip` clean-extract에서 일부 vendor text blob hash가 달라지는 문제를 검출하여, exact Git blob bytes를 직접 ZIP에 기록하는 package builder로 교체.
@@ -104,3 +104,25 @@ v2.7은 **HARDENED SHADOW CANDIDATE**이다. canonical validation PASS는 merge/
 - reviewer worker contract에 exact Git changed_paths spelling 및 off-diff activated/worsened 예외 규칙 명시.
 - exact changed Git path가 Windows drive/UNC처럼 보이는 literal filename일 경우 task changed_paths authority를 우선하여 host-path heuristic false positive를 방지.
 - canonical validation에서 발견된 mock reviewer 계약 회귀 수정: 고정 src/example.py 대신 task changed_paths에 finding path를 바인딩하여 test double도 production path-scope 계약을 준수.
+
+- Leonardo 추가 시뮬레이션 #38~#40: runtime disagreement와 calibration/route 사이에서 severity가 소실되던 문제를 severity-aware material signature로 통일.
+- 동일 coarse material key가 여러 finding에서 반복될 때 set 축약으로 2-vs-1 omission을 합의로 오인하던 문제를 multiset 비교로 수정.
+- case-record에 optional material_finding_signatures를 저장하고 signature count/key/major/blocker 정합성 검증 추가.
+- pre-signature v2.7 row와 신규 row 혼합 시 representation 차이만으로 false disagreement가 생기지 않도록 key+count 호환 fallback 유지.
+- retry budget은 기존 severity-independent material_finding_key를 유지하여 severity 재평가가 자동 보완 횟수를 초기화하지 않음.
+- calibration report interpretation 문구를 실제 signature → key+count → state-only 호환 우선순위와 일치하도록 정정.
+
+- 외부 FULL 검토 M1~M3/L1 후속: signed-ledger HMAC mode를 anchor 자체가 아닌 sticky auth witness + anchor/transaction key_id + 선택적 외부 `MAESTRO_LEDGER_EXPECT_KEY_ID` 기대값으로 fail-closed 검증.
+- append recovery journal은 HMAC 구성 시에만 authenticated로 표현하고, unsigned 경로는 digest/hash-chain integrity recovery로 명확히 구분.
+- pending transaction이 증명하는 exact event-byte prefix torn tail은 pre-ledger SHA-256 확인 후 안전하게 truncate/fsync/retry하고, 그 외 malformed tail은 typed `LedgerTornWriteError`로 fail-closed.
+- recovery 후 동일 type/payload라도 새 요청은 새 이벤트로 기록하며, 동일 logical retry는 `event_instance_id`가 일치할 때만 idempotent하게 재사용.
+- ledger lock 문서를 PID 단독 설명에서 process-instance + machine identity + reclaim guard 구조로 갱신.
+- 과거 harness 수치는 역사적 snapshot으로만 유지하고, 현재 검증 보고서 상단 수치는 최신 HEAD full-validation 결과로 갱신하도록 정리.
+
+- 외부 FULL 리뷰 M1~M3/L1 대응: signed ledger의 anchor 자기신고 다운그레이드를 막는 sticky `case-events.auth.json` witness와 외부 `MAESTRO_LEDGER_EXPECT_KEY_ID` / `--expected-key-id` 기대값을 추가. witness가 HMAC-required이면 키 없는 anchor/journal 검증을 거부하고 case-bank에도 witness를 보존.
+- HMAC 미구성 journal은 cryptographic authentication이 아니라 digest/hash-chain integrity만 제공한다는 보장 범위를 명시.
+- pending append의 exact torn JSONL tail을 `pre_ledger_sha256` 검증 후 truncate/replay하고, 일치하지 않는 malformed tail은 `LedgerTornWriteError`로 fail-closed.
+- recovery idempotency에 `event_instance_id`를 도입하여 같은 instance의 재시도만 흡수하고, 동일 type/payload라도 다른 instance의 의도적 이벤트는 별도 seq로 기록.
+- source-package receipt에 Actions run ID/attempt/workflow ref를 추가해 ZIP/HEAD와 검증 실행의 추적 연결을 강화(실행 존재 자체의 외부 증명 권한은 아님).
+- source-package receipt의 CI traceability 필드는 신규 생성물에는 기록하되 optional v2.7 extension으로 유지하여 기존 v2.7 receipt 검증 호환성을 보존.
+- external `MAESTRO_LEDGER_EXPECT_KEY_ID`를 실제 review/HUMAN/outcome/incident writer까지 전파하여 임의 key-version ID를 사용해도 signed ledger write/validation이 일치하도록 보완.

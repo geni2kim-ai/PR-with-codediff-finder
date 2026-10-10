@@ -18,18 +18,23 @@ def material_state(row):
 
 def material_signature(row):
     state=material_state(row)
+    if state!='FINDINGS':return (state,None,None)
+    signatures=row.get('material_finding_signatures')
+    exact=tuple(sorted(str(x) for x in signatures if x)) if isinstance(signatures,list) and signatures else None
     keys=row.get('material_finding_keys')
-    if state!='FINDINGS':return (state,())
-    if isinstance(keys,list) and keys:
-        return (state,tuple(sorted(set(str(x) for x in keys if x))))
-    # Older or partially populated records may not carry per-finding identity.
-    # Preserve state-only compatibility instead of inventing precision.
-    return (state,None)
+    coarse=(tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))) if isinstance(keys,list) and keys else None
+    return (state,exact,coarse)
 
 def material_agrees(a,b):
     sa=material_signature(a);sb=material_signature(b)
-    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
-    return sa==sb
+    if sa[0]!=sb[0]:return False
+    if sa[0]!='FINDINGS':return True
+    # Use severity-aware exact signatures only when both rows carry them. Mixed
+    # old/new records safely fall back to key+count instead of creating a format-only
+    # disagreement. Very old rows with no identity retain state-only compatibility.
+    if sa[1] is not None and sb[1] is not None:return sa[1]==sb[1]
+    if sa[2] is not None and sb[2] is not None:return sa[2]==sb[2]
+    return True
 
 def p95(values):
     if not values:return None
@@ -104,6 +109,6 @@ def main():
     cfg=load_yaml(ns.limits).get('calibration',{});every=int(cfg.get('review_every_runs',500));summary=summarize_cases(cases,cfg)
     out={'schema_version':'2.7','cases_seen':len(cases),'invalid_or_unanchored_cases':invalid,**summary,
          'calibration_policy':{'review_every_runs':every,'review_due':len(cases)>=every,'completed_windows':(len(cases)//every if every>0 else 0),'metrics':cfg.get('metrics',[])},
-         'interpretation':'Machine-review agreement uses material finding state, so NOTE_ONLY does not count as a reversal. HUMAN CONFIRMED/REJECTED is reported as confirmation/rejection of its parent review rather than compared as a different verdict vocabulary. Recurring NOTE_ONLY keys are proposal signals only and do not auto-change standards.'}
+         'interpretation':'Machine-review agreement uses severity-aware material signatures when both rows provide them, falls back to material key+count for pre-signature v2.7 compatibility, and uses state-only comparison only for older identity-less rows. NOTE_ONLY does not count as a material reversal. HUMAN CONFIRMED/REJECTED is reported as confirmation/rejection of its parent review rather than compared as a different verdict vocabulary. Recurring NOTE_ONLY keys are proposal signals only and do not auto-change standards.'}
     Path(ns.output).write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');print(ns.output)
 if __name__=='__main__':main()

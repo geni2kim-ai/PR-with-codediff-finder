@@ -8,7 +8,7 @@ from validate_case_record import semantic_errors
 from validate_case_bundle import errors as bundle_errors
 from validate_textdiff_evidence import semantic_errors as evidence_semantic_errors
 from validate_stage_result import validate as validate_stage_result
-from case_ledger import default_anchor_path
+from case_ledger import default_anchor_path,canonical_auth_witness_path
 from queue_policy import choose_queue
 def _trail_material_state(row):
     if row.get('verdict')=='BLOCKED':return 'BLOCKED'
@@ -18,16 +18,20 @@ def _trail_material_state(row):
 
 def _trail_material_signature(row):
     state=_trail_material_state(row)
+    if state!='FINDINGS':return (state,None,None)
+    signatures=row.get('material_finding_signatures')
+    exact=tuple(sorted(str(x) for x in signatures if x)) if isinstance(signatures,list) and signatures else None
     keys=row.get('material_finding_keys')
-    if state!='FINDINGS':return (state,())
-    if isinstance(keys,list) and keys:
-        return (state,tuple(sorted(set(str(x) for x in keys if x))))
-    return (state,None)
+    coarse=(tuple(sorted(set(str(x) for x in keys if x))),int(row.get('material_finding_count',len(keys)))) if isinstance(keys,list) and keys else None
+    return (state,exact,coarse)
 
 def _trail_material_agrees(a,b):
     sa=_trail_material_signature(a);sb=_trail_material_signature(b)
-    if sa[1] is None or sb[1] is None:return sa[0]==sb[0]
-    return sa==sb
+    if sa[0]!=sb[0]:return False
+    if sa[0]!='FINDINGS':return True
+    if sa[1] is not None and sb[1] is not None:return sa[1]==sb[1]
+    if sa[2] is not None and sb[2] is not None:return sa[2]==sb[2]
+    return True
 
 def reasons_for(case,rsi=None):
     labels=set(case.get('labels',[]));trail=case.get('review_trail',[]);reasons=[];by={}
@@ -192,6 +196,8 @@ def main():
     reasons=reasons_for(case,rsi);q=choose_queue(reasons,case.get('labels'),rsi,case.get('failure_families'));bank_parent=cb.parent;bank_parent.mkdir(parents=True,exist_ok=True);stage=Path(tempfile.mkdtemp(prefix=f'.{case["case_id"]}.stage-',dir=bank_parent))
     try:
         _copy(ns.case,stage/'case-record.json');_copy(evidence_path,stage/'textdiff-evidence.json');_copy(ns.ledger,stage/'case-events.jsonl');_copy(anchor,stage/'case-events.anchor.json')
+        auth_witness=canonical_auth_witness_path(ns.ledger)
+        if auth_witness.is_file():_copy(auth_witness,stage/'case-events.auth.json')
         if rsi_path:_copy(rsi_path,stage/'rsi-evaluation.json')
         _copy(l1_path,stage/'l1-review.json')
         if l2_path:_copy(l2_path,stage/'l2-review.json')

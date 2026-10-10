@@ -1040,3 +1040,355 @@ Git exact path 보존을 다시 검증하면서 host-path 차단 순서의 반�
 - mock도 production reviewer와 동일 output contract를 따르게 되어 회귀 테스트의 신뢰도가 오히려 높아짐
 
 이 항목은 보안 규칙을 테스트 때문에 완화하지 않고 **test double을 실제 계약에 맞추는 방향**으로 해결한다.
+
+### 38. runtime은 severity disagreement인데 Leonardo calibration/route는 agreement로 학습하는 문제
+
+#30~#32에서 path-aware material identity를 도입했지만 runtime과 장기 기록이 아직 완전히 같지 않았다.
+
+반례:
+1. L1: `SECURITY-CRITICAL`, 같은 axis/path, severity=`major`
+2. L2: 같은 failure family/axis/path, severity=`minor`
+3. 강제-review family이므로 minor도 NOTE_ONLY가 아니라 material finding
+4. runtime `disagreement()`는 `severity + material_finding_key`를 비교하므로 disagreement=true
+5. case-record에는 material key만 저장
+6. calibration/route는 같은 key로 보아 agreement=true
+
+영향:
+- 실제 authority path에서는 adversarial adjudication이 필요했는데 장기 Leonardo 지표는 합의로 기록
+- model/worker agreement rate 과대평가
+- 같은 case를 후속 routing할 때 runtime과 다른 이유 집합을 만들 수 있음
+
+보완:
+- retry identity인 `material_finding_key`와 review agreement identity를 분리
+- `material_finding_signature = severity|material_finding_key`를 harness가 결정적으로 계산
+- case-record에 optional `material_finding_signatures`를 저장
+- calibration과 route는 양쪽 row에 signature가 있으면 동일 signature multiset을 비교
+- campaign retry budget은 기존 key만 계속 사용하여 severity 재평가가 retry budget을 초기화하지 않음
+
+회귀:
+- 같은 key의 major vs forced-material minor → runtime disagreement=true
+- persisted signature 비교에서도 disagreement=true
+- route reason에 `L1_L2_DISAGREEMENT` 유지
+
+### 39. set 비교가 같은 material key의 finding 개수 차이를 숨기는 문제
+
+기존 runtime disagreement는 set을 사용했다.
+
+반례:
+1. L1이 같은 file/family/axis에서 material finding 두 개를 보고
+2. L2가 그중 하나만 보고
+3. 두 finding이 현재 coarse material key로 충돌
+4. `{severity,key}` set은 양쪽 모두 원소 하나가 되어 agreement 처리
+
+완전한 semantic defect identifier 없이 두 finding의 의미 자체를 안정적으로 구분할 수는 없지만, 적어도 **개수 손실**까지 허용할 이유는 없다.
+
+보완:
+- runtime agreement를 set이 아니라 정렬된 signature list, 즉 multiset으로 비교
+- case-record `material_finding_signatures`도 duplicate를 허용하여 multiplicity 보존
+- pre-signature v2.7 row도 `material_finding_keys + material_finding_count`를 coarse identity로 비교
+- 따라서 같은 key 2개 vs 1개는 runtime/calibration/route 모두 disagreement
+
+회귀:
+- 동일 signature 두 개 vs 한 개 → disagreement=true
+- retry budget은 여전히 unique material key 기준이므로 같은 coarse defect가 여러 번 표현됐다고 자동 remediation 횟수가 늘어나지 않음
+
+### 40. 새 signature row와 기존 key-only row가 섞일 때 형식 차이만으로 false disagreement가 생길 수 있는 문제
+
+severity-aware signature 초안을 적용한 뒤 upgrade/resume 호환성을 다시 시뮬레이션했다.
+
+반례:
+1. 한 row는 새 `material_finding_signatures` 보유
+2. 다른 row는 기존 v2.7 `material_finding_keys`만 보유
+3. 실제 material key/count는 동일
+4. representation 자체를 직접 비교하면 `severity-signature`와 `key` 형식이 다르다는 이유만으로 disagreement
+
+보완:
+- 양쪽 모두 새 signature를 가진 경우에만 severity-aware exact 비교
+- 한쪽이라도 pre-signature row이면 양쪽이 공통으로 가진 `key set + material_finding_count` 수준으로 downgrade 비교
+- 아주 오래된 identity-less row는 기존 state-only compatibility 유지
+- case-record validator는 signature가 존재하는 신규 row에서 signature count, key 집합, major/blocker count의 상호 정합성을 검증
+
+회귀:
+- new signature row vs 동일한 legacy key/count row → agreement
+- legacy same-key count 2 vs count 1 → disagreement
+- malformed persisted signature count/key/severity count → case semantic validation failure
+
+### 잔여 NOTE
+
+이번 보완으로 기존 NOTE의 가장 위험한 부분인 **severity 손실과 multiplicity 손실**은 제거했다. 다만 같은 file/family/axis에서 동일 severity로 발생한 서로 다른 두 결함을 reviewer들이 각각 하나씩 보고한 경우처럼, 개수까지 같은 완전한 coarse-key collision은 아직 구분할 수 없다.
+
+이를 해소하려면 claim 문구 hash처럼 불안정한 값을 쓰는 대신 reviewer 간/재시도 간 안정적인 semantic defect locator 계약이 필요하다. 현재 즉시 authority bypass나 무한 retry를 만드는 경로는 아니므로 schema-level 후속 설계 항목으로 유지한다.
+
+### 41. calibration 결과의 interpretation 문구가 새 agreement 의미론과 불일치
+
+#38~#40 보완 후 출력 JSON의 설명 문자열을 다시 확인했다. 계산 로직은 signature/key+count 계층으로 바뀌었지만 `interpretation`은 여전히 “material finding state를 사용한다”고 설명하고 있었다.
+
+영향:
+- 수치 자체는 맞아도 운영자가 agreement/reversal을 단순 PASS/FINDINGS 상태 비교로 오해할 수 있음
+- Leonardo 장기 지표의 감사 가능성과 설명력이 떨어짐
+
+보완:
+- 양쪽 signature 존재 시 severity-aware signature 비교
+- pre-signature v2.7은 key+count 비교
+- identity-less legacy만 state-only 비교
+라는 실제 우선순위를 calibration output 설명에 그대로 반영했다.
+
+### 42. signed ledger의 HMAC 요구를 anchor 자기신고만으로 판단하는 문제
+
+외부 FULL 리뷰 M1을 실제 코드 경로에 대입했다. 기존 일부 경로는 `anchor.hmac_sha256` 유무를 `require_hmac` 결정에 다시 사용했기 때문에, 공격자가 ledger와 anchor를 함께 다시 만든 뒤 HMAC 필드를 제거하면 키 없는 SHADOW 검증에서 과거 signed-mode 사실을 복원할 수 없었다.
+
+보완:
+- ledger마다 anchor와 분리된 sticky `case-events.auth.json` witness를 생성
+- 한 번 `hmac_required=true`가 되면 정상 API로 false downgrade 불가
+- `validate_anchor()`, append-journal recovery, case-bundle 검증이 anchor 자기신고가 아니라 witness를 자동 참조
+- immutable case-bank로 라우팅할 때 auth witness도 ledger/anchor와 함께 복사
+- `key_id`가 남아 있으면 HMAC requirement로 취급
+- 로컬 witness까지 삭제/변조 가능한 공격에 대비해 `MAESTRO_LEDGER_EXPECT_KEY_ID` 및 validation CLI `--expected-key-id`를 외부 expectation 경계로 제공
+
+한계:
+- HMAC key도 외부 expectation도 없고 공격자가 ledger/anchor/witness를 모두 다시 쓸 수 있으면, 과거에 signed history였다는 사실은 로컬 파일만으로 암호학적으로 증명할 수 없다.
+- 따라서 ENFORCED는 기존처럼 HMAC key를 요구하고, 강한 historical non-downgrade가 필요한 운영은 외부 durable witness/storage boundary를 유지해야 한다.
+
+### 43. keyless recovery journal을 authenticated라고 표현한 문제
+
+외부 FULL 리뷰 M2를 재현했다. HMAC가 없는 append transaction은 transaction digest와 event hash는 검증하지만, 동일 권한으로 파일을 다시 쓸 수 있는 공격자를 상대로 출처 인증을 제공하지 않는다.
+
+보완:
+- signed-history witness 또는 외부 expected key ID가 있으면 unsigned/missing-HMAC transaction을 fail-closed
+- transaction `key_id` 자체도 HMAC requirement signal로 사용
+- 문서/CHANGELOG에서 journal 기본 성격을 `digest-bound integrity`로 수정
+- “authenticated recovery journal” 표현은 HMAC authority가 구성된 경우에만 사용
+
+따라서 unsigned SHADOW journal은 deterministic crash recovery + integrity metadata이지 cryptographic authentication이 아니다.
+
+### 44. pending event의 torn JSONL tail을 복구하지 못하는 문제
+
+외부 FULL 리뷰 M3의 line-mid-write 반례를 적용했다.
+
+기존:
+1. append transaction durable
+2. JSONL event write가 일부 bytes만 기록
+3. 재기동 후 `load_events()`가 먼저 실행
+4. `JSONDecodeError`로 복구 진입 자체가 중단
+
+보완:
+- pending transaction의 exact event bytes를 기준으로 현재 ledger tail이 그 event의 prefix인지 검사
+- prefix 제거 후 남은 bytes SHA-256이 `pre_ledger_sha256`와 정확히 일치할 때만 truncate
+- truncate fsync 후 pending event 전체를 다시 기록
+- unrelated/malformed tail은 추측 수리하지 않고 typed `LedgerTornWriteError`로 fail-closed
+
+회귀:
+- exact half-event tail → 정상 recovery
+- pending event prefix가 아닌 garbage tail → typed failure
+
+### 45. recovery가 동일 type/payload의 의도적 두 번째 이벤트를 retry로 삼키는 문제
+
+외부 FULL 리뷰 L1의 반례는 payload 동일성만으로 retry identity를 추론하기 때문에 발생했다.
+
+보완:
+- append transaction에 optional `event_instance_id` 추가
+- 같은 instance ID로 재요청한 경우에만 recovered event를 idempotent retry로 반환
+- 다른 instance ID 또는 instance ID가 없는 새 요청은 type/payload가 같아도 별도 event/seq로 append
+- review cycle, HUMAN decision, outcome, incident, standard candidate 등 내부 mutation 경로는 stable instance ID를 사용
+
+이제 “동일 데이터”와 “동일 요청”을 구분한다.
+
+### 46. package receipt와 최신 검증 문서의 provenance 연결 부족
+
+외부 FULL 리뷰 L2에서 package 내부에 `.git`이 없어 HEAD/Actions run을 독립적으로 연결하기 어렵다는 점을 확인했다.
+
+보완:
+- source-package receipt에 `validation_run_id`, `validation_run_attempt`, `validation_workflow_ref` 추가
+- CI가 이 값을 GitHub Actions 환경에서 명시적으로 기록
+- receipt self-digest가 HEAD/package/manifest/run metadata를 하나의 traceability record로 묶음
+- 단, self-digest만으로 GitHub run의 실재를 증명하지는 않으며 GitHub artifact/run metadata가 외부 확인 근거임을 문서화
+- 검증 보고서의 테스트 수/manifest entry/HEAD/run은 최종 Latest-HEAD CI 결과로 다시 고정
+
+### 이번 외부 FULL 리뷰 반영 판정
+
+- M1: **보완됨(외부 expectation이 있을 때 강한 fail-closed, 로컬 전부 변조 한계는 명시)**
+- M2: **보완됨/표현 정정** — unsigned mode는 authentication으로 주장하지 않음
+- M3: **보완됨** — exact torn-tail recovery + typed failure
+- L1: **보완됨** — event-instance identity 도입
+- L2: **보완 진행** — receipt CI traceability 반영, 최종 CI 수치로 문서 재고정 예정
+
+### 47. CI traceability 필드를 같은 v2.7 receipt에서 필수화하면 기존 receipt가 깨지는 문제
+
+L2 보완으로 Actions run metadata를 source-package receipt에 추가한 뒤 migration 시나리오를 다시 검토했다.
+
+반례:
+1. 기존 v2.7 receipt에는 `validation_run_id` / `validation_run_attempt` / `validation_workflow_ref`가 없음
+2. 동일 `schema_version: 2.7`에서 이 세 필드를 required로 바꾸면 과거에 정상 발행된 receipt가 schema/semantic validation에서 실패
+3. traceability 개선이 기존 배포물 검증을 깨뜨리는 역회귀 발생
+
+보완:
+- 새 receipt 생성기는 세 traceability 필드를 계속 기록
+- schema의 required 집합은 기존 v2.7 필드 집합을 유지하고 새 세 필드는 optional extension으로 처리
+- semantic validator도 기존 required 필드가 모두 존재하고 unknown field가 없으면 허용
+- run ID/attempt는 둘 중 하나만 있는 경우에는 계속 거부
+- 기존 receipt에서 세 필드를 제거하고 digest를 재계산한 회귀 fixture가 schema + semantic validation을 모두 통과하는지 확인
+
+이로써 CI provenance 강화가 기존 v2.7 package receipt 읽기 호환성을 파괴하지 않는다.
+
+### 48. 외부 expected key ID를 켜면 내부 writer의 고정 key_id가 정상 HMAC 쓰기를 막는 문제
+
+M1 보완으로 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 추가한 뒤 실제 review-cycle 쓰기 경로를 다시 시뮬레이션했다.
+
+반례:
+1. 운영자가 HMAC key와 `MAESTRO_LEDGER_EXPECT_KEY_ID=key-v1`을 설정
+2. validator는 `key-v1`을 기대
+3. 일부 writer는 anchor/transaction `key_id`로 고정 문자열 `MAESTRO_LEDGER_HMAC_KEY`를 명시
+4. 외부 expectation과 writer가 서로 충돌해 정상 signed append가 fail-closed
+
+보완:
+- `append_event()`는 HMAC key가 호출 인자로 직접 전달된 경우에도 key_id가 비어 있으면 external expected key ID를 기본값으로 사용
+- review cycle, HUMAN decision, outcome/incident writer가 `MAESTRO_LEDGER_EXPECT_KEY_ID`를 우선 key ID로 사용
+- expectation이 없을 때는 기존 `MAESTRO_LEDGER_HMAC_KEY` 식별자 호환 유지
+- 실제 review-cycle subprocess를 `MAESTRO_LEDGER_HMAC_KEY + MAESTRO_LEDGER_EXPECT_KEY_ID=key-v1`로 실행해 anchor/witness의 key_id가 `key-v1`이고 HMAC이 생성되는 회귀 테스트 추가
+
+이로써 M1의 외부 expectation 기능이 검증 전용 장식이 아니라 실제 write/read 경로에서 사용할 수 있는 운영 기능이 된다.
+
+### 49. Pending ledger 복구에서 동일 event_instance_id의 변경된 요청이 묵살되는 문제
+
+재현 경로 (정적 흐름 분석 + 회귀 테스트 추가):
+1. 첫 요청이 `event_instance_id=stable-id`, `CASE_OPENED`, `payload={"v":1}`로 append를 시작
+2. JSONL은 기록됐지만 anchor 작성 직전에 예외가 발생하여 pending journal만 남음
+3. 다른 요청이 같은 `stable-id`를 재사용하면서 case/type/payload 또는 명시 timestamp를 변경
+4. 기존 구현은 `event_instance_id` 일치만 검사하고 recovery 결과를 즉시 반환하여 변경된 새 요청을 조용히 무시
+
+대응:
+- pending 복구 완료 후에도 동일 instance ID에 대해 `case_id`, `event_type`, `payload`, caller가 명시한 `timestamp`를 비교
+- 하나라도 다르면 `LedgerRecoveryError(code=EVENT_INSTANCE_CONFLICT)`로 fail-closed
+- 4개 충돌 변형과 복구 후 원본 이벤트/anchor 정합성 검사를 회귀 테스트로 추가
+- 기존 동일 ID + 동일 event 요청의 정상 재시도 동작은 유지
+
+범위 주의:
+- 현재 instance ID는 pending journal에만 유지되므로 **성공적으로 완료되어 journal이 제거된 후** 동일 ID를 재사용한 요청에는 durable dedup을 제공하지 않는다. 이를 일반적 exactly-once 보장으로 홍보해서는 안 된다.
+- 완료 후 replay까지 막으려면 이벤트 스키마의 버전드 확장 또는 HMAC/anchor로 바인딩된 durable receipt/index를 설계하고 레거시 migration/거버넌스 검증을 거쳐야 한다.
+- 이번 수정은 좁은 정합성 경계를 보완하는 1회 배치이며, 자동 재수정 루프나 ENFORCED 승격은 수행하지 않는다.
+
+### 50. 이전 #49 회귀 테스트에서 cross-case 충돌의 실제 검증 순서를 잘못 기대
+
+GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.test_v27_hardening` 단위 그룹에서 실패했다. case ID가 `OTHER`인 테스트는 `EVENT_INSTANCE_CONFLICT`에 도달하기 전에 sticky witness의 `case_id` 검사에서 `ValueError: ledger auth witness case_id mismatch`로 차단되었다. 이는 인증 경계를 지키는 동작이다.
+
+대응:
+- 동일 case ID에서 payload/type/timestamp가 충돌하는 경로는 `EVENT_INSTANCE_CONFLICT`로 검증.
+- 다른 case ID는 별도 fail-closed 경계로 검증하고 기존 pending transaction/anchor 상태가 변하지 않는지 확인.
+- 인증 경계를 통과시키려고 코어 코드를 약화하지 않음.
+
+### 51. 실패한 HMAC 모드 전환이 signed-required witness를 먼저 기록하는 문제
+
+정적 코드 경로 시뮬레이션:
+1. unsigned ledger와 unsigned anchor, `hmac_required=false` witness가 정상 존재.
+2. HMAC key를 전달해 append를 호출.
+3. 기존 순서는 anchor HMAC 검증보다 먼저 `ensure_auth_witness(..., True)`를 호출해 sticky witness를 변경.
+4. unsigned anchor는 signed 검증에 실패하므로 append는 실패하지만, witness는 signed-required로 남아 기존 정상 unsigned append까지 차단.
+
+더 위험한 변형은 unsigned pending journal이 있는데 새 요청에 HMAC key를 주거나, signed pending journal의 witness가 사라진 뒤 위조된 HMAC을 넣는 경우다.
+
+대응:
+- 기존 ledger에서 anchor가 사라졌고 복구 journal이 없으면 witness 작성 이전에 차단.
+- 기존 unsigned ledger를 일반 append로 signed 상태로 전환하려는 시도는 명시적 migration 요구로 사전 차단.
+- pending 상태에서 signed-mode 전환을 시도하면 기존 signed witness를 확인하거나, journal HMAC을 **실제로 검증**한 후에만 witness 상태 변경 허용.
+- 4개 신규 회귀: 정상 unsigned ledger 전환 실패 후 쓰기 재개, unsigned pending 보호, 위조된 signed pending/witness 누락, preexisting anchorless 파일.
+- 범위: 일반 append의 예기치 않은 witness 변경 차단이며 운영자 승인된 과거 signed migration을 새로 자동화하지 않는다.
+
+판정: 운영 중 쓰기 거부 상태를 지속시키는 결함으로 MATERIAL, 단일 묶음 수정. CI 성공 여부와 독립 검증은 최신 HEAD에서 확인한다. 작은 NOTE_ONLY 항목을 추가 자동 수정 루프에 넣지 않는다.
+
+### 52. 서명처럼 보이는 anchor로 signed witness가 선기록되는 경계
+
+최신 post-#51 구현은 `visible_anchor_hmac`가 진짜 MAC 검증 완료를 뜻하지 않는데도, 이 truthy marker로 HMAC preflight를 생략했다. 공격자가 기존 unsigned anchor의 `hmac_sha256`을 가짜 문자열로 바꾸면, 이후 append가 실패하더라도 signed-required witness가 남아 정상 복구를 차단할 수 있었다. 별도로 signed anchor의 witness가 없는 경우 요청 key_id의 drift가 anchor 검증보다 먼저 witness를 오염시키는 문제도 있었다.
+
+보완: 기존 ledger/anchor는 실제 HMAC·hash-chain·key-ID 검증을 통과한 뒤 witness 변경 허용. pending journal이 있으면 anchor가 구버전 상태일 수 있으므로 journal을 먼저 검증하고 key ID drift를 막음. 회귀 시나리오: forged HMAC marker, 잘못된 key-ID 복구, unsigned pending + forged marker.
+
+### 53. 신규 ledger 이벤트의 스키마/직렬화 검증 누락
+
+기존 append writer는 앞선 이벤트를 검증하지만 새로 쓸 `event_type`, `case_id`, `payload`를 파일에 쓰기 전에 스키마 검증하지 않았다. 무효 이벤트 타입이나 비직렬화 payload가 들어가면 원장/append journal에 복구 불가능한 데이터를 남길 수 있었다.
+
+보완: 새 이벤트 입력을 v2.4 schema 및 canonical JSON 직렬화에 대해 **파일 생성 전에** 검증. 새 ledger와 기존 정상 ledger에 대한 회귀 추가.
+
+범위: 이 경계는 코드 기반 시뮬레이션에서 도출한 MATERIAL 결함이며 새로운 실행 테스트는 최신 GitHub Actions로 검증할 것. ENFORCED로 자동 승격하지 않음.
+
+### 54. Pending 복구가 기존 anchor 변조 증거를 새 정상 anchor로 덮어쓰는 문제
+
+정확한 기준 HEAD는 `47fb7544a7b8` (#787 FULL PASS). 중단 경로: 기존 이벤트 seq=1의 anchor가 정상인 상태에서 seq=2 append가 JSONL까지 완료되었지만 새 anchor 저장 전에 중단. 저장장치 오류/위조로 기존 anchor의 HMAC·seq/ledger digest가 손상되거나 파일이 삭제됨. 과거 `_recover_pending_append()`는 journal과 ledger만 확인하고 기존 anchor를 읽지 않은 채 새 anchor를 써서 변조 증거를 소거했다.
+
+수정은 pending transaction 검증 직후, torn-tail 수정 직전에 기존 anchor를 독립 검증한다. 허용하는 anchor는 pre-append(seq=n)와 post-append(seq=n+1, anchor 저장 후 journal 제거 직전 중단) 두 상태뿐이다. 기존 이력이 있을 때 anchor 누락은 `APPEND_ANCHOR_INVALID`로 차단하고, 최초 이벤트는 anchor가 없을 수 있다. pending event 자체에도 v2.4 schema 검사를 적용한다.
+
+회귀 4개: signed anchor HMAC 위조 시 바이트·journal 무변경, 선행 anchor 삭제 차단 및 복원 후 재개, 정당한 post-anchor 중단 복구에서 중복 append 없음, 스키마가 유효하지 않은 unsigned journal 복구 사전 차단. HEAD별 CI 검증을 완료하기 전에는 결과를 PASS라 부르지 않는다.
+
+### 55. 일반 append 재시도에서 witness 없는 변조 anchor를 선기록으로 오염하는 문제
+
+54번의 직접 복구 `_recover_pending_append()`는 검증을 강화했으나 `append_event()`는 유효한 pending journal을 찾으면 기존 anchor 확인 전 `ensure_auth_witness()`를 호출했다. 이전 signed history의 witness가 유실되고 anchor HMAC이 손상된 경우, 복구 자체는 `APPEND_ANCHOR_INVALID`로 막히지만 실패한 재시도에서 signed witness를 먼저 새로 작성하는 side effect가 발생할 수 있었다.
+
+보완: `append_event()`의 pending preflight에도 54번 anchor snapshot 검증을 적용한 후에만 `ensure_auth_witness()`를 허용한다. 새로운 회귀 테스트는 signed history + pending crash + witness 누락 + 가짜 anchor HMAC 조합에서 실패 시 witness/anchor/journal/ledger 바이트가 그대로임을 확인하고, anchor 복원 뒤 정상 복구 및 witness 재생성을 확인한다.
+
+### 56. 단독 ledger 검사에서 생략된 case ID가 혼합 이벤트를 놓침
+
+기준 HEAD `4002f8800fec6b33152ce3c9cdd467a20108fdb2`, GitHub Actions #789 FULL PASS. `campaign_history()`는 case ID 혼합 여부를 별도로 검증하지만, `validate_events(events,case_id=None)`는 각 이벤트의 schema/hash/seq만 확인한다. `case_ledger.py validate --ledger`에서는 `--case-id`가 선택 사항이라, 서로 다른 case ID를 가진 unsigned events와 재계산된 anchor를 정상으로 판정할 수 있었다.
+
+수정: 명시적 case ID가 없으면 첫 유효 이벤트에서 ID를 추론하고 이후 모든 이벤트의 ID가 동일한지 검증. hash-chain과 anchor가 자체 일관성을 지녀도 타 case ID 혼입은 차단한다. CLI를 실제 호출해 실패 branch/message를 검증하는 회귀 테스트 추가.
+
+### 57. 인증 witness가 손상돼도 anchor 검증이 이를 무시함
+
+기존 `validate_anchor()`가 `load_auth_witness()`의 `ValueError`를 `witness=None`으로 무시했다. witness digest가 손상되어도 정상 anchor만 있으면 검증이 통과할 수 있다.
+
+수정: existing witness의 schema, digest, case ID 불일치를 오류로 반환. signed/unsigned 정상 anchor를 각각 준비해 witness digest만 훼손했을 때 거부하고, 원본 witness로 되돌리면 정상 검증되는지 회귀 테스트 추가. 유효한 JSON이지만 event object가 아닌 입력이나 잘못된 anchor object는 예외 대신 검증 오류로 처리한다.
+
+범위: Leonardo 검토 기준으로 정적 반례를 도출하고 CI에 실행 가능한 회귀를 추가한다. 별도 Leonardo 런타임 에이전트 호출은 불가하여 독립 실행 검토로 주장하지 않는다. 오직 이 두 무결성 결함과 입력 분류 회귀만 한 번에 보완하며 자동 ENFORCED 승격은 하지 않는다.
+
+### 58. 심볼릭 링크 및 경로 리디렉션을 이용한 외부 ledger 기록 경계
+
+HEAD `ca71139661783b1f52f8a3815b48ae7dea9e184c`에서 신규 `case-events.jsonl`이 dangling symbolic link일 때 `Path.exists()==False`여서 새 ledger로 오인할 수 있다. 그러나 뒤의 `Path.open('a')`는 링크 대상 경로를 따라 외부 파일을 새로 만들고 JSONL을 기록한다. 기존 부모 디렉터리나 anchor/journal 경로가 링크로 전환된 경우에도 파일 입출력은 원래 예상한 작업 공간을 벗어날 수 있다.
+
+대응: append/recovery/anchor 경로의 기존 symlink, Windows junction, 상위 디렉터리 리디렉션 및 경로 traversal을 작업 파일 생성 전 검사한다. mutation 과정에서는 ledger lock을 취득한 후 다시 검사한다. dangling ledger 링크, redirected anchor, linked parent, linked pending journal의 2개 묶음 회귀 테스트를 추가한다. 외부 파일의 바이트/생성 상태가 유지되는지와 링크 제거 후 정상 복구를 확인한다.
+
+범위: 이 preflight는 정적 경로 보호이며 race-free OS 샌드박스와 동일하지 않다. 경로를 공격자가 동시에 바꾸는 TOCTOU 위협의 완전 차단은 NOT_RUN/NOT_CLAIMED로 유지한다.
+
+### 59. Python의 non-finite JSON 직렬화로 비표준 감사 이벤트가 기록됨
+
+`common.canonical_bytes()` 및 `case_ledger._events_bytes()`는 기본 `json.dumps(allow_nan=True)`를 사용한다. `payload: {'value': float('nan')}`는 표면적 schema(object) 검증과 `object_digest()` 단계를 통과할 수 있어 `NaN` 문자열이 들어 있는 비표준 JSONL과 pending journal이 영속화된다. 다른 엄격 JSON 구현에서 파싱이 실패해 검증·감사 결과가 런타임마다 달라질 위험이 있다.
+
+대응: 신규 이벤트는 `allow_nan=False`로 사전 직렬화 검사하고, ledger/anchor/witness/journal/CLI 입력은 non-finite constant 및 overflow 숫자를 거부하는 parser를 사용한다. 잘못된 journal dict/array는 내용 검증 전에 fail-closed 처리한다. 회귀: NaN/Infinity/-Infinity 신규/기존 ledger 거부, 비표준 pending 데이터 무변경 거부 후 정상 복구, overflow exponent 파싱 거부, non-object transaction typed rejection.
+
+범위: Leonardo 검토 방식의 코드 분석과 실제 Python 직렬화 반례, GitHub 테스트 실행을 결합했다. 별도 Leonardo 런타임/독립 모델 세션 실행으로 해석하지 않는다. 신규 코드 HEAD CI 통과 전까지는 PASS로 표시하지 않는다.
+
+### 60. 고정 임시 파일 이름의 symlink가 외부 파일을 truncate
+
+기준 HEAD `9787a194713cbb0d6983f43df22821a211f14150` (Actions #792 PASS). 58번에서는 최종 ledger/anchor/journal/witness 경로의 링크를 차단했으나, `_atomic_json_fsync`와 `write_anchor`는 `<target>.tmp`를 고정 이름으로 `wb` 모드로 열었다. 별도로 심어 놓은 `<target>.tmp` 링크는 최종 경로 preflight에 포함되지 않았고 외부 파일의 원본 바이트가 교체 이전에 손상될 수 있었다. Python 파일 열기·symlink 반례로 재현.
+
+대응: journal/anchor/auth witness atomic writer에 same-directory `tempfile.mkstemp` 사용 (O_EXCL·0600·fsync·os.replace); anchor JSON 키 출력 순서 유지. 구 고정 `.tmp` 링크나 일반 파일은 손대지 않음. 신규 회귀 2개에서 3개 writer의 링크 우회 및 기존 파일 보존 확인. 동시 경로 교체 TOCTOU는 여전히 외부 샌드박스 과제.
+
+### 61. 서명된 JSON 객체의 중복 키를 통한 파서 불일치
+
+`json.loads`는 같은 객체에 `"case_id": "ATTACKER"`와 `"case_id": "CASE"`가 있으면 마지막 값을 사용한다. 서명된 anchor 및 pending transaction에 먼저 중복 필드를 삽입하면 Python이 재구성하는 객체는 기존과 동일하므로 HMAC 검증이 통과할 수 있지만, 외부 파서는 첫 키나 중복 오류를 사용해 해석이 달라질 수 있다.
+
+대응: `_strict_json_loads`에 object_pairs_hook 기반 중복 키 차단. 중첩 payload를 포함해 전체 신뢰 경로에서 파싱 단계에서 실패하며, 테스트는 signed anchor/transaction, auth witness, 중첩 ledger 이벤트 등 4개 신규 회귀로 구성. 에이전트 직접 실행은 불가했고 Leonardo 방식의 코드 경로 시뮬레이션·로컬 Python 반례 및 CI 테스트를 사용한다. 새 HEAD full/ZIP 검증 전엔 PASS 주장하지 않음.
+
+### 62. 기존 ledger 하드링크가 외부 동일 inode 파일까지 변경
+
+기준 HEAD `379ed48cb213a79bade2d8cf7ff205f48ffb32af` (CI #793 FULL PASS). 기존 서명/무서명 case-events.jsonl 파일에 `os.link(ledger, outside)`로 하드링크를 만들면 두 경로가 하나의 inode를 가리킨다. `Path.is_symlink()`는 False이지만 `append_event`는 기존 anchor를 확인한 뒤 `open('a')`로 동일 inode를 변경하므로 외부 별칭 파일도 함께 덧붙여진다. Pending append 복구 시 `r+b/truncate`도 동일한 위험을 갖는다.
+
+대응: in-place ledger 파일이 존재하고 `st_nlink > 1`이면 인증 전 사전 검증에서 차단하고, 복구/검증의 공통 경로에서도 거부. 신규 회귀는 signed/unsigned 기존 ledger + 외부 하드링크에서 원장/anchor/외부 파일/journal 무변경을 검사하고 별칭 해제 후 정상 append를 확인. 서명된 pending recovery도 하드링크 상태에서 바이트 불변을 검사하고 해제 후 정상 복구한다.
+
+### 63. case bundle 잠금의 링크된 상위 디렉터리가 외부에 lock을 생성
+
+기존 `ensure_control_dir`는 최종 `.codediff-control`의 symlink/junction만 검사했으며, `case_bundle_lock_path`가 가리키는 case-record.json의 부모 경로가 symlink여도 `p.mkdir(parents=True)`와 chmod는 링크를 따라 외부에 control directory를 만들 수 있었다. 일반 ledger path의 이전 symlink guard와는 다른 경로다.
+
+대응: coordination path와 case-record path의 전체 조상 경로를 symlink/junction/traversal 관점에서 검사, control dir 생성 직전 및 chmod 직전에 재검사. 상위 리디렉션/직접 case-record symlink에서 외부 파일·디렉터리 무생성을 검증하고 정상 lock 획득의 역회귀를 확인한다.
+
+범위: Leonardo 기준 코드 경계 시뮬레이션 및 Python hardlink 동작 재현으로 도출했고 별도 Leonardo 실시간 에이전트 호출은 아니다. 공격자의 동시 경로 교체 TOCTOU, Windows host E2E, HUMAN/ENFORCED 승격은 별도 게이트. 최신 HEAD CI 검증 이전에는 PASS라고 기재하지 않는다.
+
+### 64. 손상된 대형 append tail에서 이차 시간 복구 검사
+
+기준 HEAD `f8e5bc62502f1afe0fa5da36f46ab5e4bf5b176c` (CI #794 FULL PASS). 기존 `_repair_exact_torn_tail()`은 유효한 pending 이벤트가 아니라 손상된 JSONL tail을 만나면 `event_bytes[:size]`를 큰 길이부터 1까지 생성하고 비교한다. 입력이 약 1MiB일 때 Python 재현에서는 약 14초, 256KiB에서도 반복 스캔 비용이 커지는 현상을 확인. 반복적인 업무/복구 시 불필요한 CPU 점유와 런타임 장시간 지연을 유발할 수 있는 성능 경계.
+
+보완: KMP failure table로 raw suffix와 event prefix의 겹침을 선형 시간에 찾아 필요한 prefix border만 확인하며, 전제 ledger SHA256은 후보 prefix 길이 증가 순서로 incremental hashing하여 중복 해시를 방지. 정확히 증명된 prefix+pre-ledger digest만 truncate하는 안전조건은 동일. 무작위 160개 반례에서 기존 알고리즘과 완전 동일한 truncation/거부 결과를 비교하며 1MiB 손상 tail의 무변경·제한 시간 검증 추가.
+
+### 65. lock 생성 과정에서 KeyboardInterrupt/SystemExit가 고아 잠금 파일을 남김
+
+`ledger_lock()`은 O_EXCL로 `.lock`을 만든 뒤 flush/fsync까지 수행한다. 이 도중 Ctrl+C(`KeyboardInterrupt`)나 프로세스 논리 종료(`SystemExit`)가 일어나면 `except Exception`은 실행되지 않아 lock 파일이 남는다. 이후 같은 PID/프로세스는 살아 있으므로 정상 stale-reclaim 정책도 이를 제거할 수 없고 후속 ledger 작업이 timeout 된다.
+
+보완: 잠금 초기 생성 코드의 정리 경계를 `except BaseException`으로 확장하고 보유 파일 디스크립터 정리·원래 lock 제거 후 반드시 원래 예외를 재전달. 신규 회귀는 fsync 지점에서 두 예외를 각각 주입하고 lock 파일 부재와 즉시 재획득을 확인. 기존 정상/외부 프로세스 잠금 권한은 바꾸지 않음.
+
+범위: Leonardo 방식 코드 시뮬레이션·Python 반례·GitHub 회귀 테스트. 별도 Leonardo 런타임 직접 실행은 불가. 이 2건만 묶어 수정하고 전체 HEAD 검증 이후에만 PASS 판단하며, Windows/다중 호스트 운영 환경과 HUMAN/ENFORCED 승인 경계는 그대로 남겨둔다.

@@ -26,15 +26,15 @@ Leonardo/Davinchi calibration / regression / standards loop
 - **External source-package receipt**: the distributed ZIP is bound to exact HEAD, ZIP SHA-256, manifest SHA-256 and manifest entry count with `authority_effect=NONE`.
 - **Package hygiene gate**: tracked `.pytest_cache`, `__pycache__`, `*.pyc` and `*.pyo` artifacts are rejected before manifest generation/package sealing.
 - **Latest-HEAD review is a repository default**: every review/resume refreshes the current committed HEAD; changes invalidate earlier closeout until the post-fix HEAD is reviewed again.
-- **Crash-safe ledger append recovery**: an authenticated journal binds the exact pre-append ledger bytes, hash chain and next event so a crash between event fsync and anchor replacement can recover idempotently.
-- **Dead-lock recovery**: ledger locks record owner PID and are reclaimed immediately when the owner process no longer exists.
+- **Bounded ledger append recovery**: the journal always binds the exact pre-append ledger bytes, hash chain and next event; it is HMAC-authenticated only when ledger HMAC authority is configured. Recovery repairs an exact torn prefix of the pending event and otherwise fails closed with a typed recovery error.
+- **Dead-lock recovery**: ledger locks bind PID plus process-instance and machine identity where available, and stale reclamation is serialized by a dedicated reclaim guard.
 - **HUMAN recovery transaction authentication**: recovery state is bound by canonical digest, HUMAN authority-key HMAC, source cycle/evidence/HEAD and recomputed transaction ID.
 - **Historical HUMAN proof remains verifiable**: freshness is an acceptance-time rule; an already accepted ledger-bound HUMAN decision does not expire merely because time passed.
 - **Immutable case-bank collision checks**: reuse of an existing case ID requires the current case, binding and evidence digest to match the stored immutable snapshot.
 - **Trusted-input freeze**: standards/spec/tests are copied into `trusted-inputs/` before reviewer execution.
 - **Effective-policy freeze**: routing/escalation/protected-path/sensor decisions, reviewer provenance, evidence recomputation and evidence validation use the same `effective-policy/` snapshot.
 - **Canonical ledger anchor**: `case-events.anchor.json`; post-cycle tools use the same anchor and validate it before mutation.
-- **No HMAC downgrade**: an HMAC-backed ledger cannot be appended without the key, and deleting the anchor cannot silently restart history.
+- **No silent HMAC downgrade under a retained trust signal**: signed ledgers create a sticky local `case-events.auth.json` witness; anchor `key_id` and optional external `MAESTRO_LEDGER_EXPECT_KEY_ID` / `--expected-key-id` also force HMAC validation. If an attacker can delete or rewrite every local trust file, local files alone cannot prove prior HMAC use; ENFORCED still depends on protected external key/expectation state.
 - **Real HUMAN floor in the cycle**: human-floor paths, high/critical security surface, hard reversibility and other deterministic floors cannot stop at Adversarial.
 - **Harness self-protection**: when this repository reviews itself, `tools/**`, `tests/**`, `vendor/**`, requirements and integrity files are governance/HUMAN protected without imposing that floor on unrelated application repositories.
 - **Case-insensitive policy matching** with exact Git-path preservation.

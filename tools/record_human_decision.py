@@ -75,14 +75,14 @@ def _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,repo,att_path
     if human:
         if human.get('payload')!=hp:raise SystemExit('conflicting HUMAN_DECISION already exists for review_id')
     else:
-        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+        append_event(ledger,req['case_id'],'HUMAN_DECISION',hp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None,event_instance_id='human:'+req['transaction_id'])
         events=load_events(ledger)
 
     close=_matching_event(events,'CYCLE_CLOSED',lambda p:p.get('cycle_digest')==updated_cycle['cycle_digest'])
     if close:
         if close.get('payload')!=cp:raise SystemExit('conflicting terminal CYCLE_CLOSED event')
     else:
-        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None)
+        append_event(ledger,req['case_id'],'CYCLE_CLOSED',cp,anchor_path=anchor,hmac_key=ledger_key,key_id=ledger_key_id if ledger_key else None,event_instance_id='human-close:'+req['transaction_id'])
 
     _atomic_json(case_path,updated_case)
     _atomic_json(cycle_path,updated_cycle)
@@ -103,7 +103,7 @@ def main():
     anchor=Path(ns.anchor) if ns.anchor else default_anchor_path(ledger)
     tx_path=cycle_path.parent/'human-decision-transaction.json'
     persisted_att=cycle_path.parent/'human-decision-attestation.json'
-    ledger_key=os.environ.get(ns.ledger_hmac_key_env);human_key=os.environ.get(ns.human_key_env)
+    ledger_key=os.environ.get(ns.ledger_hmac_key_env);ledger_key_id=((os.environ.get('MAESTRO_LEDGER_EXPECT_KEY_ID') or '').strip() or ns.ledger_hmac_key_env);human_key=os.environ.get(ns.human_key_env)
     supplied_att=json.loads(Path(ns.attestation).read_text());supplied_digest=human_attestation_digest(supplied_att)
     configured_replay=os.environ.get('MAESTRO_HUMAN_DECISION_REPLAY_DIR')
     if not configured_replay:raise SystemExit('trusted shared human replay cache required: set MAESTRO_HUMAN_DECISION_REPLAY_DIR')
@@ -121,7 +121,7 @@ def main():
             expected={'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'attestation_digest':supplied_digest}
             for k,v in expected.items():
                 if req.get(k)!=v:raise SystemExit(f'pending human transaction does not match request: {k}')
-            _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
+            _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ledger_key_id,replay_dir)
             print(cycle_path);return
     
         case=json.loads(case_path.read_text());cycle=json.loads(cycle_path.read_text())
@@ -165,7 +165,7 @@ def main():
         tx={'schema_version':'2.7','request':{'case_id':case['case_id'],'review_id':ns.review_id,'node_id':ns.node_id,'verdict':ns.verdict,'head_sha':head,'attestation_digest':supplied_digest,'source_cycle_digest':cycle['cycle_digest'],'evidence_digest':case['sensor']['evidence_digest'],'transaction_id':transaction_id},'attestation':supplied_att,'updated_case':updated_case,'updated_cycle':updated_cycle,'human_event_payload':human_event,'close_event_payload':close_event,'transaction_digest':''}
         tx['transaction_digest']=object_digest(tx,'transaction_digest');tx['transaction_hmac']=_transaction_hmac(tx,human_key)
         _atomic_json(tx_path,tx)
-        _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ns.ledger_hmac_key_env,replay_dir)
+        _finish_transaction(tx_path,case_path,cycle_path,ledger,anchor,ns.repo,persisted_att,ledger_key,human_key,ledger_key_id,replay_dir)
         print(cycle_path)
     
 if __name__=='__main__':main()

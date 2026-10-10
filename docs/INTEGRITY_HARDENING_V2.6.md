@@ -7,7 +7,8 @@ v2.6 focuses on authority and evidence integrity discovered during direct advers
 - Review output is untrusted until harness-computed safety checks pass.
 - `review-cycle.json` is a projection; ledger `CYCLE_CLOSED` is the authoritative binding used by check rendering.
 - HUMAN decisions require an external HMAC-backed attestation and the same reviewed HEAD.
-- Existing HMAC ledger history cannot silently downgrade to an unsigned anchor. A pre-existing ledger file also cannot restart from seq=1 merely because it was truncated to zero bytes and its anchor was deleted.\n- Deletion of both the ledger file and its anchor is not distinguishable from first creation by local files alone; ENFORCED deployments therefore still require an external durable witness/storage boundary.
+- Existing HMAC ledger history cannot silently downgrade to an unsigned anchor **when the validator retains HMAC authority/expectation or another trusted witness of signed mode**. A pre-existing ledger file also cannot restart from seq=1 merely because it was truncated to zero bytes and its anchor was deleted.
+- Deletion or rewriting of every local ledger-side trust artifact is not distinguishable from first creation by local files alone; ENFORCED deployments therefore still require protected external key/expectation or a durable witness/storage boundary.
 - ENFORCED runtime/fresh-session claims must originate in signed external attestation.
 
 ## Authority invariants
