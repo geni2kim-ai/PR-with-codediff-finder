@@ -659,5 +659,37 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertEqual(tx_path.read_bytes(),dirty)
 
 
+    def test_append_retry_with_missing_witness_rejects_forged_prior_anchor_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger);key='key-secret'
+            append_event(ledger,'CASE','CASE_OPENED',{'v':1},hmac_key=key,key_id='kid')
+            old_anchor=anchor.read_bytes()
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                 hmac_key=key,key_id='kid',event_instance_id='two')
+            tx=case_ledger.pending_append_path(ledger)
+            tx_bytes=tx.read_bytes();ledger_bytes=ledger.read_bytes()
+            witness=case_ledger.canonical_auth_witness_path(ledger)
+            witness.unlink()
+            bad=json.loads(old_anchor);bad['hmac_sha256']='0'*64
+            anchor.write_text(json.dumps(bad),encoding='utf-8')
+            bad_anchor=anchor.read_bytes()
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as ctx:
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                             hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertEqual(ctx.exception.code,'APPEND_ANCHOR_INVALID')
+            self.assertFalse(witness.exists())
+            self.assertEqual(anchor.read_bytes(),bad_anchor)
+            self.assertEqual(ledger.read_bytes(),ledger_bytes)
+            self.assertEqual(tx.read_bytes(),tx_bytes)
+            anchor.write_bytes(old_anchor)
+            recovered=append_event(ledger,'CASE','SENSOR_ACCEPTED',{'v':2},
+                                   hmac_key=key,key_id='kid',event_instance_id='two')
+            self.assertEqual(recovered['seq'],2)
+            self.assertTrue(case_ledger.load_auth_witness(ledger,'CASE')['hmac_required'])
+            self.assertFalse(tx.exists())
+
+
 if __name__=='__main__':
     unittest.main()

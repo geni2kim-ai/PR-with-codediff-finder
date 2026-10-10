@@ -1316,3 +1316,9 @@ GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.tes
 수정은 pending transaction 검증 직후, torn-tail 수정 직전에 기존 anchor를 독립 검증한다. 허용하는 anchor는 pre-append(seq=n)와 post-append(seq=n+1, anchor 저장 후 journal 제거 직전 중단) 두 상태뿐이다. 기존 이력이 있을 때 anchor 누락은 `APPEND_ANCHOR_INVALID`로 차단하고, 최초 이벤트는 anchor가 없을 수 있다. pending event 자체에도 v2.4 schema 검사를 적용한다.
 
 회귀 4개: signed anchor HMAC 위조 시 바이트·journal 무변경, 선행 anchor 삭제 차단 및 복원 후 재개, 정당한 post-anchor 중단 복구에서 중복 append 없음, 스키마가 유효하지 않은 unsigned journal 복구 사전 차단. HEAD별 CI 검증을 완료하기 전에는 결과를 PASS라 부르지 않는다.
+
+### 55. 일반 append 재시도에서 witness 없는 변조 anchor를 선기록으로 오염하는 문제
+
+54번의 직접 복구 `_recover_pending_append()`는 검증을 강화했으나 `append_event()`는 유효한 pending journal을 찾으면 기존 anchor 확인 전 `ensure_auth_witness()`를 호출했다. 이전 signed history의 witness가 유실되고 anchor HMAC이 손상된 경우, 복구 자체는 `APPEND_ANCHOR_INVALID`로 막히지만 실패한 재시도에서 signed witness를 먼저 새로 작성하는 side effect가 발생할 수 있었다.
+
+보완: `append_event()`의 pending preflight에도 54번 anchor snapshot 검증을 적용한 후에만 `ensure_auth_witness()`를 허용한다. 새로운 회귀 테스트는 signed history + pending crash + witness 누락 + 가짜 anchor HMAC 조합에서 실패 시 witness/anchor/journal/ledger 바이트가 그대로임을 확인하고, anchor 복원 뒤 정상 복구 및 witness 재생성을 확인한다.

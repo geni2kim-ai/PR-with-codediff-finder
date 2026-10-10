@@ -594,6 +594,14 @@ def append_event(path,case_id,event_type,payload,timestamp=None,anchor_path=None
                 raise LedgerRecoveryError('invalid pending append before HMAC witness change: '+'; '.join(preflight_errors))
             if hmac_key and pending_candidate.get('key_id')!=key_id:
                 raise ValueError('pending ledger key_id change requires explicit migration')
+            # A missing/stale witness must not be promoted by a journal whose
+            # pre/post anchor is invalid. Apply the same check as direct recovery
+            # before ensure_auth_witness() can write a sticky file.
+            _verify_pending_anchor_before_recovery(
+                p,anchor,pending_candidate,hmac_key,
+                bool(visible_anchor_hmac or
+                     (existing_witness and existing_witness.get('hmac_required')) or
+                     expected_key_id))
         if existing_witness and existing_witness.get('hmac_required') and existing_witness.get('key_id') and key_id and existing_witness['key_id']!=key_id:
             raise ValueError('ledger auth witness key_id change requires explicit migration')
         witness=ensure_auth_witness(p,case_id,bool(hmac_key) or visible_anchor_hmac or bool(expected_key_id),key_id or expected_key_id)
