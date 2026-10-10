@@ -60,6 +60,12 @@ A Git-blob manifest PASS is not treated as proof that a distributed ZIP is compl
 
 The package receipt is an integrity/binding/traceability record with `authority_effect=NONE`. Its self-digest binds the recorded run metadata, but GitHub Actions/artifact metadata (or another external witness) is still required to prove that the referenced run actually existed; the receipt is not an external signature or promotion authority.
 
+### JSON and filesystem redirect boundaries
+
+The ledger writer now requires strict finite JSON values before creating any ledger-side file. Python's default JSON encoder accepts `NaN` and `Infinity`, which are not interoperable strict JSON and could otherwise become permanently anchored in an audit ledger; journal and ledger readers reject these values (including exponents that overflow to non-finite Python floats). A malformed non-object pending transaction is a typed fail-closed recovery result.
+
+Before append, recovery, anchor write and anchor validation, existing ledger/anchor/journal/witness/lock paths and their ancestor components are checked for symlinks or Windows junction redirects. Dangling ledger symlinks are rejected before any file creation; a redirected parent directory cannot silently turn local writes into external writes. Checks repeat inside the ledger lock on mutation paths. These are conservative filesystem checks, **not** a claim of race-free containment against hostile concurrent directory replacement: full sandbox enforcement and descriptor-relative protections remain external promotion gates.
+
 ## Review invariant
 
 The repository-level default is **Latest-HEAD review**. A previous PASS cannot authorize a newer HEAD.

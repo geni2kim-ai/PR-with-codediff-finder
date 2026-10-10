@@ -743,5 +743,123 @@ class V27ReleaseInvariantTests(unittest.TestCase):
             self.assertIn('ledger events malformed for anchor validation',anchor_errors)
 
 
+    def test_nonfinite_new_event_payload_is_rejected_before_ledger_mutation(self):
+        for numeric in (float('nan'),float('inf'),float('-inf')):
+            with self.subTest(numeric=str(numeric)):
+                with tempfile.TemporaryDirectory() as td:
+                    ledger=Path(td)/'case-events.jsonl'
+                    with self.assertRaisesRegex(ValueError,'finite strict JSON'):
+                        append_event(ledger,'CASE','CASE_OPENED',{'value':numeric})
+                    for path in (ledger,default_anchor_path(ledger),
+                                 case_ledger.canonical_auth_witness_path(ledger),
+                                 case_ledger.pending_append_path(ledger)):
+                        self.assertFalse(path.exists(),path)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            old_events=ledger.read_bytes();old_anchor=anchor.read_bytes()
+            with self.assertRaisesRegex(ValueError,'finite strict JSON'):
+                append_event(ledger,'CASE','SENSOR_ACCEPTED',{'value':float('nan')})
+            self.assertEqual(ledger.read_bytes(),old_events)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+
+    def test_nonfinite_pending_journal_is_rejected_before_recovery_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('anchor crash')):
+                with self.assertRaisesRegex(RuntimeError,'anchor crash'):
+                    append_event(ledger,'CASE','SENSOR_ACCEPTED',{'value':2},event_instance_id='tx2')
+            journal=case_ledger.pending_append_path(ledger)
+            original_journal=journal.read_bytes()
+            original_ledger=ledger.read_bytes();old_anchor=anchor.read_bytes()
+            corrupted=json.loads(original_journal)
+            corrupted['event']['payload']['value']=float('nan')
+            corrupted['event']['event_hash']=object_digest(corrupted['event'],'event_hash')
+            corrupted['transaction_digest']=case_ledger._append_tx_digest(corrupted)
+            journal.write_text(json.dumps(corrupted,allow_nan=True),encoding='utf-8')
+            tampered=journal.read_bytes()
+            with self.assertRaisesRegex(case_ledger.LedgerRecoveryError,'unreadable'):
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(ledger.read_bytes(),original_ledger)
+            self.assertEqual(anchor.read_bytes(),old_anchor)
+            self.assertEqual(journal.read_bytes(),tampered)
+            journal.write_bytes(original_journal)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger))
+            self.assertEqual(len(case_ledger.load_events(ledger)),2)
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_nonfinite_json_in_existing_ledger_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            prior=ledger.read_text(encoding='utf-8')
+            ledger.write_text(prior.replace('"value":1','"value":NaN'),encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'non-finite JSON literal'):
+                case_ledger.load_events(ledger)
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            ledger.write_text('{"payload":{"value":1e9999}}',encoding='utf-8')
+            with self.assertRaises(ValueError):
+                case_ledger.load_events(ledger)
+
+    def test_redirected_ledger_anchor_and_parent_paths_are_rejected_before_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);inside=root/'inside';inside.mkdir()
+            outside=root/'outside.jsonl'
+            ledger=inside/'case-events.jsonl'
+            try:ledger.symlink_to(outside)
+            except (OSError,NotImplementedError) as exc:self.skipTest(f'symlink unavailable: {exc}')
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            self.assertFalse(outside.exists())
+            self.assertFalse(case_ledger.pending_append_path(ledger).exists())
+            self.assertFalse(case_ledger.canonical_auth_witness_path(ledger).exists())
+            ledger.unlink()
+            outside_anchor=root/'outside-anchor.json';anchor=default_anchor_path(ledger)
+            anchor.symlink_to(outside_anchor)
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(ledger,'CASE','CASE_OPENED',{'value':1})
+            self.assertFalse(ledger.exists());self.assertFalse(outside_anchor.exists())
+            anchor.unlink()
+            redirected=root/'redirected'
+            redirected.symlink_to(inside,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                append_event(redirected/'case-events.jsonl','CASE','CASE_OPENED',{'value':1})
+            self.assertFalse((inside/'case-events.jsonl').exists())
+
+    def test_redirected_recovery_journal_fails_without_read_or_repair(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ledger=root/'case-events.jsonl';anchor=default_anchor_path(ledger)
+            with mock.patch.object(case_ledger,'write_anchor',side_effect=RuntimeError('crash')):
+                with self.assertRaisesRegex(RuntimeError,'crash'):
+                    append_event(ledger,'CASE','CASE_OPENED',{'value':1},event_instance_id='one')
+            journal=case_ledger.pending_append_path(ledger);original=journal.read_bytes()
+            external=root/'external-journal.json';external.write_bytes(original)
+            journal.unlink()
+            try:journal.symlink_to(external)
+            except (OSError,NotImplementedError) as exc:self.skipTest(f'symlink unavailable: {exc}')
+            ledger_original=ledger.read_bytes()
+            with self.assertRaisesRegex(ValueError,'unsafe ledger path redirect'):
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(ledger.read_bytes(),ledger_original)
+            self.assertEqual(external.read_bytes(),original)
+            journal.unlink()
+            journal.write_bytes(original)
+            self.assertTrue(case_ledger.recover_pending_append_if_present(ledger))
+            self.assertFalse(journal.exists())
+            self.assertFalse(case_ledger.validate_anchor(ledger,anchor,case_ledger.load_events(ledger),'CASE'))
+
+    def test_pending_transaction_nonobject_has_typed_recovery_rejection(self):
+        with tempfile.TemporaryDirectory() as td:
+            ledger=Path(td)/'case-events.jsonl'
+            journal=case_ledger.pending_append_path(ledger)
+            journal.write_text('[]',encoding='utf-8')
+            with self.assertRaises(case_ledger.LedgerRecoveryError) as cm:
+                case_ledger.recover_pending_append_if_present(ledger)
+            self.assertEqual(cm.exception.code,'APPEND_TRANSACTION_INVALID')
+            self.assertEqual(journal.read_text(encoding='utf-8'),'[]')
+
+
 if __name__=='__main__':
     unittest.main()

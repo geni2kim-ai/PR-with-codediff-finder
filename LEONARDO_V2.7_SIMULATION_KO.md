@@ -1336,3 +1336,19 @@ GitHub Actions #784 (HEAD `8c047b77a459`)는 canonical validation 중 `tests.tes
 수정: existing witness의 schema, digest, case ID 불일치를 오류로 반환. signed/unsigned 정상 anchor를 각각 준비해 witness digest만 훼손했을 때 거부하고, 원본 witness로 되돌리면 정상 검증되는지 회귀 테스트 추가. 유효한 JSON이지만 event object가 아닌 입력이나 잘못된 anchor object는 예외 대신 검증 오류로 처리한다.
 
 범위: Leonardo 검토 기준으로 정적 반례를 도출하고 CI에 실행 가능한 회귀를 추가한다. 별도 Leonardo 런타임 에이전트 호출은 불가하여 독립 실행 검토로 주장하지 않는다. 오직 이 두 무결성 결함과 입력 분류 회귀만 한 번에 보완하며 자동 ENFORCED 승격은 하지 않는다.
+
+### 58. 심볼릭 링크 및 경로 리디렉션을 이용한 외부 ledger 기록 경계
+
+HEAD `ca71139661783b1f52f8a3815b48ae7dea9e184c`에서 신규 `case-events.jsonl`이 dangling symbolic link일 때 `Path.exists()==False`여서 새 ledger로 오인할 수 있다. 그러나 뒤의 `Path.open('a')`는 링크 대상 경로를 따라 외부 파일을 새로 만들고 JSONL을 기록한다. 기존 부모 디렉터리나 anchor/journal 경로가 링크로 전환된 경우에도 파일 입출력은 원래 예상한 작업 공간을 벗어날 수 있다.
+
+대응: append/recovery/anchor 경로의 기존 symlink, Windows junction, 상위 디렉터리 리디렉션 및 경로 traversal을 작업 파일 생성 전 검사한다. mutation 과정에서는 ledger lock을 취득한 후 다시 검사한다. dangling ledger 링크, redirected anchor, linked parent, linked pending journal의 2개 묶음 회귀 테스트를 추가한다. 외부 파일의 바이트/생성 상태가 유지되는지와 링크 제거 후 정상 복구를 확인한다.
+
+범위: 이 preflight는 정적 경로 보호이며 race-free OS 샌드박스와 동일하지 않다. 경로를 공격자가 동시에 바꾸는 TOCTOU 위협의 완전 차단은 NOT_RUN/NOT_CLAIMED로 유지한다.
+
+### 59. Python의 non-finite JSON 직렬화로 비표준 감사 이벤트가 기록됨
+
+`common.canonical_bytes()` 및 `case_ledger._events_bytes()`는 기본 `json.dumps(allow_nan=True)`를 사용한다. `payload: {'value': float('nan')}`는 표면적 schema(object) 검증과 `object_digest()` 단계를 통과할 수 있어 `NaN` 문자열이 들어 있는 비표준 JSONL과 pending journal이 영속화된다. 다른 엄격 JSON 구현에서 파싱이 실패해 검증·감사 결과가 런타임마다 달라질 위험이 있다.
+
+대응: 신규 이벤트는 `allow_nan=False`로 사전 직렬화 검사하고, ledger/anchor/witness/journal/CLI 입력은 non-finite constant 및 overflow 숫자를 거부하는 parser를 사용한다. 잘못된 journal dict/array는 내용 검증 전에 fail-closed 처리한다. 회귀: NaN/Infinity/-Infinity 신규/기존 ledger 거부, 비표준 pending 데이터 무변경 거부 후 정상 복구, overflow exponent 파싱 거부, non-object transaction typed rejection.
+
+범위: Leonardo 검토 방식의 코드 분석과 실제 Python 직렬화 반례, GitHub 테스트 실행을 결합했다. 별도 Leonardo 런타임/독립 모델 세션 실행으로 해석하지 않는다. 신규 코드 HEAD CI 통과 전까지는 PASS로 표시하지 않는다.
