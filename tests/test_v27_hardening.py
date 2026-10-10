@@ -735,7 +735,7 @@ class V27ReleaseInvariantTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             ledger=Path(td)/'case-events.jsonl';anchor=default_anchor_path(ledger)
             append_event(ledger,'CASE','CASE_OPENED',{})
-            ledger.write_text('["not-a-case-event"]\\n',encoding='utf-8')
+            ledger.write_text('["not-a-case-event"]',encoding='utf-8')
             events=case_ledger.load_events(ledger)
             errors=case_ledger.validate_events(events)
             self.assertTrue(any('event must be an object at 1' in e for e in errors),errors)
